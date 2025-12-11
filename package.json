@@ -19,7 +19,9 @@
     "@towns-protocol/proto": "^0.0.434",
     "@towns-protocol/web3": "^0.0.434",
     "dotenv": "^17.2.3",
+    "eslint-plugin-prettier": "^5.5.4",
     "hono": "^4.7.11",
+    "redis": "^5.10.0",
     "viem": "^2.29.3",
     "zod": "^4.1.13"
   },
