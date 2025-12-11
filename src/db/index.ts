@@ -3,6 +3,7 @@ import {
   updateSession,
   getRecentMessages,
   appendMessageToSession,
+  sessionExists,
 } from "./sessionStore";
 
 import { initRedis } from "./redisClient";
@@ -13,4 +14,5 @@ export {
   getRecentMessages,
   appendMessageToSession,
   initRedis,
+  sessionExists,
 };

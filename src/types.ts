@@ -176,3 +176,11 @@ export type EventType = BasePayload & {
   replyId: string | undefined;
   threadId: string | undefined;
 };
+
+export type OnMessageEventType = BasePayload & {
+  message: string;
+  replyId: string | undefined;
+  threadId: string | undefined;
+  mentions: Pick<ChannelMessage_Post_Mention, "userId" | "displayName">[];
+  isMentioned: boolean;
+};

@@ -1,6 +1,8 @@
 import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
-import { register_handler } from "./handlers";
+import { register_handler, handle_on_message } from "./handlers";
+import { sessionExists } from "./db";
+import { containsAllKeywords } from "./utils";
 
 export const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
@@ -29,23 +31,40 @@ bot.onSlashCommand("register", async (handler, event) => {
   await register_handler(handler, event);
 });
 
-bot.onMessage(async (handler, { message, channelId, eventId, createdAt }) => {
-  if (message.includes("coco")) {
-    await handler.sendMessage(channelId, "Hello there! 👋");
-    return;
+bot.onMessage(async (handler, event) => {
+  // listen to message if only it mentions bot or is a session thread
+  if (event.isMentioned) {
+    await handle_on_message(handler, event);
   }
-  if (message.includes("ping")) {
-    const now = new Date();
-    await handler.sendMessage(
-      channelId,
-      `Pong! 🏓 ${now.getTime() - createdAt.getTime()}ms`,
-    );
-    return;
+  if (event.threadId) {
+    const checkSessionExists = await sessionExists(event.threadId);
+    if (checkSessionExists) {
+      await handle_on_message(handler, event);
+    }
   }
-  if (message.includes("react")) {
-    await handler.sendReaction(channelId, eventId, "👍");
-    return;
+
+  const isMessageOfInterest = containsAllKeywords(event.message);
+
+  if (isMessageOfInterest) {
+    await handle_on_message(handler, event);
   }
+
+  // if (message.includes("coco")) {
+  //   await handler.sendMessage(channelId, "Hello there! 👋");
+  //   return;
+  // }
+  // if (message.includes("ping")) {
+  //   const now = new Date();
+  //   await handler.sendMessage(
+  //     channelId,
+  //     `Pong! 🏓 ${now.getTime() - createdAt.getTime()}ms`,
+  //   );
+  //   return;
+  // }
+  // if (message.includes("react")) {
+  //   await handler.sendReaction(channelId, eventId, "👍");
+  //   return;
+  // }
 });
 
 bot.onReaction(async (handler, { reaction, channelId }) => {

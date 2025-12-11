@@ -1,32 +1,38 @@
+import { OnMessageEventType } from "../types";
 import { BotHandler, BasePayload } from "@towns-protocol/bot";
-import { handle_slash_message } from "./handle_slash_message";
 import { appendMessageToSession, getRecentMessages } from "../db";
-import { EventType } from "../types";
+import { coco_parser } from "../ai";
 
-export async function register_handler(
+export async function handle_on_message(
   handler: BotHandler,
-  payload: EventType,
+  event: OnMessageEventType,
 ) {
-  const currentTime = new Date().toLocaleString();
+  const threadId = event.threadId || event.eventId;
 
-  const threadId = payload.threadId || payload.eventId;
-  const content = payload.args.join(" ");
+  await appendMessageToSession(threadId, event.userId, {
+    eventId: event.eventId,
+    content: event.message,
+    timestamp: Date.now(),
+    role: "user",
+  });
 
-  const parsed = await handle_slash_message(handler, payload);
+  const recentMessages = await getRecentMessages(threadId, 5);
+
+  const parsed = await coco_parser(event.message, recentMessages);
 
   if (parsed.needsClarification) {
     const clarificationQuestion =
       parsed.clarificationQuestion ||
       "I'm not sure what you mean. Can you clarify?";
 
-    await appendMessageToSession(threadId, payload.userId, {
+    await appendMessageToSession(threadId, event.userId, {
       eventId: `bot-${Date.now()}`,
       content: clarificationQuestion,
       timestamp: Date.now(),
       role: "assistant",
     });
 
-    handler.sendMessage(payload.channelId, clarificationQuestion, {
+    handler.sendMessage(event.channelId, clarificationQuestion, {
       threadId,
     });
   }
@@ -39,7 +45,7 @@ export async function register_handler(
       const result: string = "";
 
       // Store bot response
-      await appendMessageToSession(threadId, payload.userId, {
+      await appendMessageToSession(threadId, event.userId, {
         eventId: `bot-${Date.now()}`,
         content: "Success",
         timestamp: Date.now(),
@@ -49,7 +55,7 @@ export async function register_handler(
       // treat result response, add basescan link etc
       // reply with result to user in channel
       handler.sendMessage(
-        payload.channelId,
+        event.channelId,
         "If we got here, then we were successful",
         {
           threadId,
@@ -57,9 +63,4 @@ export async function register_handler(
       );
     }
   }
-
-  await handler.sendMessage(
-    payload.channelId,
-    `Current time: ${currentTime} ⏰`,
-  );
 }

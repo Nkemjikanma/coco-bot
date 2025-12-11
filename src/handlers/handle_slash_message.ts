@@ -1,6 +1,6 @@
 import { BotHandler, BasePayload } from "@towns-protocol/bot";
 import { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
-import { coco_parser } from "../ai/index";
+import { coco_parser } from "../ai";
 import { appendMessageToSession, getRecentMessages } from "../db";
 
 import { EventType } from "../types";
