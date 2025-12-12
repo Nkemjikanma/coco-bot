@@ -9,6 +9,8 @@ import {
   RegisterCommand,
   HelpCommand,
   EnsRecords,
+  PendingCommand,
+  ValidationResult,
 } from "../types";
 
 class InvalidStructureError extends Error {}
@@ -18,218 +20,305 @@ class InvalidDurationError extends Error {}
 class InvalidRecipientError extends Error {}
 class InvalidRecordsError extends Error {}
 
-export function validate_parse(fields: unknown): ParsedCommand {
-  if (typeof fields !== "object" || fields === null) {
-    throw new InvalidStructureError("Fields must be an object");
+export function validate_parse(
+  parsed: unknown,
+  context?: { recentMessages?: string[]; pendingCommand?: PendingCommand },
+): ValidationResult {
+  if (typeof parsed !== "object" || parsed === null) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "I didn't quite understand that. Could you rephrase your request?",
+      partial: {},
+    };
   }
 
-  const parsed_fields = fields as Record<string, unknown>;
+  const fields = parsed as Record<string, unknown>;
 
   // action
-  if (typeof parsed_fields.action !== "string") {
-    throw new InvalidActionError("Missing or invalid 'action' field");
+  if (typeof fields.action !== "string") {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "What would you like to do? (check, register, renew, transfer, set records, or view portfolio)",
+      partial: {},
+    };
   }
 
-  const action = parsed_fields.action as ParsedCommand["action"];
-
-  if (!VALID_ACTIONS_LIST.includes(action as VALID_ACTIONS)) {
-    throw new InvalidActionError(`Unsupported action ${action}`);
-  }
-
-  const names_raw = parsed_fields.names;
-  if (action) {
-    if (
-      !Array.isArray(names_raw) ||
-      !names_raw.every((n) => typeof n === "string")
-    ) {
-      throw new InvalidStructureError("'names' must be an array of strings");
-    }
-
-    for (const name of names_raw as string[]) {
-      if (!name.toLowerCase().endsWith(".eth")) {
-        throw new InvalidNameError(`Invalid ENS name: ${name}`);
-      }
-    }
-  }
-
-  const names = (names_raw ?? []) as string[];
-
-  // get the base command names, needs clarification, clarification question, options - batch and filer
-  const base = {
-    needsClarification:
-      typeof parsed_fields.needsClarification === "boolean"
-        ? parsed_fields.needsClarification
-        : undefined,
-
-    clarificationQuestion:
-      typeof parsed_fields.clarificationQuestion === "string"
-        ? parsed_fields.clarificationQuestion
-        : undefined,
-  };
+  const action = fields.action as ParsedCommand["action"];
+  const names = Array.isArray(fields.names) ? (fields.names as string[]) : [];
 
   switch (action) {
     case "check": {
-      if (!names.length) {
-        throw new InvalidStructureError(
-          "'names' must not be empty for 'check'",
-        );
-      }
-
-      const options = validate_options(parsed_fields.options);
-
-      return {
-        action,
-        names,
-        ...base,
-        ...(options ? { options } : {}),
-      };
+      return validateCheckCommand(names);
     }
-
     case "register":
-    case "renew": {
-      if (!names.length) {
-        throw new InvalidStructureError(
-          `'names' must not be empty for '${action}'`,
-        );
-      }
+      return validateRegisterCommand(names, fields.duration, context);
 
-      const durationRaw = parsed_fields.duration;
+    case "renew":
+      return validateRenewCommand(names, fields.duration, context);
 
-      if (typeof durationRaw !== "number" || !Number.isInteger(durationRaw)) {
-        throw new InvalidDurationError("'duration' must be an integer (years)");
-      }
-      if (durationRaw < 1 || durationRaw > 10) {
-        throw new InvalidDurationError(
-          "'duration' must be between 1 and 10 years",
-        );
-      }
+    case "transfer":
+      return validateTransferCommand(names, fields.recipient);
 
-      const options = validate_options(parsed_fields.options);
-      const cmd = {
-        action,
-        names,
-        duration: durationRaw,
-        ...base,
-        ...(options ? { options } : {}),
-      };
-      if (action === "register") return cmd as RegisterCommand;
-      return cmd as RenewCommand;
-    }
+    case "set":
+      return validateSetCommand(names, fields.records);
 
-    case "transfer": {
-      if (!names.length) {
-        throw new InvalidStructureError(
-          "'names' must not be empty for 'transfer'",
-        );
-      }
+    case "portfolio":
+      return validatePortfolioCommand(fields.options);
 
-      const recipient = parsed_fields.recipient;
-      if (typeof recipient !== "string") {
-        throw new InvalidRecipientError(
-          "Missing or invalid 'recipient' for 'transfer'",
-        );
-      }
+    case "expiry":
+      return validateExpiryCommand(names);
 
-      if (!isAddress(recipient)) {
-        throw new InvalidRecipientError(
-          `Invalid Ethereum address: ${recipient}`,
-        );
-      }
+    case "history":
+      return validateHistoryCommand(names);
 
-      return {
-        action,
-        names,
-        recipient,
-        ...base,
-      };
-    }
+    case "remind":
+      return validateRemindCommand(names);
 
-    case "set": {
-      if (!names.length) {
-        throw new InvalidStructureError("'names' must not be empty for 'set'");
-      }
+    case "watch":
+      return validateWatchCommand(names);
 
-      const records = validate_records(parsed_fields.records);
-      return {
-        action,
-        names,
-        records,
-        ...base,
-      };
-    }
+    case "subdomain":
+      return validateSubdomainCommand(names);
 
-    case "portfolio": {
-      // You might allow empty names for "portfolio", but your schema suggests they’re needed.
-      if (!names.length) {
-        throw new InvalidStructureError(
-          "'names' must not be empty for 'portfolio'",
-        );
-      }
-
-      const options = validate_options(parsed_fields.options);
-      return {
-        action,
-        names,
-        ...base,
-        ...(options ? { options } : {}),
-      };
-    }
-
-    case "help": {
-      const command: HelpCommand = {
-        action: "help",
-        names: names ? names : [],
-        ...base,
-      };
-      return command;
-    }
+    case "help":
+      return { valid: true, command: { action: "help", names: [] } };
 
     // TODO: Add other actions
     default:
-      throw new InvalidActionError(
-        `Action not supported by validator: ${action}`,
-      );
+      return {
+        valid: false,
+        needsClarification: true,
+        question: `I don't support the action "${action}". Try: check, register, renew, transfer, set, portfolio, or help.`,
+        partial: {},
+      };
   }
 }
 
 // -- helpers --
-
-function validate_options(raw: unknown): CommandOptions | undefined {
-  if (raw === undefined) return undefined;
-  if (typeof raw !== "object" || raw === null) {
-    throw new InvalidStructureError("options' must be an object");
+function validateCheckCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "Which ENS name would you like me to check? (like alice.eth) 🔍",
+      partial: { action: "check", names: [] },
+    };
   }
 
-  const options_obj = raw as Record<string, unknown>;
-  const options: CommandOptions = {};
-
-  if (options_obj.batch !== undefined) {
-    if (typeof options_obj.batch !== "boolean") {
-      throw new InvalidStructureError("'options.batch' must be a boolean");
-    }
-    options.batch = options_obj.batch;
+  // Validate ENS format - must end with .eth
+  const invalidNames = names.filter((n) => !n.toLowerCase().endsWith(".eth"));
+  if (invalidNames.length > 0) {
+    const suggestions = invalidNames.map((n) => `${n}.eth`).join(", ");
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestions}? 😊`,
+      partial: { action: "check", names },
+    };
   }
 
-  if (options_obj.filter !== undefined) {
-    if (options_obj.filter !== "expiring" && options_obj.filter !== "all") {
-      throw new InvalidStructureError(
-        "'options.filter' must be 'expiring' or 'all'",
-      );
-    }
-    options.filter = options_obj.filter;
-  }
-
-  return options;
+  return {
+    valid: true,
+    command: { action: "check", names: names.map((n) => n.toLowerCase()) },
+  };
 }
 
-function validate_records(raw: unknown): EnsRecords {
-  if (typeof raw !== "object" || raw === null) {
-    throw new InvalidStructureError("options' must be an object");
+function validateRegisterCommand(
+  names: string[],
+  duration: unknown,
+  context?: { pendingCommand?: PendingCommand },
+): ValidationResult {
+  // Check names first
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "Which ENS name would you like to register? (like alice.eth) 📝",
+      partial: { action: "register", names: [] },
+    };
   }
 
-  const records_obj = raw as Record<string, unknown>;
-  let records: EnsRecords = {};
-  const keys: (keyof EnsRecords)[] = [
+  // Validate ENS format
+  const invalidNames = names.filter((n) => !n.toLowerCase().endsWith(".eth"));
+  if (invalidNames.length > 0) {
+    const suggestions = invalidNames.map((n) => `${n}.eth`).join(", ");
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestions}? 😊`,
+      partial: { action: "register", names },
+    };
+  }
+
+  // Check duration
+  if (duration === undefined || duration === null) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `For how many years would you like to register ${names.join(", ")}? (1-10 years) ⏰`,
+      partial: { action: "register", names },
+    };
+  }
+
+  // Validate duration is a number
+  const durationNum = Number(duration);
+  if (isNaN(durationNum) || !Number.isInteger(durationNum)) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Please give me a number of years (like 1, 2, or 3) 🔢",
+      partial: { action: "register", names },
+    };
+  }
+
+  // Validate duration range
+  if (durationNum < 1 || durationNum > 10) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "I can register names for 1 to 10 years. How many years would you like? 📅",
+      partial: { action: "register", names, duration: durationNum },
+    };
+  }
+
+  // All valid!
+  const isBatch = names.length > 1;
+  return {
+    valid: true,
+    command: {
+      action: "register",
+      names: names.map((n) => n.toLowerCase()),
+      duration: durationNum,
+      options: isBatch ? { batch: true } : undefined,
+    },
+  };
+}
+
+function validateRenewCommand(
+  names: string[],
+  duration: unknown,
+  context?: { pendingCommand?: PendingCommand },
+): ValidationResult {
+  // Check names
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "Which names would you like to renew? (or say 'all my names') 🔄",
+      partial: { action: "renew", names: [] },
+    };
+  }
+
+  // Check duration
+  if (duration === undefined || duration === null) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `For how many years would you like to renew ${names.join(", ")}? (1-10 years) ⏰`,
+      partial: { action: "renew", names },
+    };
+  }
+
+  const durationNum = Number(duration);
+  if (
+    isNaN(durationNum) ||
+    !Number.isInteger(durationNum) ||
+    durationNum < 1 ||
+    durationNum > 10
+  ) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Please tell me how many years (1 to 10) 📅",
+      partial: { action: "renew", names },
+    };
+  }
+
+  const isBatch = names.length > 1;
+  return {
+    valid: true,
+    command: {
+      action: "renew",
+      names: names.map((n) => n.toLowerCase()),
+      duration: durationNum,
+      options: isBatch ? { batch: true } : undefined,
+    },
+  };
+}
+
+function validateTransferCommand(
+  names: string[],
+  recipient: unknown,
+): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like to transfer? 📤",
+      partial: { action: "transfer", names: [] },
+    };
+  }
+
+  if (!recipient || typeof recipient !== "string") {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `Where should I send ${names[0]}? Give me an Ethereum address (starts with 0x) 📬`,
+      partial: { action: "transfer", names },
+    };
+  }
+
+  if (!isAddress(recipient)) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `"${recipient}" doesn't look like an Ethereum address. It should start with 0x and be 42 characters long! 🔍`,
+      partial: { action: "transfer", names, recipient },
+    };
+  }
+
+  return {
+    valid: true,
+    command: {
+      action: "transfer",
+      names: names.map((n) => n.toLowerCase()),
+      recipient,
+    },
+  };
+}
+
+function validateSetCommand(
+  names: string[],
+  records: unknown,
+): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like to set records for? ⚙️",
+      partial: { action: "set", names: [] },
+    };
+  }
+
+  if (!records || typeof records !== "object") {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `What would you like to set for ${names[0]}? You can set: address, twitter, github, email, url, avatar, or description 📋`,
+      partial: { action: "set", names },
+    };
+  }
+
+  const recordsObj = records as Record<string, unknown>;
+  const validKeys: (keyof EnsRecords)[] = [
     "address",
     "twitter",
     "github",
@@ -239,22 +328,134 @@ function validate_records(raw: unknown): EnsRecords {
     "description",
   ];
 
-  for (const key of keys) {
-    const value = records_obj[key];
+  // Check if at least one valid key exists
+  const hasValidKey = validKeys.some((key) => recordsObj[key] !== undefined);
+  if (!hasValidKey) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `I didn't find any records to set. You can set: ${validKeys.join(", ")} 📝`,
+      partial: { action: "set", names, records: {} },
+    };
+  }
 
+  // Build clean records object with only valid string values
+  const cleanRecords: EnsRecords = {};
+  for (const key of validKeys) {
+    const value = recordsObj[key];
     if (value !== undefined) {
       if (typeof value !== "string") {
-        throw new InvalidRecordsError(`'records.${key}' must be a string`);
+        return {
+          valid: false,
+          needsClarification: true,
+          question: `The value for "${key}" should be text, not a ${typeof value} 📝`,
+          partial: { action: "set", names, records: recordsObj },
+        };
       }
-      records[key] = value;
+      cleanRecords[key] = value;
     }
   }
 
-  if (Object.keys(records).length === 0) {
-    throw new InvalidRecordsError(
-      "'records' must contain at least one field for 'set'",
-    );
+  return {
+    valid: true,
+    command: {
+      action: "set",
+      names: names.map((n) => n.toLowerCase()),
+      records: cleanRecords,
+    },
+  };
+}
+
+function validatePortfolioCommand(options: unknown): ValidationResult {
+  const opts = typeof options === "object" && options !== null ? options : {};
+
+  return {
+    valid: true,
+    command: {
+      action: "portfolio",
+      names: [],
+      options: opts as { batch?: boolean; filter?: "expiring" | "all" },
+    },
+  };
+}
+
+function validateExpiryCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like to check the expiry for? ⏰",
+      partial: { action: "expiry", names: [] },
+    };
   }
 
-  return records;
+  return {
+    valid: true,
+    command: { action: "expiry", names: names.map((n) => n.toLowerCase()) },
+  };
+}
+
+function validateHistoryCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like to see the history for? 📜",
+      partial: { action: "history", names: [] },
+    };
+  }
+
+  return {
+    valid: true,
+    command: { action: "history", names: names.map((n) => n.toLowerCase()) },
+  };
+}
+
+function validateRemindCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like me to remind you about? 🔔",
+      partial: { action: "remind", names: [] },
+    };
+  }
+
+  return {
+    valid: true,
+    command: { action: "remind", names: names.map((n) => n.toLowerCase()) },
+  };
+}
+
+function validateWatchCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "Which ENS name would you like me to watch for availability? 👀",
+      partial: { action: "watch", names: [] },
+    };
+  }
+
+  return {
+    valid: true,
+    command: { action: "watch", names: names.map((n) => n.toLowerCase()) },
+  };
+}
+
+function validateSubdomainCommand(names: string[]): ValidationResult {
+  if (!names.length) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: "Which ENS name would you like to create a subdomain for? 🏷️",
+      partial: { action: "subdomain", names: [] },
+    };
+  }
+
+  return {
+    valid: true,
+    command: { action: "subdomain", names: names.map((n) => n.toLowerCase()) },
+  };
 }

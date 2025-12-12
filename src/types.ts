@@ -16,6 +16,46 @@ export interface Session {
   messages: Message[];
 }
 
+export interface PendingCommand {
+  partialCommand: Partial<ParsedCommand>;
+  waitingFor: "duration" | "names" | "recipient" | "records" | "confirmation";
+  attemptCount: number;
+  createdAt: number;
+}
+
+export interface ConversationState {
+  threadId: string;
+  userId: string;
+  pendingCommand?: PendingCommand;
+  lastBotQuestion?: string;
+  userPreferences?: {
+    defaultDuration?: number;
+    autoConfirm?: boolean;
+  };
+}
+
+export type ValidationResult =
+  | { valid: true; command: ParsedCommand }
+  | {
+      valid: false;
+      needsClarification: true;
+      question: string;
+      partial: Partial<ParsedCommand>;
+    };
+
+export type CocoParserResult =
+  | { success: true; parsed: unknown }
+  | {
+      success: false;
+      errorType: "api_error" | "invalid_json";
+      userMessage: string;
+      rawResponse?: string;
+    };
+
+// ============================================
+// Valid Actions
+// ============================================
+
 export const VALID_ACTIONS_LIST = [
   "check",
   "register",
@@ -33,6 +73,10 @@ export const VALID_ACTIONS_LIST = [
 
 export type VALID_ACTIONS = (typeof VALID_ACTIONS_LIST)[number];
 
+// ============================================
+// ENS Records
+// ============================================
+
 export interface EnsRecords {
   address?: string;
   twitter?: string;
@@ -43,6 +87,10 @@ export interface EnsRecords {
   description?: string;
 }
 
+// ============================================
+// Base Command Types
+// ============================================
+
 export type BaseCommand = {
   needsClarification?: boolean;
   clarificationQuestion?: string;
@@ -50,72 +98,53 @@ export type BaseCommand = {
 
 export type CommandOptions = {
   batch?: boolean;
-  // used for portfolio/renew
   filter?: "expiring" | "all";
 };
 
-/**
- * action: "check"
- */
+// ============================================
+// Command Definitions
+// ============================================
+
 export interface CheckCommand extends BaseCommand {
   action: "check";
   names: string[];
 }
 
-/**
- * action: "register"
- * Years (1-10)
- */
 export interface RegisterCommand extends BaseCommand {
   action: "register";
   names: string[];
-  duration: number; // 1–10
-  options: CommandOptions;
+  duration: number;
+  options?: CommandOptions; // Made optional to fix type mismatch
 }
 
-/**
- * action: "renew"
- * Years (1-10)
- */
 export interface RenewCommand extends BaseCommand {
   action: "renew";
   names: string[];
-  duration: number; // 1–10
-  options: CommandOptions;
+  duration: number;
+  options?: CommandOptions; // Made optional to fix type mismatch
 }
 
-/**
- * action: "transfer"
- * Ethereum address recipient
- */
 export interface TransferCommand extends BaseCommand {
   action: "transfer";
   names: string[];
-  recipient: string; // Ethereum address
+  recipient: string;
 }
 
-/**
- * action: "set"
- * Set various records for the name(s)
- */
 export interface SetCommand extends BaseCommand {
   action: "set";
   names: string[];
   records: EnsRecords;
 }
 
-/**
- * action: "portfolio"
- */
 export interface PortfolioCommand extends BaseCommand {
   action: "portfolio";
   names: string[];
   options?: CommandOptions;
 }
 
-// TODO: Figure out implementation
 export interface SubdomainCommand extends BaseCommand {
   action: "subdomain";
+  names: string[];
 }
 
 export interface ExpiryCommand extends BaseCommand {
@@ -140,8 +169,9 @@ export interface WatchCommand extends BaseCommand {
 
 export interface HelpCommand extends BaseCommand {
   action: "help";
-  names?: string[];
+  names: string[];
 }
+
 export type ParsedCommand =
   | CheckCommand
   | RegisterCommand
@@ -155,6 +185,10 @@ export type ParsedCommand =
   | RemindCommand
   | WatchCommand
   | HelpCommand;
+
+// ============================================
+// Event Types (from Towns Bot SDK)
+// ============================================
 
 export type EventType = BasePayload & {
   command:

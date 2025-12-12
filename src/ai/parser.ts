@@ -9,7 +9,7 @@ import {
 } from "./prompts";
 
 import { validate_parse } from "./validators";
-import { ParsedCommand } from "../types";
+import { ParsedCommand, CocoParserResult } from "../types";
 
 import { Message } from "../types";
 
@@ -20,7 +20,7 @@ const anthropic = new Anthropic({
 export async function coco_parser(
   user_message: string,
   recent_messages: Message[] = [],
-): Promise<ParsedCommand> {
+): Promise<CocoParserResult> {
   const context = recent_messages
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
@@ -31,6 +31,8 @@ export async function coco_parser(
     context: context || "No recent context",
   });
 
+  let responseText: string;
+
   try {
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
@@ -38,30 +40,76 @@ export async function coco_parser(
       messages: [{ role: "user", content: command_parser }],
     });
 
-    const text =
+    responseText =
       response.content[0].type === "text" ? response.content[0].text : "";
-
-    let json_response = JSON.parse(text);
-
-    let validated_response: ParsedCommand = validate_parse(json_response);
-
-    // Validate parsed command
-    if (!validated_response.action) {
-      throw new Error("No action specified in parsed command");
-    }
-
-    return validated_response;
   } catch (error) {
-    console.error("Error parsing command:", error);
+    // Assume API error - network issue, rate limit, auth failure, etc.
+    console.error("Anthropic API error:", error);
 
-    // Return clarification needed
     return {
-      action: "help",
-      needsClarification: true,
-      clarificationQuestion:
-        "I didn't quite understand that. Could you rephrase? Try '/help' to see available commands.",
+      success: false,
+      errorType: "api_error",
+      userMessage:
+        "Oops! My brain got a little confused. Can you say that again? 🤔",
     };
   }
+
+  // Handle empty response
+  if (!responseText || responseText.trim() === "") {
+    console.error("Empty response from Anthropic");
+
+    return {
+      success: false,
+      errorType: "api_error",
+      userMessage:
+        "Oops! My brain got a little confused. Can you say that again? 🤔",
+    };
+  }
+
+  const cleanedText = stripMarkdownCodeFences(responseText);
+
+  try {
+    const parsed = JSON.parse(cleanedText);
+
+    return {
+      success: true,
+      parsed,
+    };
+  } catch (error) {
+    // JSON parse failed - Claude returned non-JSON text
+    console.error("JSON parse error:", error);
+    console.error("Raw response:", responseText);
+
+    return {
+      success: false,
+      errorType: "invalid_json",
+      userMessage:
+        "Hmm, I got a bit mixed up trying to understand that. Could you try saying it a different way? 💭",
+      rawResponse: responseText,
+    };
+  }
+}
+
+/**
+ * Strips markdown code fences from LLM response.
+ * Claude sometimes wraps JSON in ```json ... ``` blocks.
+ */
+function stripMarkdownCodeFences(text: string): string {
+  // Remove ```json or ``` at start and ``` at end
+  let cleaned = text.trim();
+
+  // Handle ```json\n...\n``` format
+  if (cleaned.startsWith("```json")) {
+    cleaned = cleaned.slice(7);
+  } else if (cleaned.startsWith("```")) {
+    cleaned = cleaned.slice(3);
+  }
+
+  if (cleaned.endsWith("```")) {
+    cleaned = cleaned.slice(0, -3);
+  }
+
+  return cleaned.trim();
 }
 
 // Clarification Prompt
