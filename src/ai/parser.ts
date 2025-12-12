@@ -7,11 +7,11 @@ import {
   ERROR_EXPLANATION_PROMPT,
   fill_prompt,
 } from "./prompts";
-
+import { getKnowledgeAnswer, GENERAL_QUESTION_PROMPT } from "./knowledge";
 import { validate_parse } from "./validators";
 import { ParsedCommand, CocoParserResult } from "../types";
 
-import { Message } from "../types";
+import { Message, QuestionCommand, QUESTION_TYPES } from "../types";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -90,6 +90,39 @@ export async function coco_parser(
   }
 }
 
+export async function handleQuestionCommand(
+  command: QuestionCommand,
+): Promise<string> {
+  // Try to get a pre-written answer
+  const knowledgeAnswer = getKnowledgeAnswer(command.questionType);
+
+  if (knowledgeAnswer) {
+    return knowledgeAnswer;
+  }
+
+  // For "general" questions, use Claude to generate an answer
+  try {
+    const prompt = fill_prompt(GENERAL_QUESTION_PROMPT, {
+      question: command.questionText,
+    });
+
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-5",
+      max_tokens: 500,
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    const answer =
+      response.content[0].type === "text"
+        ? response.content[0].text
+        : "I'm not sure how to answer that. Could you try asking in a different way?";
+
+    return answer;
+  } catch (error) {
+    console.error("Error generating answer:", error);
+    return "Hmm, I had trouble answering that. Could you try asking in a different way? 🤔";
+  }
+}
 /**
  * Strips markdown code fences from LLM response.
  * Claude sometimes wraps JSON in ```json ... ``` blocks.

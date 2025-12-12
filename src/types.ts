@@ -69,9 +69,20 @@ export const VALID_ACTIONS_LIST = [
   "remind",
   "watch",
   "help",
+  "question",
 ] as const;
 
 export type VALID_ACTIONS = (typeof VALID_ACTIONS_LIST)[number];
+
+export const QUESTION_TYPES = [
+  "pricing",
+  "duration",
+  "records",
+  "process",
+  "general",
+] as const;
+
+export type QuestionType = (typeof QUESTION_TYPES)[number];
 
 // ============================================
 // ENS Records
@@ -172,6 +183,12 @@ export interface HelpCommand extends BaseCommand {
   names: string[];
 }
 
+export interface QuestionCommand extends BaseCommand {
+  action: "question";
+  questionType: QuestionType;
+  questionText: string;
+}
+
 export type ParsedCommand =
   | CheckCommand
   | RegisterCommand
@@ -184,7 +201,8 @@ export type ParsedCommand =
   | HistoryCommand
   | RemindCommand
   | WatchCommand
-  | HelpCommand;
+  | HelpCommand
+  | QuestionCommand;
 
 // ============================================
 // Event Types (from Towns Bot SDK)

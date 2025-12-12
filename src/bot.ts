@@ -13,6 +13,7 @@ export const bot = await makeTownsBot(
 );
 
 const cocoCommands = [
+  "help",
   "check",
   "register",
   "renew",
@@ -31,26 +32,6 @@ for (const command of cocoCommands) {
     await handleSlashCommand(handler, event);
   });
 }
-// Help command - could use unified handler or keep simple
-bot.onSlashCommand("help", async (handler, { channelId }) => {
-  await handler.sendMessage(
-    channelId,
-    "👋 **Hi! I'm Coco, your ENS assistant on Towns.**\n\n" +
-      "**You can talk to me naturally!**\n" +
-      '_Try: "check if alice.eth is available" or "register bob.eth for 2 years"_' +
-      "**But you can also use slash commands, like:**\n\n" +
-      "🔍 `/check alice.eth` - Check if a name is available\n" +
-      "📝 `/register alice.eth 3` - Register a name for 3 years\n" +
-      "🔄 `/renew alice.eth 2` - Renew a name for 2 years\n" +
-      "📤 `/transfer alice.eth 0x123...` - Transfer a name\n" +
-      "⚙️ `/set alice.eth` - Set records (twitter, address, etc.)\n" +
-      "📂 `/portfolio` - View your ENS names\n" +
-      "⏰ `/expiry alice.eth` - Check when a name expires\n" +
-      "📜 `/history alice.eth` - See registration history\n" +
-      "🔔 `/remind alice.eth` - Set renewal reminder\n" +
-      "👀 `/watch alice.eth` - Watch for availability\n\n",
-  );
-});
 
 bot.onMessage(async (handler, event) => {
   // if message is from bot, ignore

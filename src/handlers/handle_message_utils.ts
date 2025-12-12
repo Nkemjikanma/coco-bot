@@ -163,3 +163,29 @@ export function extractMissingInfo(
 
   return updated;
 }
+
+/**
+ * Returns the help message showing all available commands
+ */
+export function getHelpMessage(): string {
+  return `👋 **Hi! I'm Coco, your ENS assistant.**
+
+**Talk to me naturally:**
+_"Check if alice.eth is available"_
+_"Register bob.eth for 2 years"_
+_"How much does a 3-letter name cost?"_
+
+**Or use commands:**
+🔍 \`/check alice.eth\` - Check availability
+📝 \`/register alice.eth 3\` - Register for 3 years
+🔄 \`/renew alice.eth 2\` - Renew for 2 years
+📤 \`/transfer alice.eth 0x...\` - Transfer to address
+⚙️ \`/set alice.eth\` - Set records
+📂 \`/portfolio\` - View your names
+⏰ \`/expiry alice.eth\` - Check expiration
+📜 \`/history alice.eth\` - Registration history
+🔔 \`/remind alice.eth\` - Set reminder
+👀 \`/watch alice.eth\` - Watch availability
+
+**Ask me anything about ENS!** 💡`;
+}

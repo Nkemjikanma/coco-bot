@@ -11,14 +11,9 @@ import {
   EnsRecords,
   PendingCommand,
   ValidationResult,
+  QuestionType,
+  QUESTION_TYPES,
 } from "../types";
-
-class InvalidStructureError extends Error {}
-class InvalidActionError extends Error {}
-class InvalidNameError extends Error {}
-class InvalidDurationError extends Error {}
-class InvalidRecipientError extends Error {}
-class InvalidRecordsError extends Error {}
 
 export function validate_parse(
   parsed: unknown,
@@ -83,6 +78,9 @@ export function validate_parse(
 
     case "subdomain":
       return validateSubdomainCommand(names);
+
+    case "question":
+      return validateQuestionCommand(fields.questionType, fields.questionText);
 
     case "help":
       return { valid: true, command: { action: "help", names: [] } };
@@ -457,5 +455,32 @@ function validateSubdomainCommand(names: string[]): ValidationResult {
   return {
     valid: true,
     command: { action: "subdomain", names: names.map((n) => n.toLowerCase()) },
+  };
+}
+
+function validateQuestionCommand(
+  questionType: unknown,
+  questionText: unknown,
+): ValidationResult {
+  // Default to "general" if no type specified
+  const type =
+    typeof questionType === "string" &&
+    QUESTION_TYPES.includes(questionType as QuestionType)
+      ? (questionType as QuestionType)
+      : "general";
+
+  // Use the original question text, or a default
+  const text =
+    typeof questionText === "string" && questionText.trim()
+      ? questionText.trim()
+      : "General question about ENS";
+
+  return {
+    valid: true,
+    command: {
+      action: "question",
+      questionType: type,
+      questionText: text,
+    },
   };
 }

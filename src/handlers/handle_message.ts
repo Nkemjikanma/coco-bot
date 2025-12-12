@@ -12,15 +12,16 @@ import {
   EventType,
   OnMessageEventType,
   ConversationState,
-  ParsedCommand,
-  PendingCommand,
-  ValidationResult,
+  QuestionCommand,
 } from "../types";
+
+import { handleQuestionCommand } from "../ai";
 
 import {
   formatRustPayload,
   determineWaitingFor,
   extractMissingInfo,
+  getHelpMessage,
 } from "./handle_message_utils";
 
 type UnifiedEvent = {
@@ -168,7 +169,24 @@ export async function handleMessage(
 
     // Valid command! Clear any pending state and show Rust payload
     await clearPendingCommand(threadId);
-    const response = formatRustPayload(validation.command);
+
+    const command = validation.command;
+
+    // Questions - answer directly, don't send to Rust
+    if (command.action === "question") {
+      const answer = await handleQuestionCommand(command as QuestionCommand);
+      await sendBotMessage(handler, channelId, threadId, userId, answer);
+      return;
+    }
+
+    // Help - show help message
+    if (command.action === "help") {
+      const helpMessage = getHelpMessage();
+      await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
+      return;
+    }
+
+    const response = formatRustPayload(command);
     await sendBotMessage(handler, channelId, threadId, userId, response);
   } catch (error) {
     console.error("Error in message handler:", error);
