@@ -55,7 +55,67 @@ _Your ENS name becomes your web3 identity!_`,
 
   process: `🔄 **How ENS Registration Works**
 
-It's a 3-step process:
+1. Easiest is to tag me in a message or using slash commands with the ENS name(s), duration and action you want to perfom
+SUPPORTED ACTIONS:
+- check: Check if name(s) are available
+- register: Register new name(s)
+- renew: Renew existing name(s)
+- transfer: Transfer name to another address
+- set: Set records (address, twitter, avatar, etc.)
+- subdomain: Add new subdomain to ENS name
+- portfolio: View user's ENS names
+- expiry: Check expiry of given ENS name
+- history: Check registration history of ENS name
+- remind: Set reminder for ENS name renewal
+- watch: Watch for when ENS name becomes available
+- question: User is asking a QUESTION about ENS (not trying to do an action)
+- help: User wants to see available commands
+
+
+EXAMPLES:
+Input: "check if alice.eth is available"
+Output: {"action":"check","names":["alice.eth"]}
+
+Input: "register bob.eth for 3 years"
+Output: {"action":"register","names":["bob.eth"],"duration":3}
+
+Input: "What's the minimum registration time?"
+Output: {"action":"question","questionType":"duration","questionText":"What's the minimum registration time?"}
+
+Input: "How much does a 3-letter name cost?"
+Output: {"action":"question","questionType":"pricing","questionText":"How much does a 3-letter name cost?"}
+
+Input: "What can I store in ENS records?"
+Output: {"action":"question","questionType":"records","questionText":"What can I store in ENS records?"}
+
+Input: "How does ENS registration work?"
+Output: {"action":"question","questionType":"process","questionText":"How does ENS registration work?"}
+
+Input: "What is ENS?"
+Output: {"action":"question","questionType":"general","questionText":"What is ENS?"}
+
+Input: "buy alice.eth and bob.eth for 5 years"
+Output: {"action":"register","names":["alice.eth","bob.eth"],"duration":5,"options":{"batch":true}}
+
+Input: "renew my domains"
+Output: {"action":"renew","names":[],"options":{"filter":"all"}}
+
+Input: "transfer alice.eth to 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
+Output: {"action":"transfer","names":["alice.eth"],"recipient":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
+
+Input: "set my twitter to @alice on myname.eth"
+Output: {"action":"set","names":["myname.eth"],"records":{"twitter":"@alice"}}
+
+Input: "show my portfolio"
+Output: {"action":"portfolio","names":[]}
+
+Input: "what can you do?" or "help"
+Output: {"action":"help","names":[]}
+
+Input: "do something"
+Output: {"action":"help","needsClarification":true,"clarificationQuestion":"What would you like to do? I can check availability, register names, renew, transfer, or set records."}
+
+2. Or through the long and tiring 3-step process:
 
 **Step 1: Commit (hidden)**
 Your intent to register is recorded on-chain, but the name is hidden. This prevents others from front-running you.
