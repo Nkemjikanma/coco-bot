@@ -10,7 +10,7 @@ export async function saveConversationState(
 ): Promise<void> {
   const key = CONVERSATION_PREFIX + state.threadId;
 
-  await client.hset(key, {
+  await client.hSet(key, {
     threadId: state.threadId,
     userId: state.userId,
     pendingCommand: state.pendingCommand
