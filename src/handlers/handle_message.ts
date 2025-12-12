@@ -3,16 +3,20 @@ import { coco_parser, validate_parse } from "../ai";
 import {
   appendMessageToSession,
   getRecentMessages,
-  getConversationState,
-  setPendingCommand,
-  clearPendingCommand,
+  getUserState,
+  setUserPendingCommand,
+  clearUserPendingCommand,
+  hasPendingCommandElsewhere,
+  movePendingCommandToThread,
+  updateUserLocation,
+  describePendingCommand,
 } from "../db";
 
 import {
   EventType,
   OnMessageEventType,
-  ConversationState,
   QuestionCommand,
+  PendingCommand,
 } from "../types";
 
 import { handleQuestionCommand } from "../ai";
@@ -22,6 +26,7 @@ import {
   determineWaitingFor,
   extractMissingInfo,
   getHelpMessage,
+  getWaitingForMessage,
 } from "./handle_message_utils";
 
 type UnifiedEvent = {
@@ -110,19 +115,74 @@ export async function handleMessage(
   });
 
   try {
-    // check if user is responding to pending command
-    const conversationState = await getConversationState(threadId);
+    // check if user has another conversation going on elsewhere
+    const elsewhereCheck = await hasPendingCommandElsewhere(userId, threadId);
 
-    if (conversationState?.pendingCommand) {
+    if (elsewhereCheck.pendingThreadId && elsewhereCheck.pendingCommand) {
+      // Check if user wants to continue here or cancel
+      const lowerContent = content.toLowerCase();
+
+      if (
+        lowerContent.includes("continue here") ||
+        lowerContent.includes("yes")
+      ) {
+        // Move pending command to this thread
+        await movePendingCommandToThread(userId, threadId, channelId);
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Great! Continuing here. " +
+            getWaitingForMessage(elsewhereCheck.pendingCommand),
+        );
+        return;
+      } else if (
+        lowerContent.includes("start fresh") ||
+        lowerContent.includes("cancel") ||
+        lowerContent.includes("no")
+      ) {
+        // Clear the old pending command
+        await clearUserPendingCommand(userId);
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "No problem! Starting fresh. What would you like to do? 🆕",
+        );
+        return;
+      } else {
+        // Ask user what they want to do
+        const description = describePendingCommand(
+          elsewhereCheck.pendingCommand,
+        );
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          `👋 Hey! I noticed you started something in another chat:\n\n${description}\n\n` +
+            `Would you like to:\n` +
+            `• **"Continue here"** - Pick up where you left off\n` +
+            `• **"Start fresh"** - Cancel that and start something new`,
+        );
+        return;
+      }
+    }
+
+    // Step 2: Check if user is responding to a pending command in THIS thread
+    const userState = await getUserState(userId);
+
+    if (userState?.pendingCommand && userState.activeThreadId === threadId) {
       await handlePendingCommandResponse(
         handler,
         channelId,
         threadId,
         userId,
         content,
-        conversationState,
+        userState.pendingCommand,
       );
-
       return;
     }
 
@@ -145,14 +205,15 @@ export async function handleMessage(
     // Validate the parsed command
     const validation = validate_parse(parserResult.parsed, {
       recentMessages: recentMessages.map((m) => m.content),
-      pendingCommand: conversationState?.pendingCommand,
+      pendingCommand: userState?.pendingCommand,
     });
 
     if (!validation.valid) {
-      // if command is not valid - store pending command and ask clarification
-      await setPendingCommand(
-        threadId,
+      // Need more info - store pending command with user state
+      await setUserPendingCommand(
         userId,
+        threadId,
+        channelId,
         validation.partial,
         determineWaitingFor(validation.partial),
       );
@@ -168,7 +229,8 @@ export async function handleMessage(
     }
 
     // Valid command! Clear any pending state and show Rust payload
-    await clearPendingCommand(threadId);
+    await clearUserPendingCommand(userId);
+    await updateUserLocation(userId, threadId, channelId);
 
     const command = validation.command;
 
@@ -202,10 +264,8 @@ async function handlePendingCommandResponse(
   threadId: string,
   userId: string,
   content: string,
-  conversationState: ConversationState,
+  pending: PendingCommand,
 ): Promise<void> {
-  const pending = conversationState.pendingCommand!;
-
   // Check for change of mind
   const lowerContent = content.toLowerCase();
   if (
@@ -214,7 +274,7 @@ async function handlePendingCommandResponse(
     lowerContent.includes("never mind") ||
     lowerContent.includes("stop")
   ) {
-    await clearPendingCommand(threadId);
+    await clearUserPendingCommand(userId);
     await sendBotMessage(
       handler,
       channelId,
@@ -235,9 +295,9 @@ async function handlePendingCommandResponse(
   const validation = validate_parse(updated);
 
   if (!validation.valid) {
-    // attempts at clarification is much
+    // Still missing info or invalid
     if (pending.attemptCount >= 3) {
-      await clearPendingCommand(threadId);
+      await clearUserPendingCommand(userId);
       await sendBotMessage(
         handler,
         channelId,
@@ -245,14 +305,14 @@ async function handlePendingCommandResponse(
         userId,
         "I'm having a bit of trouble understanding. Let's start fresh! What would you like to do? 🔄",
       );
-
       return;
     }
 
-    // update pending command
-    await setPendingCommand(
-      threadId,
+    // Update pending command with incremented attempt count
+    await setUserPendingCommand(
       userId,
+      threadId,
+      channelId,
       validation.partial,
       determineWaitingFor(validation.partial),
     );
@@ -267,8 +327,24 @@ async function handlePendingCommandResponse(
     return;
   }
 
-  // valid command! clear pending and show rust payload
-  await clearPendingCommand(threadId);
+  // Valid command! Clear pending and show Rust payload
+  await clearUserPendingCommand(userId);
+  await updateUserLocation(userId, threadId, channelId);
+
+  // Handle question and help commands
+  if (validation.command.action === "question") {
+    const answer = await handleQuestionCommand(
+      validation.command as QuestionCommand,
+    );
+    await sendBotMessage(handler, channelId, threadId, userId, answer);
+    return;
+  }
+
+  if (validation.command.action === "help") {
+    const helpMessage = getHelpMessage();
+    await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
+    return;
+  }
 
   const response = formatRustPayload(validation.command);
   await sendBotMessage(handler, channelId, threadId, userId, response);

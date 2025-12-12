@@ -6,13 +6,17 @@ import {
   sessionExists,
 } from "./sessionStore";
 
-import {
-  getConversationState,
-  saveConversationState,
-  setPendingCommand,
-  clearPendingCommand,
-} from "./conversationStore";
 import { initRedis } from "./redisClient";
+
+import {
+  getUserState,
+  setUserPendingCommand,
+  clearUserPendingCommand,
+  hasPendingCommandElsewhere,
+  movePendingCommandToThread,
+  updateUserLocation,
+  describePendingCommand,
+} from "./userStateStore";
 
 export {
   createSession,
@@ -21,8 +25,11 @@ export {
   appendMessageToSession,
   initRedis,
   sessionExists,
-  getConversationState,
-  saveConversationState,
-  setPendingCommand,
-  clearPendingCommand,
+  getUserState,
+  setUserPendingCommand,
+  clearUserPendingCommand,
+  hasPendingCommandElsewhere,
+  movePendingCommandToThread,
+  updateUserLocation,
+  describePendingCommand,
 };

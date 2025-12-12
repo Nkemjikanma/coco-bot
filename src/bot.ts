@@ -2,7 +2,6 @@ import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
 import { handleOnMessage, handleSlashCommand } from "./handlers";
 import { sessionExists } from "./db";
-import { containsAllKeywords } from "./utils";
 
 export const bot = await makeTownsBot(
   process.env.APP_PRIVATE_DATA!,
