@@ -50,7 +50,7 @@ function normalizeEvent(
       userId: slashEvent.userId,
       eventId: slashEvent.eventId,
       threadId: slashEvent.threadId,
-      content: slashEvent.args.join(" "),
+      content: slashEvent.command + " " + slashEvent.args.join(" "),
       source,
     };
   } else {

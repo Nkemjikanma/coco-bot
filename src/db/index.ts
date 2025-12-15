@@ -18,6 +18,15 @@ import {
   describePendingCommand,
 } from "./userStateStore";
 
+import {
+  getPendingInteraction,
+  deletePendingInteraction,
+  validateInteraction,
+  PendingInteraction,
+  TransactionResponse,
+  FormResponse,
+} from "./interactionsStore";
+
 export {
   createSession,
   updateSession,
@@ -32,4 +41,10 @@ export {
   movePendingCommandToThread,
   updateUserLocation,
   describePendingCommand,
+  getPendingInteraction,
+  deletePendingInteraction,
+  validateInteraction,
+  type PendingInteraction,
+  type TransactionResponse,
+  type FormResponse,
 };
