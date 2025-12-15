@@ -62,7 +62,7 @@ export function validate_parse(
       return validateSetCommand(names, fields.records);
 
     case "portfolio":
-      return validatePortfolioCommand(fields.options);
+      return validatePortfolioCommand(fields.address, fields.options);
 
     case "expiry":
       return validateExpiryCommand(names);
@@ -364,15 +364,28 @@ function validateSetCommand(
   };
 }
 
-function validatePortfolioCommand(options: unknown): ValidationResult {
+function validatePortfolioCommand(
+  address: string,
+  options: unknown,
+): ValidationResult {
   const opts = typeof options === "object" && options !== null ? options : {};
+
+  if (!isAddress(address)) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question:
+        "The address provided is not a valid wallet address. Let's try again",
+      partial: { action: "portfolio", address },
+    };
+  }
 
   return {
     valid: true,
     command: {
       action: "portfolio",
-      names: [],
-      options: opts as { batch?: boolean; filter?: "expiring" | "all" },
+      address: address,
+      // options: opts as { batch?: boolean; filter?: "expiring" | "all" },
     },
   };
 }

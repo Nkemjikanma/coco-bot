@@ -1,6 +1,17 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { coco_parser, validate_parse } from "../ai";
 import {
+  ApiResponse,
+  checkNames,
+  NameCheckData,
+  getExpiry,
+  ExpiryData,
+  getHistory,
+  HistoryData,
+  getENSPortfolio,
+  PortfolioData,
+} from "../api";
+import {
   appendMessageToSession,
   getRecentMessages,
   getUserState,
@@ -245,6 +256,157 @@ export async function handleMessage(
     if (command.action === "help") {
       const helpMessage = getHelpMessage();
       await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
+      return;
+    }
+
+    if (command.action === "check") {
+      const checkResult: ApiResponse<NameCheckData> = await checkNames(
+        command.names,
+      );
+
+      if (!checkResult.success) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Sorry, I couldn't check that name right now.",
+        );
+
+        return;
+      }
+
+      // TODO: Format check message for bot
+      const checkData = {
+        message: "Here is the result of your check",
+        names: checkResult.data.values.map((n) => {
+          return { ...n };
+        }),
+      };
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        JSON.stringify(checkData),
+      );
+
+      return;
+    }
+
+    if (command.action === "expiry") {
+      const expiryResult: ApiResponse<ExpiryData> = await getExpiry(
+        command.names,
+      );
+
+      if (!expiryResult.success) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Sorry, I couldn't check expiry infor on that name right now.",
+        );
+
+        return;
+      }
+      const expiryData = {
+        message: "Here is the result of your check",
+        names: expiryResult.data.values.map((n) => {
+          return { ...n };
+        }),
+      };
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        JSON.stringify(expiryData),
+      );
+
+      return;
+    }
+
+    if (command.action === "history") {
+      if (command.names.length > 1) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          `I'll get history for just the first name "${command.names[0]}" because the data returned for history is usually long`,
+        );
+      }
+
+      const historyResult: ApiResponse<HistoryData> = await getHistory(
+        command.names[0],
+      );
+
+      if (!historyResult.success) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Sorry, I couldn't check history infor on that name right now.",
+        );
+
+        return;
+      }
+
+      const historyData = {
+        message: "Here's the history info as requested",
+        events: historyResult.data.events.map((event) => {
+          return { ...event };
+        }),
+      };
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        JSON.stringify(historyData),
+      );
+
+      return;
+    }
+
+    if (command.action === "portfolio") {
+      const portfolioResult: ApiResponse<PortfolioData> = await getENSPortfolio(
+        command.address,
+      );
+
+      if (!portfolioResult.success) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Sorry, I couldn't check portfolio info on that address right now.",
+        );
+
+        return;
+      }
+
+      const portfolioData = {
+        total: portfolioResult.data.totalCount,
+        primaryName: portfolioResult.data.primaryName,
+        name: {
+          ...portfolioResult.data.names,
+        },
+      };
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        JSON.stringify(portfolioData),
+      );
+
       return;
     }
 

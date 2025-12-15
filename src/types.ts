@@ -149,8 +149,8 @@ export interface SetCommand extends BaseCommand {
 
 export interface PortfolioCommand extends BaseCommand {
   action: "portfolio";
-  names: string[];
-  options?: CommandOptions;
+  address: string;
+  // options?: CommandOptions;
 }
 
 export interface SubdomainCommand extends BaseCommand {
