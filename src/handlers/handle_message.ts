@@ -1,6 +1,21 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { coco_parser, validate_parse } from "../ai";
 import {
+  ApiResponse,
+  checkNames,
+  NameCheckData,
+  getExpiry,
+  ExpiryData,
+  getHistory,
+  HistoryData,
+  getENSPortfolio,
+  PortfolioData,
+  formatCheckResponse,
+  formatExpiryResponse,
+  formatHistoryResponse,
+  formatPortfolioResponse,
+} from "../api";
+import {
   appendMessageToSession,
   getRecentMessages,
   getUserState,
@@ -17,6 +32,7 @@ import {
   OnMessageEventType,
   QuestionCommand,
   PendingCommand,
+  ParsedCommand,
 } from "../types";
 
 import { handleQuestionCommand } from "../ai";
@@ -234,22 +250,7 @@ export async function handleMessage(
 
     const command = validation.command;
 
-    // Questions - answer directly, don't send to Rust
-    if (command.action === "question") {
-      const answer = await handleQuestionCommand(command as QuestionCommand);
-      await sendBotMessage(handler, channelId, threadId, userId, answer);
-      return;
-    }
-
-    // Help - show help message
-    if (command.action === "help") {
-      const helpMessage = getHelpMessage();
-      await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
-      return;
-    }
-
-    const response = formatRustPayload(command);
-    await sendBotMessage(handler, channelId, threadId, userId, response);
+    await executeValidCommand(handler, channelId, threadId, userId, command);
   } catch (error) {
     console.error("Error in message handler:", error);
     const errorMsg =
@@ -331,23 +332,9 @@ async function handlePendingCommandResponse(
   await clearUserPendingCommand(userId);
   await updateUserLocation(userId, threadId, channelId);
 
-  // Handle question and help commands
-  if (validation.command.action === "question") {
-    const answer = await handleQuestionCommand(
-      validation.command as QuestionCommand,
-    );
-    await sendBotMessage(handler, channelId, threadId, userId, answer);
-    return;
-  }
+  const command = validation.command;
 
-  if (validation.command.action === "help") {
-    const helpMessage = getHelpMessage();
-    await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
-    return;
-  }
-
-  const response = formatRustPayload(validation.command);
-  await sendBotMessage(handler, channelId, threadId, userId, response);
+  await executeValidCommand(handler, channelId, threadId, userId, command);
 }
 
 // send message and store in session
@@ -366,4 +353,139 @@ async function sendBotMessage(
     timestamp: Date.now(),
     role: "assistant",
   });
+}
+
+async function executeValidCommand(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+  command: ParsedCommand,
+): Promise<void> {
+  // Handle question and help commands
+  // Questions - answer directly, don't send to Rust
+  if (command.action === "question") {
+    const answer = await handleQuestionCommand(command as QuestionCommand);
+    await sendBotMessage(handler, channelId, threadId, userId, answer);
+    return;
+  }
+
+  // Help - show help message
+  if (command.action === "help") {
+    const helpMessage = getHelpMessage();
+    await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
+    return;
+  }
+
+  if (command.action === "check") {
+    const checkResult: ApiResponse<NameCheckData> = await checkNames(
+      command.names,
+    );
+
+    if (!checkResult.success) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, I couldn't check that name right now.",
+      );
+
+      return;
+    }
+
+    // TODO: Format check message for bot
+    const checkData = formatCheckResponse(checkResult.data);
+    await sendBotMessage(handler, channelId, threadId, userId, checkData);
+
+    return;
+  }
+
+  if (command.action === "expiry") {
+    const expiryResult: ApiResponse<ExpiryData> = await getExpiry(
+      command.names,
+    );
+
+    if (!expiryResult.success) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, I couldn't check expiry infor on that name right now.",
+      );
+
+      return;
+    }
+    const expiryData = formatExpiryResponse(expiryResult.data);
+    await sendBotMessage(handler, channelId, threadId, userId, expiryData);
+
+    return;
+  }
+
+  if (command.action === "history") {
+    if (command.names.length > 1) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `I'll get history for just the first name "${command.names[0]}" because the data returned for history is usually long`,
+      );
+    }
+
+    const historyResult: ApiResponse<HistoryData> = await getHistory(
+      command.names[0],
+    );
+
+    if (!historyResult.success) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, I couldn't check history infor on that name right now.",
+      );
+
+      return;
+    }
+
+    const historyData = formatHistoryResponse(
+      command.names[0],
+      historyResult.data,
+    );
+    await sendBotMessage(handler, channelId, threadId, userId, historyData);
+
+    return;
+  }
+
+  if (command.action === "portfolio") {
+    const portfolioResult: ApiResponse<PortfolioData> = await getENSPortfolio(
+      command.address,
+    );
+
+    if (!portfolioResult.success) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, I couldn't check portfolio info on that address right now.",
+      );
+
+      return;
+    }
+
+    const portfolioData = formatPortfolioResponse(
+      command.address,
+      portfolioResult.data,
+    );
+
+    await sendBotMessage(handler, channelId, threadId, userId, portfolioData);
+
+    return;
+  }
+
+  const response = formatRustPayload(command);
+  await sendBotMessage(handler, channelId, threadId, userId, response);
 }

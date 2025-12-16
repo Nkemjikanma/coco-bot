@@ -1,5 +1,6 @@
 import { BotHandler, BasePayload } from "@towns-protocol/bot";
 import { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
+import { Address } from "./api/types";
 
 export interface Message {
   eventId: string;
@@ -149,8 +150,8 @@ export interface SetCommand extends BaseCommand {
 
 export interface PortfolioCommand extends BaseCommand {
   action: "portfolio";
-  names: string[];
-  options?: CommandOptions;
+  address: Address;
+  // options?: CommandOptions;
 }
 
 export interface SubdomainCommand extends BaseCommand {
