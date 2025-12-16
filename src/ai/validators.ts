@@ -44,6 +44,8 @@ export function validate_parse(
 
   const action = fields.action as ParsedCommand["action"];
   const names = Array.isArray(fields.names) ? (fields.names as string[]) : [];
+  const address =
+    typeof fields.address === "string" ? (fields.address as string) : "";
 
   switch (action) {
     case "check": {
@@ -62,7 +64,7 @@ export function validate_parse(
       return validateSetCommand(names, fields.records);
 
     case "portfolio":
-      return validatePortfolioCommand(fields.address, fields.options);
+      return validatePortfolioCommand(address, fields.options);
 
     case "expiry":
       return validateExpiryCommand(names);
@@ -376,7 +378,7 @@ function validatePortfolioCommand(
       needsClarification: true,
       question:
         "The address provided is not a valid wallet address. Let's try again",
-      partial: { action: "portfolio", address },
+      partial: { action: "portfolio" },
     };
   }
 

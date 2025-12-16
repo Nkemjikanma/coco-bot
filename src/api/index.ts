@@ -7,6 +7,12 @@ import {
   PortfolioData,
 } from "./types";
 
+import {
+  formatCheckResponse,
+  formatExpiryResponse,
+  formatHistoryResponse,
+  formatPortfolioResponse,
+} from "./formatResponses";
 export {
   checkNames,
   type ApiResponse,
@@ -17,4 +23,10 @@ export {
   getHistory,
   getENSPortfolio,
   type PortfolioData,
+
+  // message formatters
+  formatCheckResponse,
+  formatExpiryResponse,
+  formatHistoryResponse,
+  formatPortfolioResponse,
 };

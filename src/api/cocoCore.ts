@@ -38,7 +38,7 @@ export async function getExpiry(
 export async function getHistory(
   name: string,
 ): Promise<ApiResponse<HistoryData>> {
-  const url_action = `api/history/names?${name}`;
+  const url_action = `api/history/names?name=${name}`;
 
   const historyResponse = await fetchHandler<HistoryData>(url_action);
 
@@ -47,7 +47,7 @@ export async function getHistory(
 export async function getENSPortfolio(
   address: Address,
 ): Promise<ApiResponse<PortfolioData>> {
-  const url_action = `api/portfoli/address?${address.toString()}`;
+  const url_action = `api/portfolio/address?address=${address.toString()}`;
 
   const addressResponse = await fetchHandler<PortfolioData>(url_action);
 
