@@ -1,13 +1,6 @@
 import { isAddress, getAddress } from "viem";
 import {
-  VALID_ACTIONS_LIST,
-  VALID_ACTIONS,
   ParsedCommand,
-  BaseCommand,
-  CommandOptions,
-  RenewCommand,
-  RegisterCommand,
-  HelpCommand,
   EnsRecords,
   PendingCommand,
   ValidationResult,
