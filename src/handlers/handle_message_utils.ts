@@ -199,12 +199,13 @@ export function getWaitingForMessage(pending: PendingCommand): string {
   switch (waitingFor) {
     case "names":
       return `Which ENS name would you like to ${partialCommand.action || "work with"}?`;
-    case "duration":
+    case "duration": {
       const names =
         "names" in partialCommand && partialCommand.names?.length
           ? partialCommand.names.join(", ")
           : "the name";
       return `For how many years would you like to ${partialCommand.action} ${names}? (1-10 years)`;
+    }
     case "recipient":
       return "What's the recipient address? (starts with 0x)";
     case "records":
