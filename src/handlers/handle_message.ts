@@ -44,6 +44,7 @@ import {
   getHelpMessage,
   getWaitingForMessage,
 } from "./handle_message_utils";
+import { checkAvailability } from "../services/ens";
 
 type UnifiedEvent = {
   channelId: string;
@@ -378,10 +379,10 @@ async function executeValidCommand(
   }
 
   if (command.action === "check") {
-    const checkResult: ApiResponse<NameCheckData> = await checkNames(
-      command.names,
-    );
-
+    // const checkResult: ApiResponse<NameCheckData> = await checkNames(
+    //   command.names,
+    // );
+    const checkResult = await checkAvailability(command.names);
     if (!checkResult.success) {
       await sendBotMessage(
         handler,

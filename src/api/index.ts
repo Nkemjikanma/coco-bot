@@ -5,6 +5,8 @@ import {
   ExpiryData,
   HistoryData,
   PortfolioData,
+  NameCheckResponse,
+  GetExpiryResponse,
 } from "./types";
 
 import {
@@ -17,12 +19,14 @@ export {
   checkNames,
   type ApiResponse,
   type NameCheckData,
+  type NameCheckResponse,
   type ExpiryData,
   getExpiry,
   type HistoryData,
   getHistory,
   getENSPortfolio,
   type PortfolioData,
+  type GetExpiryResponse,
 
   // message formatters
   formatCheckResponse,

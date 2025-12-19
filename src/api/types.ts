@@ -15,12 +15,14 @@ export interface NameCheckData {
   values: NameCheckResponse[];
 }
 
-interface NameCheckResponse {
+export interface NameCheckResponse {
   name: string;
-  isAvailable: boolean; // is name avail?
-  owner?: Address; // if itn't, owner. if is available undefined
-  expiration?: DateLike; // if itn't, expiration. if is available undefined
-  registerationPrice?: Cost; // if avail, price. if not, undefnied
+  isAvailable: boolean;
+  owner?: Address;
+  expiration?: DateLike;
+  // registrationPrice?: Cost;
+  registrationPrice?: string;
+  error?: string; // Add this
 }
 
 // ---------- Expiry ----------
@@ -31,19 +33,20 @@ export interface ExpiryData {
 export interface GetExpiryResponse {
   name: string;
   /** When the registration expires */
-  expiryDate: DateLike;
+  expiryDate?: DateLike;
 
   /** 90 days after expiry (when anyone can register it again) */
-  gracePeriodEnd: DateLike;
+  gracePeriodEnd?: DateLike;
 
   /** Has it passed the expiry date? */
-  isExpired: boolean;
+  isExpired?: boolean;
 
   /** Expired but still in 90-day grace period */
-  isInGracePeriod: boolean;
+  isInGracePeriod?: boolean;
 
   /** Convenience for display */
-  daysUntilExpiry: number;
+  daysUntilExpiry?: number;
+  error?: string; // error
 }
 
 // ---------- getHistory ----------
