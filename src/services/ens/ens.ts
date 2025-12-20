@@ -49,7 +49,7 @@ import type {
   PortfolioData,
 } from "../../api";
 
-const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL;
+const MAINNET_RPC_URL = process.env.ETHEREUM_RPC_URL;
 const SUBGRAPH = process.env.SUBGRAPH;
 
 if (!MAINNET_RPC_URL || !SUBGRAPH) {
