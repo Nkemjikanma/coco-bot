@@ -3,11 +3,11 @@ export function truncateAddress(address: string): string {
   return `${address.slice(0, 5)}...${address.slice(-4)}`;
 }
 
-export function formatDate(date: DateLike): string {
+export function formatDate(date: Date): string {
   return new Date(date).toDateString().toString();
 }
 
-export function daysFromNow(date: DateLike): number {
+export function daysFromNow(date: Date): number {
   const now = new Date();
   const givenDate = new Date(date);
 

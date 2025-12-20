@@ -19,7 +19,7 @@ export interface NameCheckResponse {
   name: string;
   isAvailable: boolean;
   owner?: Address;
-  expiration?: DateLike;
+  expiration?: Date;
   // registrationPrice?: Cost;
   registrationPrice?: string;
   error?: string; // Add this
@@ -33,10 +33,10 @@ export interface ExpiryData {
 export interface GetExpiryResponse {
   name: string;
   /** When the registration expires */
-  expiryDate?: DateLike;
+  expiryDate?: Date;
 
   /** 90 days after expiry (when anyone can register it again) */
-  gracePeriodEnd?: DateLike;
+  gracePeriodEnd?: Date;
 
   /** Has it passed the expiry date? */
   isExpired?: boolean;
@@ -51,48 +51,58 @@ export interface GetExpiryResponse {
 
 // ---------- getHistory ----------
 export type ENSHistoryEventType =
-  | "registration"
-  | "renewal"
-  | "transfer"
-  | "recordsUpdated";
+  | "registered"
+  | "renewed"
+  | "transferred"
+  | "wrapped"
+  | "unwrapped"
+  | "expiry_extended";
 
 export interface ENSHistoryEventBase {
   type: ENSHistoryEventType;
-  timestamp: DateLike;
-  transactionHash: TxHash;
+  blockNumber: number;
+  transactionHash: string;
 }
 
 export interface ENSHistoryRegistrationEvent extends ENSHistoryEventBase {
-  type: "registration";
-  to: Address; // registrant
-  duration?: number; // years
-  cost?: Cost;
+  type: "registered";
+  to: string;
+  expiryDate: string;
 }
 
 export interface ENSHistoryRenewalEvent extends ENSHistoryEventBase {
-  type: "renewal";
-  to?: Address; // sometimes known (payer/owner), optional
-  duration?: number; // years
-  cost?: Cost;
+  type: "renewed";
+  expiryDate: string;
 }
 
 export interface ENSHistoryTransferEvent extends ENSHistoryEventBase {
-  type: "transfer";
-  from: Address;
-  to: Address;
+  type: "transferred";
+  to: string;
 }
 
-export interface ENSHistoryRecordsUpdatedEvent extends ENSHistoryEventBase {
-  type: "recordsUpdated";
-  from?: Address; // updater, if you can infer
-  to?: Address; // owner/target, if relevant
+export interface ENSHistoryWrappedEvent extends ENSHistoryEventBase {
+  type: "wrapped";
+  owner: string;
+  expiryDate: string;
+}
+
+export interface ENSHistoryUnwrappedEvent extends ENSHistoryEventBase {
+  type: "unwrapped";
+  owner: string;
+}
+
+export interface ENSHistoryExpiryExtendedEvent extends ENSHistoryEventBase {
+  type: "expiry_extended";
+  expiryDate: string;
 }
 
 export type ENSHistoryEvent =
   | ENSHistoryRegistrationEvent
   | ENSHistoryRenewalEvent
   | ENSHistoryTransferEvent
-  | ENSHistoryRecordsUpdatedEvent;
+  | ENSHistoryWrappedEvent
+  | ENSHistoryUnwrappedEvent
+  | ENSHistoryExpiryExtendedEvent;
 
 export interface HistoryData {
   events: ENSHistoryEvent[];
@@ -104,7 +114,7 @@ export interface ENSPortfolioName {
   /** e.g. "alice.eth" */
   name: string;
 
-  expiryDate: DateLike;
+  expiryDate: Date;
   isExpired: boolean;
 
   /** Is this set as their primary/reverse record? */

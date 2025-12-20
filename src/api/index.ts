@@ -4,9 +4,11 @@ import {
   NameCheckData,
   ExpiryData,
   HistoryData,
+  ENSPortfolioName,
   PortfolioData,
   NameCheckResponse,
   GetExpiryResponse,
+  ENSHistoryEvent,
 } from "./types";
 
 import {
@@ -23,6 +25,8 @@ export {
   type ExpiryData,
   getExpiry,
   type HistoryData,
+  type ENSHistoryEvent,
+  type ENSPortfolioName,
   getHistory,
   getENSPortfolio,
   type PortfolioData,

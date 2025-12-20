@@ -15,6 +15,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",
     "@connectrpc/connect-node": "^2.1.0",
+    "@ensdomains/ensjs": "^4.2.0",
     "@towns-protocol/bot": "^0.0.434",
     "@towns-protocol/proto": "^0.0.434",
     "@towns-protocol/web3": "^0.0.434",

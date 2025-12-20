@@ -6,7 +6,7 @@ import {
   NameCheckData,
   getExpiry,
   ExpiryData,
-  getHistory,
+  // getHistory,
   HistoryData,
   getENSPortfolio,
   PortfolioData,
@@ -44,7 +44,12 @@ import {
   getHelpMessage,
   getWaitingForMessage,
 } from "./handle_message_utils";
-import { checkAvailability } from "../services/ens";
+import {
+  getUserPorfolio,
+  checkAvailability,
+  checkExpiry,
+  getHistory,
+} from "../services/ens";
 
 type UnifiedEvent = {
   channelId: string;
@@ -403,7 +408,7 @@ async function executeValidCommand(
   }
 
   if (command.action === "expiry") {
-    const expiryResult: ApiResponse<ExpiryData> = await getExpiry(
+    const expiryResult: ApiResponse<ExpiryData> = await checkExpiry(
       command.names,
     );
 
@@ -435,51 +440,52 @@ async function executeValidCommand(
       );
     }
 
-    const historyResult: ApiResponse<HistoryData> = await getHistory(
-      command.names[0],
-    );
+    // const historyResult: ApiResponse<HistoryData> = await getHistory(
+    //   command.names[0],
+    // );
+    const historyResult: HistoryData = await getHistory(command.names[0]);
 
-    if (!historyResult.success) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "Sorry, I couldn't check history infor on that name right now.",
-      );
+    // if (!historyResult.success) {
+    //   await sendBotMessage(
+    //     handler,
+    //     channelId,
+    //     threadId,
+    //     userId,
+    //     "Sorry, I couldn't check history infor on that name right now.",
+    //   );
 
-      return;
-    }
+    //   return;
+    // }
 
-    const historyData = formatHistoryResponse(
-      command.names[0],
-      historyResult.data,
-    );
+    const historyData = formatHistoryResponse(command.names[0], historyResult);
     await sendBotMessage(handler, channelId, threadId, userId, historyData);
 
     return;
   }
 
   if (command.action === "portfolio") {
-    const portfolioResult: ApiResponse<PortfolioData> = await getENSPortfolio(
+    // const portfolioResult: ApiResponse<PortfolioData> = await getENSPortfolio(
+    //   command.address,
+    // );
+    const portfolioResult: PortfolioData = await getUserPorfolio(
       command.address,
     );
 
-    if (!portfolioResult.success) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "Sorry, I couldn't check portfolio info on that address right now.",
-      );
+    // if (!portfolioResult.success) {
+    //   await sendBotMessage(
+    //     handler,
+    //     channelId,
+    //     threadId,
+    //     userId,
+    //     "Sorry, I couldn't check portfolio info on that address right now.",
+    //   );
 
-      return;
-    }
+    //   return;
+    // }
 
     const portfolioData = formatPortfolioResponse(
       command.address,
-      portfolioResult.data,
+      portfolioResult,
     );
 
     await sendBotMessage(handler, channelId, threadId, userId, portfolioData);
@@ -487,6 +493,6 @@ async function executeValidCommand(
     return;
   }
 
-  const response = formatRustPayload(command);
-  await sendBotMessage(handler, channelId, threadId, userId, response);
+  // const response = formatRustPayload(command);
+  // await sendBotMessage(handler, channelId, threadId, userId, response);
 }

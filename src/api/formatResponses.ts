@@ -1,37 +1,62 @@
 import { NameCheckData, ExpiryData, HistoryData, PortfolioData } from "./types";
 import { truncateAddress, formatDate, daysFromNow } from "./utils";
+import { formatExpiryDate } from "../services/ens";
+import { Address } from "viem";
 
 export function formatCheckResponse(data: NameCheckData): string {
   const { values } = data;
 
+  const safeFormatDate = (d?: Date) => (d ? formatDate(d) : "Unknown");
+  const safeOwner = (a?: Address) => (a ? truncateAddress(a) : "Unknown");
+  const safePrice = (p?: string) => (p ? `${p} ETH/year` : "Unknown");
+
+  if (values.length === 0) {
+    return `🔍 **Name Check Results**
+
+No names provided.`;
+  }
+
   if (values.length === 1) {
     const v = values[0];
+
+    if (v.error) {
+      return `🔍 **${v.name}** Name Check
+
+❗ ${v.error}`;
+    }
 
     if (!v.isAvailable) {
       return `❌ **${v.name}** is taken
 
-👤 Owner: ${v.owner ? truncateAddress(v.owner) : "Unknown"}
-📅 Expires: ${v.expiration ? formatDate(v.expiration) : "Unknown"}
+👤 Owner: ${safeOwner(v.owner)}
+📅 Expires: ${safeFormatDate(v.expiration)}
 
 Want to watch for availability? Use \`/watch ${v.name}\``;
     }
 
     return `✅ **${v.name}** is available!
 
-💰 Registration price: ${v.registerationPrice ?? "Unknown"} ETH/year
+💰 Registration price: ${safePrice(v.registrationPrice)}
 
 Ready to register? Use \`/register ${v.name} <years>\``;
   }
 
-  const availableCount = values.filter((v) => v.isAvailable).length;
-  const takenCount = values.length - availableCount;
+  const availableCount = values.filter((v) => v.isAvailable && !v.error).length;
+  const errorCount = values.filter((v) => Boolean(v.error)).length;
+  const takenCount = values.length - availableCount - errorCount;
 
   const nameResults = values
     .map((v) => {
+      if (v.error) return `❗ ${v.name} — ${v.error}`;
+
       if (v.isAvailable) {
-        return `✅ ${v.name} — Available (${v.registerationPrice ?? "?"} ETH/year)`;
+        return `✅ ${v.name} — Available (${safePrice(v.registrationPrice)})`;
       }
-      return `❌ ${v.name} — Taken (expires ${v.expiration ? formatDate(v.expiration) : "Unknown"})`;
+
+      const expiryText = v.expiration
+        ? safeFormatDate(v.expiration)
+        : "Unknown";
+      return `❌ ${v.name} — Taken${expiryText !== "Unknown" ? ` (expires ${expiryText})` : ""}`;
     })
     .join("\n");
 
@@ -39,22 +64,54 @@ Ready to register? Use \`/register ${v.name} <years>\``;
 
 ${nameResults}
 
-Available: ${availableCount} | Taken: ${takenCount}`;
+✅ Available: ${availableCount} | ❌ Taken: ${takenCount}${errorCount ? ` | ❗ Errors: ${errorCount}` : ""}`;
 }
 
 export function formatExpiryResponse(data: ExpiryData): string {
   const { values } = data;
 
-  if (values.length === 1) {
-    let v = values[0];
+  const safeFormatDate = (d?: Date) => (d ? formatDate(d) : "—");
+  const safeDaysFromNow = (d?: Date) => (d ? daysFromNow(d) : undefined);
 
+  if (values.length === 0) {
+    return `
+⏰ **Expiry Check Results**
+
+No names provided.
+`;
+  }
+
+  // Single-name response (more detailed)
+  if (values.length === 1) {
+    const v = values[0];
+
+    // Errors first
+    if (v.error) {
+      return `
+⏰ **${v.name}** Expiry Info
+
+❗ ${v.error}
+`;
+    }
+
+    // If we don't have expiry/grace info, avoid misleading output
+    if (!v.expiryDate) {
+      return `
+⏰ **${v.name}** Expiry Info
+
+No expiry information available for this name.
+`;
+    }
+
+    // Expired paths
     if (v.isExpired) {
-      if (!v.isInGracePeriod) {
+      // Expired + not in grace period => available to register
+      if (v.isInGracePeriod === false) {
         return `
 💀 **${v.name}** Expiry Info
 
-📅 Expired: ${formatDate(v.expiryDate)} 
-🛡️ Grace period ended: ${formatDate(v.gracePeriodEnd)}
+📅 Expired: ${safeFormatDate(v.expiryDate)}
+🛡️ Grace period ended: ${safeFormatDate(v.gracePeriodEnd)}
 
 Status: ❌ Expired — Available for registration
 
@@ -62,51 +119,94 @@ Register it with \`/register ${v.name} <years>\`
 `;
       }
 
-      return `
+      // Expired + in grace period
+      if (v.isInGracePeriod) {
+        const graceLeft = safeDaysFromNow(v.gracePeriodEnd);
+        return `
 ⚠️ **${v.name}** Expiry Info
 
-📅 Expired: ${formatDate(v.expiryDate)} 
-🛡️ Grace period ends: ${formatDate(v.gracePeriodEnd)} 
-⏳ Grace period days left: ${daysFromNow(v.gracePeriodEnd)} 
+📅 Expired: ${safeFormatDate(v.expiryDate)}
+🛡️ Grace period ends: ${safeFormatDate(v.gracePeriodEnd)}${
+          typeof graceLeft === "number"
+            ? `\n⏳ Grace period days left: ${graceLeft}`
+            : ""
+        }
 
-Status: ⚠️ In Grace Period — Only you can renew!
+Status: ⚠️ In Grace Period — The current registrant can renew
 
-Renew now with \`/renew ${v.name} <years>\`
+Renew with \`/renew ${v.name} <years>\`
+`;
+      }
+
+      // Expired but isInGracePeriod is missing
+      return `
+💀 **${v.name}** Expiry Info
+
+📅 Expired: ${safeFormatDate(v.expiryDate)}
+🛡️ Grace period end: ${safeFormatDate(v.gracePeriodEnd)}
+
+Status: ❌ Expired
+
+If it’s past the grace period, it may be available to register: \`/register ${v.name} <years>\`
 `;
     }
 
+    // Active path
+    const daysLeft = safeDaysFromNow(v.expiryDate);
     return `
 ⏰ **${v.name}** Expiry Info
 
-📅 Expires: ${formatDate(v.expiryDate)} 
-⏳ Days remaining: ${daysFromNow(v.expiryDate)}
-🛡️ Grace period ends: ${formatDate(v.gracePeriodEnd)}
+📅 Expires: ${safeFormatDate(v.expiryDate)}${
+      typeof daysLeft === "number" ? `\n⏳ Days remaining: ${daysLeft}` : ""
+    }
+🛡️ Grace period ends: ${safeFormatDate(v.gracePeriodEnd)}
 
 Status: ✅ Active
-
 `;
   }
 
-  const needsAttention = values.filter((v) => v.isInGracePeriod).length;
-  const expiry = values
-    .map((v) => {
-      if (v.isExpired) {
-        if (v.isInGracePeriod) {
-          return `⚠️ ${v.name} - IN GRACE PERIOD (${daysFromNow(v.gracePeriodEnd)} days to renew!)`;
-        }
+  // Multi-name response (list style)
+  const lines = values.map((v) => {
+    // Error rows
+    if (v.error) return `❗ ${v.name} — ${v.error}`;
 
-        return `❌ ${v.name} - IS EXPIRED`;
+    // Missing expiry info
+    if (!v.expiryDate) return `❓ ${v.name} — No expiry info`;
+
+    if (v.isExpired) {
+      if (v.isInGracePeriod) {
+        const graceLeft = safeDaysFromNow(v.gracePeriodEnd);
+        return `⚠️ ${v.name} — IN GRACE PERIOD${
+          typeof graceLeft === "number"
+            ? ` (${graceLeft} days left to renew)`
+            : ""
+        }`;
       }
+      return `❌ ${v.name} — EXPIRED`;
+    }
 
-      return `✅ ${v.name} — ${daysFromNow(v.expiryDate)} days left (${formatDate(v.expiryDate)})`;
-    })
-    .join("\n");
+    const daysLeft = safeDaysFromNow(v.expiryDate);
+    return `✅ ${v.name} —${
+      typeof daysLeft === "number" ? ` ${daysLeft} days left` : ""
+    } (${safeFormatDate(v.expiryDate)})`;
+  });
 
-  return `⏰ **Expiry Check Results** \n
+  const needsAttention = values.filter((v) => v.isInGracePeriod).length;
+  const errorCount = values.filter((v) => Boolean(v.error)).length;
 
-${expiry}
+  return `⏰ **Expiry Check Results**
 
- ${needsAttention < 1 ? "" : `⚠️ ${needsAttention} needs Attention!`}
+${lines.join("\n")}
+
+${
+  needsAttention > 0
+    ? `⚠️ ${needsAttention} name${needsAttention === 1 ? "" : "s"} in grace period.`
+    : ""
+}${needsAttention > 0 && errorCount > 0 ? "\n" : ""}${
+    errorCount > 0
+      ? `❗ ${errorCount} name${errorCount === 1 ? "" : "s"} returned an error.`
+      : ""
+  }
 `;
 }
 
@@ -114,54 +214,57 @@ export function formatHistoryResponse(name: string, data: HistoryData): string {
   const { events } = data;
 
   if (events.length === 0) {
-    return `
-📜 **${name}** History
+    return `📜 **${name}** History
 
-No history found. This name may not be registered yet.
-`;
+No history found. This name may not be registered yet.`;
   }
 
   const history = events
     .map((event) => {
-      if (event.type === "registration") {
-        return `
-🎂 **Registered** — ${formatDate(event.timestamp)} 
+      switch (event.type) {
+        case "registered":
+          return `🎂 **Registered** — Block ${event.blockNumber}
    To: ${truncateAddress(event.to)}
-   Duration: ${event.duration}
-   Tx: ${truncateAddress(event.transactionHash)}
-`;
-      }
+   Expires: ${formatExpiryDate(event.expiryDate)}
+   Tx: ${truncateAddress(event.transactionHash)}`;
 
-      if (event.type === "renewal") {
-        return `
-🔄 **Renewed** — ${formatDate(event.timestamp)} 
-   Duration: ${event.duration} 
-   Tx: ${event.transactionHash}
-`;
-      }
+        case "renewed":
+          return `🔄 **Renewed** — Block ${event.blockNumber}
+   New Expiry: ${formatExpiryDate(event.expiryDate)}
+   Tx: ${truncateAddress(event.transactionHash)}`;
 
-      if (event.type === "transfer") {
-        return `
-📤 **Transferred** — ${formatDate(event.timestamp)}
-   From: ${truncateAddress(event.from)}
+        case "transferred":
+          return `📤 **Transferred** — Block ${event.blockNumber}
    To: ${truncateAddress(event.to)}
-   Tx: ${truncateAddress(event.transactionHash)}
-`;
-      }
+   Tx: ${truncateAddress(event.transactionHash)}`;
 
-      return `
-📝 **Records Updated** — ${formatDate(event.timestamp)}
-   Tx: ${truncateAddress(event.transactionHash)}
-`;
+        case "wrapped":
+          return `🎁 **Wrapped** — Block ${event.blockNumber}
+   Owner: ${truncateAddress(event.owner)}
+   Tx: ${truncateAddress(event.transactionHash)}`;
+
+        case "unwrapped":
+          return `📦 **Unwrapped** — Block ${event.blockNumber}
+   Owner: ${truncateAddress(event.owner)}
+   Tx: ${truncateAddress(event.transactionHash)}`;
+
+        case "expiry_extended":
+          return `⏰ **Expiry Extended** — Block ${event.blockNumber}
+   New Expiry: ${formatExpiryDate(event.expiryDate)}
+   Tx: ${truncateAddress(event.transactionHash)}`;
+
+        default:
+          return null;
+      }
     })
-    .join("\n");
-  return `
-📜 **${name}** History
+    .filter(Boolean)
+    .join("\n\n");
+
+  return `📜 **${name}** History
 
 ${history}
 
-Total events: ${events.length}
-`;
+Total events: ${events.length}`;
 }
 
 export function formatPortfolioResponse(
@@ -210,7 +313,7 @@ Get started with \` /register <name> <years>\`
 
 ${displayNames}
 
-⚠️ ${expiringSoon < 1 ? "" : `${expiringSoon} name expiring soon!`} 
+⚠️ ${expiringSoon < 1 ? "" : `${expiringSoon} name expiring soon!`}
 
 `;
 }
