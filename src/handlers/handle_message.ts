@@ -50,6 +50,7 @@ import {
   checkExpiry,
   getHistory,
 } from "../services/ens";
+import { isAddress } from "viem";
 
 type UnifiedEvent = {
   channelId: string;
@@ -127,6 +128,15 @@ export async function handleMessage(
   // Skip empty messages
   if (!content || content.trim() === "") {
     return;
+  }
+
+  let walletAdd: `0x${string}`;
+  const walletAddressInContent = content.split(" ").filter((c) => isAddress(c));
+
+  if (walletAddressInContent.length === 0) {
+    walletAdd = event.userId;
+  } else {
+    walletAdd = walletAddressInContent[0];
   }
 
   await appendMessageToSession(threadId, userId, {
@@ -210,7 +220,10 @@ export async function handleMessage(
 
     // Parse the message using Claude
     const recentMessages = await getRecentMessages(threadId, 5);
-    const parserResult = await coco_parser(content, recentMessages);
+    const parserResult = await coco_parser(
+      `${content} ${walletAdd}`,
+      recentMessages,
+    );
 
     if (!parserResult.success) {
       // Parser error - send user-friendly message

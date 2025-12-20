@@ -110,7 +110,16 @@ Input: "set my twitter to @alice on myname.eth"
 Output: {"action":"set","names":["myname.eth"],"records":{"twitter":"@alice"}}
 
 Input: "show my portfolio"
-Output: {"action":"portfolio","names":[]}
+Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
+
+Input: "How many ens names are in my wallet?"
+Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
+
+Input: "How many ens names do I own?"
+Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
+
+Input: "lookup charlie.eth"
+Output: { action: "check", names: ["charlie.eth"] }
 
 Input: "what can you do?" or "help"
 Output: {"action":"help","names":[]}
@@ -118,6 +127,14 @@ Output: {"action":"help","names":[]}
 Input: "do something"
 Output: {"action":"help","needsClarification":true,"clarificationQuestion":"What would you like to do? I can check availability, register names, renew, transfer, or set records."}
 
+Input: "who owns alice.eth"
+Output: { action: "check", names: ["alice.eth"] }
+
+Input: "what address is bob.eth registered to"
+Output: { action: "check", names: ["bob.eth"] }
+
+Input: "lookup charlie.eth"
+Output: { action: "check", names: ["charlie.eth"] }
 EDGE CASES:
 - If name doesn't have .eth, add it (e.g., "alice" → "alice.eth")
 - If duration not specified for register/renew, omit duration field (user will be prompted)
