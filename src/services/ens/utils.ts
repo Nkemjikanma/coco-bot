@@ -3,7 +3,15 @@ import type {
   GetNamesForAddressReturnType,
   NameWithRelation,
 } from "@ensdomains/ensjs/subgraph";
-import { concat, keccak256, toBytes, toHex } from "viem";
+import {
+  parseEther,
+  formatEther,
+  concat,
+  keccak256,
+  toBytes,
+  toHex,
+  Address,
+} from "viem";
 import { normalize } from "viem/ens";
 import type {
   ENSHistoryEvent,
@@ -233,4 +241,9 @@ function computeExpiry(expiryDate: Date | null): {
   const now = Date.now();
   const isExpired = safeExpiry.getTime() <= now;
   return { expiryDate: safeExpiry, isExpired };
+}
+
+export function generateSecret(): `0x${string}` {
+  const randomBytes = crypto.getRandomValues(new Uint8Array(32));
+  return toHex(randomBytes);
 }

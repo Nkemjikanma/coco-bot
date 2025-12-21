@@ -1,4 +1,4 @@
-import type { Address } from "viem";
+import { type Address, formatEther} from "viem";
 import {
   daysFromNow,
   formatAddress,
@@ -12,6 +12,7 @@ import type {
   PortfolioData,
 } from "./types";
 
+import { PendingRegistration} from "../types"
 export function formatCheckResponse(data: NameCheckData): string {
   const { values } = data;
 
@@ -325,4 +326,64 @@ ${displayNames}
 ⚠️ ${expiringSoon < 1 ? "" : `${expiringSoon} name expiring soon!`}
 
 `;
+}
+
+
+export function formatPhase1Summary(
+  registration: PendingRegistration,
+  durationYears: number,
+): string {
+  const nameBreakdown = registration.names
+    .map((n, i) => {
+      const label = n.name.replace(/\.eth$/, "");
+      const priceEth = formatEther(n.domainPriceWei);
+      const lengthNote = label.length <= 4 ? " (short name premium)" : "";
+      return `**${i + 1}. ${n.name}** (${label.length} letters${lengthNote})
+   └─ Domain: ${priceEth} ETH`;
+    })
+    .join("\n\n");
+
+  return `
+📋 **Registration Summary**
+
+⏱️ Duration: ${durationYears} year${durationYears > 1 ? "s" : ""}
+
+${nameBreakdown}
+
+⛽ **Estimated Gas Costs**
+├─ Commit tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.commitGasEth} ETH
+└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH _(estimate)_
+
+💰 **Estimated Total: ~${registration.grandTotalEth} ETH**
+
+_This is a two-step process:_
+1. _Commit (reserves the name)_
+2. _Wait ~60 seconds_
+3. _Register (completes registration)_
+
+Ready to proceed?
+  `.trim();
+}
+
+export function formatPhase2Summary(
+  registration: PendingRegistration,
+): string {
+  const nameList = registration.names.map((n) => n.name).join(", ");
+
+  return `
+✅ **Commit Successful!**
+
+Names reserved: ${nameList}
+
+⏳ **Waiting Period**
+You need to wait ~60 seconds before completing registration.
+
+⛽ **Final Gas Cost**
+└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH
+
+💰 **Remaining Cost: ~${formatEther(registration.totalDomainCostWei + registration.costs.registerGasWei)} ETH**
+_(Domain price + register gas)_
+
+Ready to complete registration?
+  `.trim();
 }

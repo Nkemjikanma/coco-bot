@@ -54,6 +54,45 @@ export type CocoParserResult =
     };
 
 // ============================================
+// Pending registration types
+// ============================================
+
+export type RegistrationResult<T> =
+  | { success: true; data: T }
+  | { success: false; error: string };
+
+export interface RegistrationCommitment {
+  name: string;
+  secret: `0x${string}`;
+  commitment: `0x${string}`;
+  owner: `0x${string}`;
+  durationSec: bigint;
+  domainPriceWei: bigint;
+}
+
+export interface RegistrationCostEstimate {
+  commitGasWei: bigint;
+  commitGasEth: string;
+  registerGasWei: bigint; // Estimate in phase 1, actual in phase 2
+  registerGasEth: string;
+  isRegisterEstimate: boolean; // true in phase 1, false in phase 2
+}
+
+export interface PendingRegistration {
+  phase:
+    | "awaiting_commit_confirmation"
+    | "commit_pending"
+    | "awaiting_register_confirmation";
+  names: RegistrationCommitment[];
+  costs: RegistrationCostEstimate;
+  totalDomainCostWei: bigint;
+  totalDomainCostEth: string;
+  grandTotalWei: bigint;
+  grandTotalEth: string;
+  commitTxHash?: `0x${string}`; // Set after commit tx sent
+  commitTimestamp?: number; // Set after commit tx confirmed
+}
+// ============================================
 // Valid Actions
 // ============================================
 

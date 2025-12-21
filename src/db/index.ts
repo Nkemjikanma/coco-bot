@@ -1,12 +1,3 @@
-import {
-  deletePendingInteraction,
-  type FormResponse,
-  getPendingInteraction,
-  type PendingInteraction,
-  type TransactionResponse,
-  validateInteraction,
-} from "./interactionsStore";
-
 import { initRedis } from "./redisClient";
 import {
   appendMessageToSession,
@@ -23,6 +14,10 @@ import {
   movePendingCommandToThread,
   setUserPendingCommand,
   updateUserLocation,
+  setPendingRegistration,
+  getPendingRegistration,
+  clearPendingRegistration,
+  updatePendingRegistration,
 } from "./userStateStore";
 
 export {
@@ -39,10 +34,8 @@ export {
   movePendingCommandToThread,
   updateUserLocation,
   describePendingCommand,
-  getPendingInteraction,
-  deletePendingInteraction,
-  validateInteraction,
-  type PendingInteraction,
-  type TransactionResponse,
-  type FormResponse,
+  setPendingRegistration,
+  getPendingRegistration,
+  clearPendingRegistration,
+  updatePendingRegistration,
 };

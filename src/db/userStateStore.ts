@@ -1,4 +1,9 @@
-import type { ParsedCommand, PendingCommand } from "../types";
+import type {
+  ParsedCommand,
+  PendingCommand,
+  PendingRegistration,
+  RegistrationResult,
+} from "../types";
 import { client } from "./redisClient";
 
 export interface UserState {
@@ -255,4 +260,98 @@ export function describePendingCommand(pending: PendingCommand): string {
   }
 
   return description;
+}
+
+// Registration
+const PENDING_REGISTRATION_PREFIX = "registration:";
+const PENDING_REGISTRATION_TTL = 60 * 30; // 30 minutes
+
+// Convert bigint to string for JSON storage
+function serializeRegistration(reg: PendingRegistration): string {
+  return JSON.stringify(reg, (_, value) =>
+    typeof value === "bigint" ? value.toString() + "n" : value,
+  );
+}
+
+// Convert string back to bigint when reading
+function deserializeRegistration(json: string): PendingRegistration {
+  return JSON.parse(json, (_, value) => {
+    if (typeof value === "string" && /^\d+n$/.test(value)) {
+      return BigInt(value.slice(0, -1));
+    }
+    return value;
+  });
+}
+
+export async function getPendingRegistration(
+  userId: string,
+): Promise<RegistrationResult<PendingRegistration>> {
+  const key = PENDING_REGISTRATION_PREFIX + userId;
+
+  try {
+    const data = await client.get(key);
+
+    if (!data) {
+      return { success: false, error: "No pending registration found" };
+    }
+
+    return { success: true, data: deserializeRegistration(data) };
+  } catch (error) {
+    console.error("Error getting pending registration:", error);
+    return { success: false, error: "Failed to retrieve registration data" };
+  }
+}
+
+export async function setPendingRegistration(
+  userId: string,
+  registration: PendingRegistration,
+): Promise<RegistrationResult<void>> {
+  const key = PENDING_REGISTRATION_PREFIX + userId;
+
+  try {
+    const serialized = serializeRegistration(registration);
+    await client.set(key, serialized, { EX: PENDING_REGISTRATION_TTL });
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("Error saving pending registration:", error);
+    return { success: false, error: "Failed to save registration data" };
+  }
+}
+
+export async function updatePendingRegistration(
+  userId: string,
+  updates: Partial<PendingRegistration>,
+): Promise<RegistrationResult<PendingRegistration>> {
+  const existingResult = await getPendingRegistration(userId);
+
+  if (!existingResult.success) {
+    return existingResult;
+  }
+
+  const updated = {
+    ...existingResult.data,
+    ...updates,
+  } as PendingRegistration;
+
+  const saveResult = await setPendingRegistration(userId, updated);
+
+  if (!saveResult.success) {
+    return saveResult;
+  }
+
+  return { success: true, data: updated };
+}
+
+export async function clearPendingRegistration(
+  userId: string,
+): Promise<RegistrationResult<void>> {
+  const key = PENDING_REGISTRATION_PREFIX + userId;
+
+  try {
+    await client.del(key);
+    return { success: true, data: undefined };
+  } catch (error) {
+    console.error("Error clearing pending registration:", error);
+    return { success: false, error: "Failed to clear registration data" };
+  }
 }

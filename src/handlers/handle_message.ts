@@ -1,8 +1,9 @@
+import { getPrice } from "@ensdomains/ensjs/public";
 import {
   type BotHandler,
   getSmartAccountFromUserId,
 } from "@towns-protocol/bot";
-import { isAddress } from "viem";
+import { formatEther, hexToBytes, isAddress } from "viem";
 import { coco_parser, handleQuestionCommand, validate_parse } from "../ai";
 import {
   type ApiResponse,
@@ -12,7 +13,10 @@ import {
   formatHistoryResponse,
   formatPortfolioResponse,
   type HistoryData,
+  type NameCheckResponse,
   type PortfolioData,
+  formatPhase1Summary,
+  formatPhase2Summary,
 } from "../api";
 import { bot } from "../bot";
 import {
@@ -25,12 +29,14 @@ import {
   movePendingCommandToThread,
   setUserPendingCommand,
   updateUserLocation,
+  setPendingRegistration,
 } from "../db";
 import {
   checkAvailability,
   checkExpiry,
   getHistory,
   getUserPorfolio,
+  prepareRegistration,
 } from "../services/ens";
 import type {
   EventType,
@@ -38,7 +44,9 @@ import type {
   ParsedCommand,
   PendingCommand,
   QuestionCommand,
+  RegisterCommand,
 } from "../types";
+import { formatAddress } from "../utils";
 import {
   determineWaitingFor,
   extractMissingInfo,
@@ -278,7 +286,7 @@ export async function handleMessage(
   }
 }
 
-async function handlePendingCommandResponse(
+export async function handlePendingCommandResponse(
   handler: BotHandler,
   channelId: string,
   threadId: string,
@@ -374,7 +382,7 @@ async function sendBotMessage(
   });
 }
 
-async function executeValidCommand(
+export async function executeValidCommand(
   handler: BotHandler,
   channelId: string,
   threadId: string,
@@ -492,6 +500,7 @@ async function executeValidCommand(
     return;
   }
 
+  // handle register, renew, transfer, set
   await handleExecution(handler, channelId, threadId, userId, command);
 
   // const response = formatRustPayload(command);
@@ -504,4 +513,183 @@ async function handleExecution(
   threadId: string,
   userId: string,
   command: ParsedCommand,
-) {}
+) {
+  if (command.action === "register") {
+    const check = await checkAvailability(command.names);
+
+    if (!check.success) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, I couldn't check that name right now.",
+      );
+
+      return;
+    }
+
+    // get unavailable names
+    const takenNames = check.data.values.filter((n) => !n.isAvailable);
+    const availableNames = check.data.values.filter((n) => n.isAvailable);
+
+    if (takenNames.length > 0 && availableNames.length > 0) {
+      // send message about taken names
+      const taken = takenNames
+        .map((n) => {
+          return `**${n.name}** is registered to ${formatAddress(n.owner as string)}`;
+        })
+        .join("\n");
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `**These names are already taken:**\n\n${taken}\n\nProceeding with available names...`,
+      );
+      command.names = availableNames.map((n) => n.name);
+    }
+
+    if (takenNames.length > 0 && availableNames.length === 0) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Sorry, all provided names are already registered.",
+      );
+      return;
+    }
+
+    if (!command.duration) {
+      const pendingCommandWithAvailableNames: RegisterCommand = {
+        ...command,
+        names: availableNames.map((n) => n.name),
+      };
+      await setUserPendingCommand(
+        userId,
+        threadId,
+        channelId,
+        pendingCommandWithAvailableNames,
+        determineWaitingFor(pendingCommandWithAvailableNames),
+      );
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Duration hasn't been set for the names. ",
+      );
+
+      await handler.sendInteractionRequest(
+        channelId,
+        {
+          case: "form",
+          value: {
+            id: `duration_form:${threadId}`,
+            title: "Registration Duration",
+            components: [
+              {
+                id: "duration_text_field",
+                component: {
+                  case: "textInput",
+                  value: { placeholder: "Enter years (1-10)..." },
+                },
+              },
+              {
+                id: "confirm",
+                component: { case: "button", value: { label: "Submit" } },
+              },
+              {
+                id: "cancel",
+                component: { case: "button", value: { label: "Cancel" } },
+              },
+            ],
+          },
+        },
+        hexToBytes(userId as `0x${string}`),
+      );
+      return;
+    }
+
+    // ---- Prepare and show costs ------
+    // Towns wallet
+    const userTownWallet = await getSmartAccountFromUserId(bot, {
+      userId: userId as `0x${string}`,
+    });
+
+    if (!userTownWallet) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Couldn't get your wallet address. Please try again.",
+      );
+      return;
+    }
+
+    try {
+      const registration = await prepareRegistration({
+        names: command.names,
+        owner: userTownWallet,
+        durationYears: command.duration,
+      });
+
+      // Store registration data
+      await setPendingRegistration(userId, registration);
+
+      // Store in pending state
+      await setUserPendingCommand(
+        userId,
+        threadId,
+        channelId,
+        command,
+        "confirmation",
+      );
+
+      const summary = formatPhase1Summary(registration, command.duration);
+      await sendBotMessage(handler, channelId, threadId, userId, summary);
+
+      // Send confirmation interaction
+      await handler.sendInteractionRequest(
+        channelId,
+        {
+          case: "form",
+          value: {
+            id: `confirm_commit:${threadId}`,
+            title: "Confirm Registration",
+            components: [
+              {
+                id: "confirm",
+                component: {
+                  case: "button",
+                  value: { label: "✅ Start Registration" },
+                },
+              },
+              {
+                id: "cancel",
+                component: { case: "button", value: { label: "❌ Cancel" } },
+              },
+            ],
+          },
+        },
+        hexToBytes(userId as `0x${string}`),
+      );
+    } catch (e) {
+      console.error("Error preparing registration:", e);
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Something went wrong. Please try again.",
+      );
+    }
+    // clear pending command after execution
+    await clearUserPendingCommand(userId);
+    return;
+  }
+}

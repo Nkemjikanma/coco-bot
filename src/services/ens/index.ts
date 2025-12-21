@@ -3,6 +3,9 @@ import {
   checkExpiry,
   getHistory,
   getUserPorfolio,
+  prepareRegistration,
+  encodeCommitData,
+  encodeRegisterData,
 } from "./ens";
 import {
   mapEnsHistoryResponse,
@@ -16,4 +19,7 @@ export {
   getHistory,
   getUserPorfolio,
   mapNamesForAddressToPortfolioData,
+  prepareRegistration,
+  encodeCommitData,
+  encodeRegisterData,
 };

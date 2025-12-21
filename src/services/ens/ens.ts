@@ -11,6 +11,7 @@ import {
   formatEther,
   http,
   zeroAddress,
+  encodeFunctionData,
 } from "viem";
 import { readContract } from "viem/actions";
 import { mainnet } from "viem/chains";
@@ -39,8 +40,10 @@ import {
   mapNamesForAddressToPortfolioData,
   namehash,
   normalizeENSName,
+  generateSecret,
 } from "./utils";
 
+import { PendingRegistration, RegistrationCommitment } from "../../types";
 if (!MAINNET_RPC_URL || !SUBGRAPH_API_KEY) {
   throw new Error(
     "MAINNET_RPC_URL or SUBGRAPH environment variable is required",
@@ -451,4 +454,273 @@ export async function getHistory(name: string): Promise<HistoryData> {
   const result = await getNameHistory(ethereumClient, { name });
   const data = mapEnsHistoryResponse(result);
   return data;
+}
+
+// Estimate commit gas
+export async function estimateCommitGas({
+  account,
+  commitment,
+}: {
+  account: `0x${string}`;
+  commitment: `0x${string}`;
+}): Promise<{ gasWei: bigint; gasEth: string }> {
+  const sim = await ethereumClient.simulateContract({
+    address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+    abi: CONTROLLER_ABI,
+    functionName: "commit",
+    args: [commitment],
+    account,
+  });
+
+  const gas = await ethereumClient.estimateGas({
+    ...sim.request,
+    to: sim.request.address,
+  });
+  const fees = await ethereumClient.estimateFeesPerGas();
+  const maxFeePerGas = fees.maxFeePerGas ?? 0n;
+  const gasWei = gas * maxFeePerGas;
+
+  return {
+    gasWei,
+    gasEth: formatEther(gasWei),
+  };
+}
+
+// build the transaction data/hash
+export async function makeCommitment({
+  label,
+  owner,
+  durationSec,
+  secret,
+  resolver,
+  data,
+  reverseRecord,
+  ownerControlledFuses,
+}: {
+  label: string;
+  owner: `0x${string}`;
+  durationSec: bigint;
+  secret: `0x${string}`;
+  resolver: `0x${string}`;
+  data: `0x${string}`[];
+  reverseRecord: boolean;
+  ownerControlledFuses: number;
+}): Promise<`0x${string}`> {
+  // Use the controller's makeCommitment function
+  const commitment = await ethereumClient.readContract({
+    address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+    abi: CONTROLLER_ABI,
+    functionName: "makeCommitment",
+    args: [
+      label,
+      owner,
+      durationSec,
+      secret,
+      resolver,
+      data,
+      reverseRecord,
+      ownerControlledFuses,
+    ],
+  });
+
+  return commitment as `0x${string}`;
+}
+
+export function encodeCommitData(commitment: `0x${string}`): `0x${string}` {
+  return encodeFunctionData({
+    abi: CONTROLLER_ABI,
+    functionName: "commit",
+    args: [commitment],
+  });
+}
+
+// Estimate registration
+export async function estimateRegisterGas({
+  account,
+  label,
+  owner,
+  durationSec,
+  secret,
+  resolver,
+  data,
+  reverseRecord,
+  ownerControlledFuses,
+  value,
+}: {
+  account: `0x${string}`;
+  label: string;
+  owner: `0x${string}`;
+  durationSec: bigint;
+  secret: `0x${string}`;
+  resolver: `0x${string}`;
+  data: `0x${string}`[];
+  reverseRecord: boolean;
+  ownerControlledFuses: number;
+  value: bigint;
+}): Promise<{ gasWei: bigint; gasEth: string }> {
+  try {
+    const sim = await ethereumClient.simulateContract({
+      address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+      abi: CONTROLLER_ABI,
+      functionName: "register",
+      args: [
+        label,
+        owner,
+        durationSec,
+        secret,
+        resolver,
+        data,
+        reverseRecord,
+        ownerControlledFuses,
+      ],
+      account,
+      value,
+    });
+
+    const gas = await ethereumClient.estimateGas({
+      ...sim.request,
+      to: sim.request.address,
+    });
+
+    const fees = await ethereumClient.estimateFeesPerGas();
+    const maxFeePerGas = fees.maxFeePerGas ?? 0n;
+    const gasWei = gas * maxFeePerGas;
+
+    return {
+      gasWei,
+      gasEth: formatEther(gasWei),
+    };
+  } catch (error) {
+    // If simulation fails (commit not ready), return estimate
+    const fees = await ethereumClient.estimateFeesPerGas();
+    const estimatedGas = 300000n;
+    const gasWei = estimatedGas * (fees.maxFeePerGas ?? 0n);
+
+    return {
+      gasWei,
+      gasEth: formatEther(gasWei),
+    };
+  }
+}
+
+export async function prepareRegistration({
+  names,
+  owner,
+  durationYears,
+}: {
+  names: string[];
+  owner: `0x${string}`;
+  durationYears: number;
+}): Promise<PendingRegistration> {
+  const durationSec = BigInt(durationYears * 365 * 24 * 60 * 60);
+  const resolver = ENS_CONTRACTS.PUBLIC_RESOLVER;
+  const data: `0x${string}`[] = [];
+  const reverseRecord = false;
+  const ownerControlledFuses = 0;
+
+  const commitments: RegistrationCommitment[] = [];
+  let totalDomainCostWei = 0n;
+  let totalCommitGasWei = 0n;
+
+  for (const name of names) {
+    // Get label (remove .eth if present)
+    const label = name.replace(/\.eth$/, "");
+
+    // Get domain price
+    const priceData = (await ethereumClient.readContract({
+      address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+      abi: CONTROLLER_ABI,
+      functionName: "rentPrice",
+      args: [label, durationSec],
+    })) as { base: bigint; premium: bigint };
+
+    const domainPriceWei = priceData.base + priceData.premium;
+    totalDomainCostWei += domainPriceWei;
+
+    // Generate secret and commitment
+    const secret = generateSecret();
+    const commitment = await makeCommitment({
+      label,
+      owner,
+      durationSec,
+      secret,
+      resolver,
+      data,
+      reverseRecord,
+      ownerControlledFuses,
+    });
+
+    // Estimate commit gas for this commitment
+    const commitGas = await estimateCommitGas({ account: owner, commitment });
+    totalCommitGasWei += commitGas.gasWei;
+
+    commitments.push({
+      name: `${label}.eth`,
+      secret,
+      commitment,
+      owner,
+      durationSec,
+      domainPriceWei,
+    });
+  }
+
+  // Estimate register gas (rough estimate for phase 1)
+  const fees = await ethereumClient.estimateFeesPerGas();
+  const registerGasPerName = 280000n;
+  const totalRegisterGasWei =
+    registerGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
+
+  const grandTotalWei =
+    totalDomainCostWei + totalCommitGasWei + totalRegisterGasWei;
+
+  return {
+    phase: "awaiting_commit_confirmation",
+    names: commitments,
+    costs: {
+      commitGasWei: totalCommitGasWei,
+      commitGasEth: formatEther(totalCommitGasWei),
+      registerGasWei: totalRegisterGasWei,
+      registerGasEth: formatEther(totalRegisterGasWei),
+      isRegisterEstimate: true,
+    },
+    totalDomainCostWei,
+    totalDomainCostEth: formatEther(totalDomainCostWei),
+    grandTotalWei,
+    grandTotalEth: formatEther(grandTotalWei),
+  };
+}
+
+export function encodeRegisterData({
+  name,
+  owner,
+  duration,
+  secret,
+  resolver,
+  data,
+  reverseRecord,
+  ownerControlledFuses,
+}: {
+  name: string;
+  owner: `0x${string}`;
+  duration: bigint;
+  secret: `0x${string}`;
+  resolver: `0x${string}`;
+  data: `0x${string}`[];
+  reverseRecord: boolean;
+  ownerControlledFuses: number;
+}): `0x${string}` {
+  return encodeFunctionData({
+    abi: CONTROLLER_ABI,
+    functionName: "register",
+    args: [
+      name,
+      owner,
+      duration,
+      secret,
+      resolver,
+      data,
+      reverseRecord,
+      ownerControlledFuses,
+    ],
+  });
 }
