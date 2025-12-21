@@ -1,16 +1,19 @@
 import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
-import { handleOnMessage, handleSlashCommand } from "./handlers";
 import { sessionExists } from "./db";
+import { handleOnMessage, handleSlashCommand } from "./handlers";
+
 // import { handleInteractionResponse } from "./handlers";
 
-export const bot = await makeTownsBot(
-  process.env.APP_PRIVATE_DATA!,
-  process.env.JWT_SECRET!,
-  {
-    commands,
-  },
-);
+const APP_DATA = process.env.APP_PRIVATE_DATA;
+const SECRET = process.env.JWT_SECRET;
+
+if (!APP_DATA || !SECRET) {
+  throw new Error("Missing APP_DATA or SECRET information. Fix env");
+}
+export const bot = await makeTownsBot(APP_DATA, SECRET, {
+  commands,
+});
 
 const cocoCommands = [
   "help",
@@ -43,44 +46,6 @@ bot.onMessage(async (handler, event) => {
     await handleOnMessage(handler, event);
   }
 });
-
-/**
- * Handles user responses to interaction requests (buttons, transactions, signatures).
- * Called when user clicks a button or confirms a transaction.
- */
-// bot.onInteractionResponse(async (handler, event) => {
-//   // The event structure depends on the Towns SDK
-//   // We'll need to map it to our InteractionResponseEvent type
-//
-//   try {
-//     await handleInteractionResponse(handler, {
-//       userId: event.userId,
-//       channelId: event.channelId,
-//       threadId: event.threadId,
-//       // Map the response content based on type
-//       transactionResponse: event.transaction
-//         ? {
-//             requestId: event.transaction.requestId,
-//             txHash: event.transaction.txHash,
-//           }
-//         : undefined,
-//       formResponse: event.form
-//         ? {
-//             requestId: event.form.requestId,
-//             components: event.form.components,
-//           }
-//         : undefined,
-//       signatureResponse: event.signature
-//         ? {
-//             requestId: event.signature.requestId,
-//             signature: event.signature.signature,
-//           }
-//         : undefined,
-//     });
-//   } catch (error) {
-//     console.error("Error handling interaction response:", error);
-//   }
-// });
 
 bot.onReaction(async (handler, { reaction, channelId }) => {
   if (reaction === "👋") {

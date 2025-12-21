@@ -1,6 +1,6 @@
-import { BasePayload } from "@towns-protocol/bot";
-import { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
-import { Address } from "./api/types";
+import type { BasePayload } from "@towns-protocol/bot";
+import type { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
+import type { Address } from "./api/types";
 
 export interface Message {
   eventId: string;

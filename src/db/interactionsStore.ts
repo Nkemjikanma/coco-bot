@@ -1,5 +1,5 @@
+import type { ParsedCommand } from "../types";
 import { client } from "./redisClient";
-import { ParsedCommand } from "../types";
 
 // ============================================
 // Interaction Types (based on Towns protocol.proto)

@@ -4,13 +4,9 @@ import {
   getHistory,
   getUserPorfolio,
 } from "./ens";
-import {} from "./types";
-import {} from "./constants";
 import {
   mapEnsHistoryResponse,
   mapNamesForAddressToPortfolioData,
-  formatAddress,
-  formatExpiryDate,
 } from "./utils";
 
 export {
@@ -18,7 +14,6 @@ export {
   checkExpiry,
   mapEnsHistoryResponse,
   getHistory,
-  formatExpiryDate,
   getUserPorfolio,
   mapNamesForAddressToPortfolioData,
 };

@@ -1,56 +1,51 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { coco_parser, validate_parse } from "../ai";
 import {
-  ApiResponse,
-  checkNames,
-  NameCheckData,
-  getExpiry,
-  ExpiryData,
-  // getHistory,
-  HistoryData,
-  getENSPortfolio,
-  PortfolioData,
+  type BotHandler,
+  getSmartAccountFromUserId,
+} from "@towns-protocol/bot";
+import { isAddress } from "viem";
+import { coco_parser, handleQuestionCommand, validate_parse } from "../ai";
+import {
+  type ApiResponse,
+  type ExpiryData,
   formatCheckResponse,
   formatExpiryResponse,
   formatHistoryResponse,
   formatPortfolioResponse,
+  type HistoryData,
+  type PortfolioData,
 } from "../api";
+import { bot } from "../bot";
 import {
   appendMessageToSession,
+  clearUserPendingCommand,
+  describePendingCommand,
   getRecentMessages,
   getUserState,
-  setUserPendingCommand,
-  clearUserPendingCommand,
   hasPendingCommandElsewhere,
   movePendingCommandToThread,
+  setUserPendingCommand,
   updateUserLocation,
-  describePendingCommand,
 } from "../db";
-
 import {
-  EventType,
-  OnMessageEventType,
-  QuestionCommand,
-  PendingCommand,
-  ParsedCommand,
-} from "../types";
-
-import { handleQuestionCommand } from "../ai";
-
-import {
-  formatRustPayload,
-  determineWaitingFor,
-  extractMissingInfo,
-  getHelpMessage,
-  getWaitingForMessage,
-} from "./handle_message_utils";
-import {
-  getUserPorfolio,
   checkAvailability,
   checkExpiry,
   getHistory,
+  getUserPorfolio,
 } from "../services/ens";
-import { isAddress } from "viem";
+import type {
+  EventType,
+  OnMessageEventType,
+  ParsedCommand,
+  PendingCommand,
+  QuestionCommand,
+} from "../types";
+import {
+  determineWaitingFor,
+  extractMissingInfo,
+  formatRustPayload,
+  getHelpMessage,
+  getWaitingForMessage,
+} from "./handle_message_utils";
 
 type UnifiedEvent = {
   channelId: string;
@@ -73,7 +68,7 @@ function normalizeEvent(
       userId: slashEvent.userId,
       eventId: slashEvent.eventId,
       threadId: slashEvent.threadId,
-      content: slashEvent.command + " " + slashEvent.args.join(" "),
+      content: `${slashEvent.command} ${slashEvent.args.join(" ")}`,
       source,
     };
   } else {
@@ -130,15 +125,20 @@ export async function handleMessage(
     return;
   }
 
-  let walletAdd: `0x${string}`;
+  // get user's Towns wallet address when they don't pass wallet address explicitly
+  let walletAdd: `0x${string}` | null;
   const walletAddressInContent = content.split(" ").filter((c) => isAddress(c));
 
   if (walletAddressInContent.length === 0) {
-    walletAdd = event.userId;
+    walletAdd = await getSmartAccountFromUserId(bot, {
+      userId: event.userId,
+    });
+    return;
   } else {
     walletAdd = walletAddressInContent[0];
   }
 
+  // store this new message in user's session
   await appendMessageToSession(threadId, userId, {
     eventId,
     content,
@@ -458,18 +458,6 @@ async function executeValidCommand(
     // );
     const historyResult: HistoryData = await getHistory(command.names[0]);
 
-    // if (!historyResult.success) {
-    //   await sendBotMessage(
-    //     handler,
-    //     channelId,
-    //     threadId,
-    //     userId,
-    //     "Sorry, I couldn't check history infor on that name right now.",
-    //   );
-
-    //   return;
-    // }
-
     const historyData = formatHistoryResponse(command.names[0], historyResult);
     await sendBotMessage(handler, channelId, threadId, userId, historyData);
 
@@ -480,21 +468,19 @@ async function executeValidCommand(
     // const portfolioResult: ApiResponse<PortfolioData> = await getENSPortfolio(
     //   command.address,
     // );
+
+    if (command.address === null || !isAddress(command.address)) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Something went wrong and we can't figure out that address. Let's start again.",
+      );
+    }
     const portfolioResult: PortfolioData = await getUserPorfolio(
       command.address,
     );
-
-    // if (!portfolioResult.success) {
-    //   await sendBotMessage(
-    //     handler,
-    //     channelId,
-    //     threadId,
-    //     userId,
-    //     "Sorry, I couldn't check portfolio info on that address right now.",
-    //   );
-
-    //   return;
-    // }
 
     const portfolioData = formatPortfolioResponse(
       command.address,
@@ -506,6 +492,16 @@ async function executeValidCommand(
     return;
   }
 
+  await handleExecution(handler, channelId, threadId, userId, command);
+
   // const response = formatRustPayload(command);
   // await sendBotMessage(handler, channelId, threadId, userId, response);
 }
+
+async function handleExecution(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+  command: ParsedCommand,
+) {}

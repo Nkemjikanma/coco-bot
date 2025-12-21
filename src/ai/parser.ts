@@ -1,17 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
 import {
-  COMMAND_PARSER_PROMPT,
+  type CocoParserResult,
+  type Message,
+  ParsedCommand,
+  QUESTION_TYPES,
+  type QuestionCommand,
+} from "../types";
+import { GENERAL_QUESTION_PROMPT, getKnowledgeAnswer } from "./knowledge";
+import {
   CLARIFICATION_PROMPT,
-  NAME_SUGGESTION_PROMPT,
+  COMMAND_PARSER_PROMPT,
   COST_EXPLANATION_PROMPT,
   ERROR_EXPLANATION_PROMPT,
   fill_prompt,
+  NAME_SUGGESTION_PROMPT,
 } from "./prompts";
-import { getKnowledgeAnswer, GENERAL_QUESTION_PROMPT } from "./knowledge";
 import { validate_parse } from "./validators";
-import { ParsedCommand, CocoParserResult } from "../types";
-
-import { Message, QuestionCommand, QUESTION_TYPES } from "../types";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -26,7 +30,7 @@ export async function coco_parser(
     .join("\n");
 
   // command parser
-  let command_parser = fill_prompt(COMMAND_PARSER_PROMPT, {
+  const command_parser = fill_prompt(COMMAND_PARSER_PROMPT, {
     message: user_message,
     context: context || "No recent context",
   });

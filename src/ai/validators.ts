@@ -1,11 +1,11 @@
-import { isAddress, getAddress } from "viem";
+import { isAddress } from "viem";
 import {
-  ParsedCommand,
-  EnsRecords,
-  PendingCommand,
-  ValidationResult,
-  QuestionType,
+  type EnsRecords,
+  type ParsedCommand,
+  type PendingCommand,
   QUESTION_TYPES,
+  type QuestionType,
+  type ValidationResult,
 } from "../types";
 
 export function validate_parse(

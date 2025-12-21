@@ -1,6 +1,6 @@
+import type { RedisArgument } from "redis";
+import type { Message, Session } from "../types";
 import { client } from "./redisClient";
-import { RedisArgument } from "redis";
-import { Session, Message } from "../types";
 
 const SESSION_PREFIX = "session:";
 const MAX_MESSAGES = 5; // Keep last 5 messages for context

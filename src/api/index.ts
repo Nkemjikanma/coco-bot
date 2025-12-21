@@ -1,22 +1,21 @@
-import { checkNames, getExpiry, getHistory, getENSPortfolio } from "./cocoCore";
-import {
-  ApiResponse,
-  NameCheckData,
-  ExpiryData,
-  HistoryData,
-  ENSPortfolioName,
-  PortfolioData,
-  NameCheckResponse,
-  GetExpiryResponse,
-  ENSHistoryEvent,
-} from "./types";
-
+import { checkNames, getENSPortfolio, getExpiry, getHistory } from "./cocoCore";
 import {
   formatCheckResponse,
   formatExpiryResponse,
   formatHistoryResponse,
   formatPortfolioResponse,
 } from "./formatResponses";
+import type {
+  ApiResponse,
+  ENSHistoryEvent,
+  ENSPortfolioName,
+  ExpiryData,
+  GetExpiryResponse,
+  HistoryData,
+  NameCheckData,
+  NameCheckResponse,
+  PortfolioData,
+} from "./types";
 export {
   checkNames,
   type ApiResponse,
@@ -31,7 +30,6 @@ export {
   getENSPortfolio,
   type PortfolioData,
   type GetExpiryResponse,
-
   // message formatters
   formatCheckResponse,
   formatExpiryResponse,

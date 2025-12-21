@@ -1,13 +1,22 @@
-import { NameCheckData, ExpiryData, HistoryData, PortfolioData } from "./types";
-import { truncateAddress, formatDate, daysFromNow } from "./utils";
-import { formatExpiryDate } from "../services/ens";
-import { Address } from "viem";
+import type { Address } from "viem";
+import {
+  daysFromNow,
+  formatAddress,
+  formatDate,
+  formatExpiryDate,
+} from "../utils";
+import type {
+  ExpiryData,
+  HistoryData,
+  NameCheckData,
+  PortfolioData,
+} from "./types";
 
 export function formatCheckResponse(data: NameCheckData): string {
   const { values } = data;
 
   const safeFormatDate = (d?: Date) => (d ? formatDate(d) : "Unknown");
-  const safeOwner = (a?: Address) => (a ? truncateAddress(a) : "Unknown");
+  const safeOwner = (a?: Address) => (a ? formatAddress(a) : "Unknown");
   const safePrice = (p?: string) => (p ? `${p} ETH/year` : "Unknown");
 
   if (values.length === 0) {
@@ -224,34 +233,34 @@ No history found. This name may not be registered yet.`;
       switch (event.type) {
         case "registered":
           return `🎂 **Registered** — Block ${event.blockNumber}
-   To: ${truncateAddress(event.to)}
+   To: ${formatAddress(event.to)}
    Expires: ${formatExpiryDate(event.expiryDate)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         case "renewed":
           return `🔄 **Renewed** — Block ${event.blockNumber}
    New Expiry: ${formatExpiryDate(event.expiryDate)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         case "transferred":
           return `📤 **Transferred** — Block ${event.blockNumber}
-   To: ${truncateAddress(event.to)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   To: ${formatAddress(event.to)}
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         case "wrapped":
           return `🎁 **Wrapped** — Block ${event.blockNumber}
-   Owner: ${truncateAddress(event.owner)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   Owner: ${formatAddress(event.owner)}
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         case "unwrapped":
           return `📦 **Unwrapped** — Block ${event.blockNumber}
-   Owner: ${truncateAddress(event.owner)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   Owner: ${formatAddress(event.owner)}
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         case "expiry_extended":
           return `⏰ **Expiry Extended** — Block ${event.blockNumber}
    New Expiry: ${formatExpiryDate(event.expiryDate)}
-   Tx: ${truncateAddress(event.transactionHash)}`;
+   Tx: ${formatAddress(event.transactionHash)}`;
 
         default:
           return null;
@@ -275,7 +284,7 @@ export function formatPortfolioResponse(
 
   if (names.length === 0) {
     return `
-📂 **Portfolio for ${truncateAddress(address)}**
+📂 **Portfolio for ${formatAddress(address)}**
 
 No ENS names found for this address.
 
@@ -305,7 +314,7 @@ Get started with \` /register <name> <years>\`
     })
     .join("\n");
   return `
-📂 **Portfolio for ${truncateAddress(address)}**
+📂 **Portfolio for ${formatAddress(address)}**
 
 🏷️ Primary name: ${primaryName}
 

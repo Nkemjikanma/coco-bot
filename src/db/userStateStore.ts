@@ -1,4 +1,4 @@
-import { PendingCommand, ParsedCommand } from "../types";
+import type { ParsedCommand, PendingCommand } from "../types";
 import { client } from "./redisClient";
 
 export interface UserState {

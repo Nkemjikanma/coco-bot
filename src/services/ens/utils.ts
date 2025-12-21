@@ -1,18 +1,17 @@
-import { keccak256, toHex, concat, toBytes } from "viem";
-import { normalize } from "viem/ens";
-import { ENS_VALIDATION } from "./constants";
-import { GetNameHistoryReturnType } from "@ensdomains/ensjs/subgraph";
-import {
-  HistoryData,
-  ENSHistoryEvent,
-  PortfolioData,
-  ENSPortfolioName,
-} from "../../api";
 import type {
+  GetNameHistoryReturnType,
   GetNamesForAddressReturnType,
   NameWithRelation,
 } from "@ensdomains/ensjs/subgraph";
-import type { Address } from "viem";
+import { concat, keccak256, toBytes, toHex } from "viem";
+import { normalize } from "viem/ens";
+import type {
+  ENSHistoryEvent,
+  ENSPortfolioName,
+  HistoryData,
+  PortfolioData,
+} from "../../api";
+import { ENS_VALIDATION } from "./constants";
 /**
  * Normalizes and validates an ENS domain name
  */
@@ -71,30 +70,6 @@ export function namehash(name: string): `0x${string}` {
   const labelHash = keccak256(toBytes(label));
 
   return keccak256(concat([toBytes(ethNode), toBytes(labelHash)]));
-}
-
-/**
- * Formats ETH price to 4 decimal places
- */
-export function formatPrice(priceEth: string): string {
-  return Number(priceEth).toFixed(4);
-}
-
-/**
- * Calculates days until a future date
- */
-export function daysUntil(date: Date): number {
-  const now = new Date();
-  return Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
-
-/**
- * Shortens an Ethereum address for display
- * Example: 0x1234567890abcdef... -> 0x1234...cdef
- */
-export function formatAddress(address: string): string {
-  if (!address || address.length < 10) return address;
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
 // format response from ensjs to match our api response
@@ -241,19 +216,6 @@ export function mapNamesForAddressToPortfolioData(
   };
 }
 
-export function formatExpiryDate(expiryDate: string): string {
-  try {
-    const timestamp = BigInt(expiryDate);
-    const date = new Date(Number(timestamp) * 1000);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  } catch {
-    return "Unknown";
-  }
-}
 function dateWithValueToDate(
   d: { value: number; date?: Date } | null | undefined,
 ): Date | null {

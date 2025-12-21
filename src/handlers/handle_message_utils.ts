@@ -1,4 +1,4 @@
-import { ParsedCommand, PendingCommand } from "../types";
+import type { ParsedCommand, PendingCommand } from "../types";
 
 // tries to determine what we are waiting for
 export function determineWaitingFor(
@@ -97,6 +97,7 @@ export function formatRustPayload(command: ParsedCommand) {
 
   return lines.join("\n");
 }
+
 export function extractMissingInfo(
   partial: Partial<ParsedCommand>,
   userResponse: string,
@@ -112,7 +113,7 @@ export function extractMissingInfo(
         match &&
         (updated.action === "register" || updated.action === "renew")
       ) {
-        (updated as any).duration = parseInt(match[1]);
+        (updated as any).duration = parseInt(match[1], 10);
       }
       break;
     }

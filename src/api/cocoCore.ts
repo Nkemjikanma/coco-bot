@@ -1,11 +1,12 @@
-import {
+import type {
+  Address,
   ApiResponse,
-  NameCheckData,
   ExpiryData,
   HistoryData,
+  NameCheckData,
   PortfolioData,
-  Address,
 } from "./types";
+
 const COCO_CORE_URL = process.env.COCO_CORE_URL;
 
 export async function checkNames(
@@ -13,7 +14,9 @@ export async function checkNames(
 ): Promise<ApiResponse<NameCheckData>> {
   const params = new URLSearchParams();
 
-  names.forEach((name) => params.append("name", name));
+  names.forEach((name) => {
+    params.append("name", name);
+  });
 
   const url_action = `api/check/names?${params.toString()}`;
   const nameResponse = await fetchHandler<NameCheckData>(url_action);
@@ -26,7 +29,9 @@ export async function getExpiry(
 ): Promise<ApiResponse<ExpiryData>> {
   const params = new URLSearchParams();
 
-  names.forEach((name) => params.append("name", name));
+  names.forEach((name) => {
+    params.append("name", name);
+  });
 
   const url_action = `api/expiry/names?${params.toString()}`;
 
@@ -74,7 +79,7 @@ async function fetchHandler<T>(actionURL: string): Promise<ApiResponse<T>> {
       };
     }
 
-    let data = await response.json();
+    const data = await response.json();
 
     return data;
   } catch (error) {

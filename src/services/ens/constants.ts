@@ -8,7 +8,8 @@ export const ENS_CONTRACTS = {
     "https://api.thegraph.com/subgraphs/name/ensdomains/ens" as const,
 } as const;
 
-const SUBGRAPH_API_KEY = process.env.SUBGRAPH_API_KEY;
+export const SUBGRAPH_API_KEY = process.env.SUBGRAPH;
+export const MAINNET_RPC_URL = process.env.ETHEREUM_RPC_URL;
 
 export const ENS_SUBGRAPH = {
   LEGACY: "https://api.thegraph.com/subgraphs/name/ensdomains/ens" as const,
