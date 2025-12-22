@@ -1,4 +1,4 @@
-import { type Address, formatEther} from "viem";
+import { type Address, formatEther } from "viem";
 import {
   daysFromNow,
   formatAddress,
@@ -12,7 +12,7 @@ import type {
   PortfolioData,
 } from "./types";
 
-import { PendingRegistration} from "../types"
+import { PendingRegistration } from "../types";
 export function formatCheckResponse(data: NameCheckData): string {
   const { values } = data;
 
@@ -328,7 +328,6 @@ ${displayNames}
 `;
 }
 
-
 export function formatPhase1Summary(
   registration: PendingRegistration,
   durationYears: number,
@@ -338,7 +337,7 @@ export function formatPhase1Summary(
       const label = n.name.replace(/\.eth$/, "");
       const priceEth = formatEther(n.domainPriceWei);
       const lengthNote = label.length <= 4 ? " (short name premium)" : "";
-      return `**${i + 1}. ${n.name}** (${label.length} letters${lengthNote})
+      return `**${i + 1}. ${n.name}** (${label.length} letters${lengthNote}) \n\n
    └─ Domain: ${priceEth} ETH`;
     })
     .join("\n\n");
@@ -346,13 +345,14 @@ export function formatPhase1Summary(
   return `
 📋 **Registration Summary**
 
-⏱️ Duration: ${durationYears} year${durationYears > 1 ? "s" : ""}
+⏱️ Duration: ${durationYears} year${durationYears > 1 ? "s" : ""} \n\n
 
 ${nameBreakdown}
 
-⛽ **Estimated Gas Costs**
-├─ Commit tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.commitGasEth} ETH
-└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH _(estimate)_
+⛽ **Estimated Gas Costs** \n\n
+
+├─ Commit tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.commitGasEth} ETH \n\n
+└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH _(estimate)_ \n\n
 
 💰 **Estimated Total: ~${registration.grandTotalEth} ETH**
 
@@ -365,9 +365,7 @@ Ready to proceed?
   `.trim();
 }
 
-export function formatPhase2Summary(
-  registration: PendingRegistration,
-): string {
+export function formatPhase2Summary(registration: PendingRegistration): string {
   const nameList = registration.names.map((n) => n.name).join(", ");
 
   return `

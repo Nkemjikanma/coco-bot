@@ -7,6 +7,8 @@ import {
   getPendingRegistration,
   clearPendingRegistration,
   updatePendingRegistration,
+  getBridgeState,
+  updateBridgeState,
 } from "./db";
 import {
   executeValidCommand,
@@ -21,6 +23,9 @@ import { ENS_CONTRACTS, REGISTRATION } from "./services/ens/constants";
 import type { ParsedCommand, PendingCommand, RegisterCommand } from "./types";
 import { encodeCommitData, encodeRegisterData } from "./services/ens";
 import { estimateRegisterGas } from "./services/ens/ens";
+import { threadId } from "worker_threads";
+import { checkBalance } from "./utils";
+import { CHAIN_IDS } from "./services/bridge";
 
 // import { handleInteractionResponse } from "./handlers";
 
@@ -62,6 +67,21 @@ bot.onMessage(async (handler, event) => {
   const shouldRespond = await shouldRespondToMessage(event);
 
   if (shouldRespond) {
+    if (
+      event.message
+        .trim()
+        .split(" ")
+        .filter((m) => m.toLowerCase() !== "@coco").length === 0
+    ) {
+      await handler.sendMessage(
+        event.channelId,
+        "You sent an empty messsage ser",
+        {
+          threadId: event.threadId || event.eventId,
+        },
+      );
+    }
+
     await handleOnMessage(handler, event);
   }
 });
@@ -172,7 +192,7 @@ bot.onInteractionResponse(async (handler, event) => {
                       to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
                       value: "0",
                       data: commitData,
-                      signerWallet: undefined,
+                      // signerWallet: undefined,
                     },
                   },
                 },
@@ -348,10 +368,151 @@ bot.onInteractionResponse(async (handler, event) => {
           }
         }
       }
+
+      if (form.requestId.startsWith("continue_after_bridge")) {
+        const userState = await getUserState(userId);
+        const pendingRegistration = await getPendingRegistration(userId);
+        const validThreadId =
+          event.threadId ?? userState?.activeThreadId ?? channelId;
+
+        for (const component of form.components) {
+          if (
+            component.component.case === "button" &&
+            component.id === "cancel"
+          ) {
+            await clearPendingRegistration(userId);
+            await clearUserPendingCommand(userId);
+            await handler.sendMessage(channelId, "Registration cancelled. 👋", {
+              threadId: validThreadId,
+            });
+            return;
+          }
+
+          if (
+            component.component.case === "button" &&
+            component.id === "continue"
+          ) {
+            // Verify user now has enough L1 balance
+            const partialCommand = userState?.pendingCommand?.partialCommand;
+
+            if (!partialCommand || partialCommand.action !== "register") {
+              await handler.sendMessage(
+                channelId,
+                "Lost track of your registration. Please start again.",
+                { threadId: validThreadId },
+              );
+              return;
+            }
+
+            if (!pendingRegistration.success || !pendingRegistration.data) {
+              await handler.sendMessage(
+                channelId,
+                "Registration data expired. Please start again.",
+                { threadId: validThreadId },
+              );
+              return;
+            }
+
+            // Re-check L1 balance
+            const owner = pendingRegistration.data.names[0].owner;
+            const l1Balance = await checkBalance(owner, CHAIN_IDS.MAINNET);
+            const requiredAmount = pendingRegistration.data.grandTotalWei;
+
+            if (l1Balance.balance < requiredAmount) {
+              await handler.sendMessage(
+                channelId,
+                `⏳ Your bridged ETH may not have arrived yet.
+
+        **Current L1 Balance:** ${formatEther(l1Balance.balance)} ETH
+        **Required:** ~${formatEther(requiredAmount)} ETH
+
+        Bridging can take 10-20 minutes. Please wait and try again.`,
+                { threadId: validThreadId },
+              );
+
+              // Send another continue button
+              await handler.sendInteractionRequest(
+                channelId,
+                {
+                  case: "form",
+                  value: {
+                    id: `continue_after_bridge:${validThreadId}`,
+                    title: "Check Balance & Continue",
+                    components: [
+                      {
+                        id: "continue",
+                        component: {
+                          case: "button",
+                          value: { label: "🔄 Check Again & Continue" },
+                        },
+                      },
+                      {
+                        id: "cancel",
+                        component: {
+                          case: "button",
+                          value: { label: "❌ Cancel" },
+                        },
+                      },
+                    ],
+                  },
+                },
+                hexToBytes(userId as `0x${string}`),
+              );
+              return;
+            }
+
+            // Balance is sufficient - proceed with commit
+            await handler.sendMessage(
+              channelId,
+              `✅ **Balance Confirmed!**
+
+        L1 Balance: ${formatEther(l1Balance.balance)} ETH
+
+        Proceeding with registration...`,
+              { threadId: validThreadId },
+            );
+
+            // Now send the commit transaction
+            const regData = pendingRegistration.data;
+            const firstCommitment = regData.names[0];
+            const commitData = encodeCommitData(firstCommitment.commitment);
+            const commitmentId = `commit:${userId}:${Date.now()}`;
+
+            await updatePendingRegistration(userId, {
+              phase: "commit_pending",
+            });
+
+            await handler.sendInteractionRequest(
+              channelId,
+              {
+                case: "transaction",
+                value: {
+                  id: commitmentId,
+                  title: `Commit ENS Registration: ${firstCommitment.name}`,
+                  content: {
+                    case: "evm",
+                    value: {
+                      chainId: "1",
+                      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+                      value: "0",
+                      data: commitData,
+                    },
+                  },
+                },
+              },
+              hexToBytes(userId as `0x${string}`),
+            );
+
+            return;
+          }
+        }
+      }
       break;
     }
     case "transaction": {
       const tx = response.payload.content.value;
+      const txHash = tx.txHash; // Transaction hash if successful
+      const success = !!txHash; // Error message if failed
 
       // Check if this is a commit transaction
       if (tx.requestId.startsWith("commit:")) {
@@ -385,6 +546,135 @@ bot.onInteractionResponse(async (handler, event) => {
           await clearPendingRegistration(userId);
           await clearUserPendingCommand(userId);
         }
+
+        return;
+      }
+
+      if (tx.requestId.startsWith("bridge:")) {
+        const userState = await getUserState(userId);
+        const pendingRegistration = await getPendingRegistration(userId);
+        const validThreadId =
+          threadId?.toString() ?? userState?.activeThreadId ?? event;
+
+        if (tx.requestId !== `bridge:${userId}${validThreadId}`) {
+          await handler.sendMessage(
+            channelId,
+            "Couldn't reach the correct bridge. Something is wrong",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        const bridgeState = await getBridgeState(userId, validThreadId);
+        if (!bridgeState.success) {
+          await handler.sendMessage(
+            channelId,
+            "Couldn't retrieve bridge state. Something went wrong.",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        // Check transaction status
+        if (!!tx.txHash) {
+          await updateBridgeState(userId, validThreadId, {
+            ...bridgeState.data,
+            status: "failed",
+          });
+          await handler.sendMessage(
+            channelId,
+            "❌ Bridging failed. Please try again or bridge manually.",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        // Bridge successful
+        await updateBridgeState(userId, validThreadId, {
+          ...bridgeState.data,
+          status: "completed",
+        });
+
+        await handler.sendMessage(
+          channelId,
+          `✅ **Bridge Successful!**
+
+      Your ETH has been bridged to Ethereum Mainnet.
+
+      ⏳ Please note: Bridging can take 10-20 minutes to finalize on L1. Once confirmed, we'll continue with your registration.`,
+          { threadId: validThreadId },
+        );
+
+        // Check if we have pending registration
+        if (!pendingRegistration.success || !pendingRegistration.data) {
+          await handler.sendMessage(
+            channelId,
+            "Registration data expired. Please start again with `/register`",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        // Check if we have the pending command
+        if (!userState?.pendingCommand?.partialCommand) {
+          await handler.sendMessage(
+            channelId,
+            "Lost track of your registration. Please start again with `/register`",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        // Reconstruct the command from pending state
+        const partialCommand = userState.pendingCommand.partialCommand;
+
+        if (
+          partialCommand.action !== "register" ||
+          !partialCommand.names ||
+          !partialCommand.duration
+        ) {
+          await handler.sendMessage(
+            channelId,
+            "Something went wrong with the registration data. Please start again.",
+            { threadId: validThreadId },
+          );
+          return;
+        }
+
+        const command: RegisterCommand = {
+          action: "register",
+          names: partialCommand.names,
+          duration: partialCommand.duration,
+        };
+
+        // Option 2: Prompt user to continue
+        await handler.sendInteractionRequest(
+          channelId,
+          {
+            case: "form",
+            value: {
+              id: `continue_after_bridge:${validThreadId}`,
+              title: "Continue Registration",
+              components: [
+                {
+                  id: "continue",
+                  component: {
+                    case: "button",
+                    value: { label: "✅ Continue Registration" },
+                  },
+                },
+                {
+                  id: "cancel",
+                  component: {
+                    case: "button",
+                    value: { label: "❌ Cancel" },
+                  },
+                },
+              ],
+            },
+          },
+          hexToBytes(userId as `0x${string}`),
+        );
 
         return;
       }
@@ -453,7 +743,6 @@ bot.onInteractionResponse(async (handler, event) => {
 
         return;
       }
-
       break;
     }
   }

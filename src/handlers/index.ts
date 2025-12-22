@@ -4,10 +4,12 @@ import {
   handlePendingCommandResponse,
   executeValidCommand,
 } from "./handle_message";
-// import { handleInteractionResponse } from "./interactions_handler";
+
+import { sendBotMessage } from "./handle_message_utils";
 export {
   executeValidCommand,
   handleSlashCommand,
   handleOnMessage,
   handlePendingCommandResponse,
+  sendBotMessage,
 };

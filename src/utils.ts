@@ -1,3 +1,24 @@
+import { CHAIN_IDS, BalanceCheckResult } from "./services/bridge";
+import {
+  createPublicClient,
+  http,
+  formatEther,
+  parseEther,
+  encodeFunctionData,
+  parseEventLogs,
+} from "viem";
+import { mainnet, base } from "viem/chains";
+
+const ethereumClient = createPublicClient({
+  chain: mainnet,
+  transport: http(),
+});
+
+const baseClient = createPublicClient({
+  chain: base,
+  transport: http(`https://mainnet.base.org`),
+});
+
 /**
  * Shortens an Ethereum address for display
  * Example: 0x1234567890abcdef... -> 0x1234...cdef
@@ -70,5 +91,38 @@ export function formatExpiryDate(expiryDate: string): string {
     });
   } catch {
     return "Unknown";
+  }
+}
+
+export async function checkBalance(
+  address: `0x${string}`,
+  chainId: number,
+  requiredAmount?: bigint,
+): Promise<BalanceCheckResult> {
+  try {
+    const client = chainId === CHAIN_IDS.MAINNET ? ethereumClient : baseClient;
+
+    const balance = await client.getBalance({ address });
+    const ethBalance = formatEther(balance);
+
+    const sufficient = requiredAmount ? balance >= requiredAmount : true;
+
+    const shortfall =
+      requiredAmount && balance <= requiredAmount
+        ? requiredAmount - balance
+        : undefined;
+
+    return {
+      address,
+      chainId,
+      balance,
+      balanceEth: ethBalance,
+      sufficient,
+      required: requiredAmount,
+      shortfall,
+    };
+  } catch (e) {
+    console.error(`Error checking balance on chain ${chainId}:`, e);
+    throw e;
   }
 }

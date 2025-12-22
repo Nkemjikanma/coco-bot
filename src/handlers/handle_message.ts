@@ -1,9 +1,9 @@
-import { getPrice } from "@ensdomains/ensjs/public";
+import { ENS_CONTRACTS } from "../services/ens/constants";
 import {
   type BotHandler,
   getSmartAccountFromUserId,
 } from "@towns-protocol/bot";
-import { formatEther, hexToBytes, isAddress } from "viem";
+import { formatEther, hexToBytes, isAddress, parseEther } from "viem";
 import { coco_parser, handleQuestionCommand, validate_parse } from "../ai";
 import {
   type ApiResponse,
@@ -30,6 +30,9 @@ import {
   setUserPendingCommand,
   updateUserLocation,
   setPendingRegistration,
+  clearPendingRegistration,
+  getPendingRegistration,
+  updatePendingRegistration,
 } from "../db";
 import {
   checkAvailability,
@@ -37,6 +40,7 @@ import {
   getHistory,
   getUserPorfolio,
   prepareRegistration,
+  encodeCommitData,
 } from "../services/ens";
 import type {
   EventType,
@@ -46,14 +50,22 @@ import type {
   QuestionCommand,
   RegisterCommand,
 } from "../types";
-import { formatAddress } from "../utils";
+import { checkBalance, formatAddress } from "../utils";
 import {
   determineWaitingFor,
   extractMissingInfo,
   formatRustPayload,
   getHelpMessage,
   getWaitingForMessage,
+  sendBotMessage,
 } from "./handle_message_utils";
+import {
+  CHAIN_IDS,
+  getBridgeQuote,
+  prepareBridgeTransaction,
+} from "../services/bridge";
+import { getBridgeState, setBridgeState } from "../db/bridgeStore";
+import { handleBridging } from "../services/bridge/bridgeUtils";
 
 type UnifiedEvent = {
   channelId: string;
@@ -141,7 +153,6 @@ export async function handleMessage(
     walletAdd = await getSmartAccountFromUserId(bot, {
       userId: event.userId,
     });
-    return;
   } else {
     walletAdd = walletAddressInContent[0];
   }
@@ -168,6 +179,65 @@ export async function handleMessage(
       ) {
         // Move pending command to this thread
         await movePendingCommandToThread(userId, threadId, channelId);
+
+        const pending = elsewhereCheck.pendingCommand;
+
+        if (pending.waitingFor === "confirmation") {
+          const registration = await getPendingRegistration(userId);
+
+          if (!registration.success || !registration.data) {
+            await sendBotMessage(
+              handler,
+              channelId,
+              threadId,
+              userId,
+              "Your registration data expired. Please start again with `/register`.",
+            );
+            await clearUserPendingCommand(userId);
+            return;
+          }
+
+          const message = getWaitingForMessage(pending);
+          await sendBotMessage(
+            handler,
+            channelId,
+            threadId,
+            userId,
+            `Great! Continuing here.\n\n${message}`,
+          );
+
+          // Send the confirmation interaction
+          await handler.sendInteractionRequest(
+            channelId,
+            {
+              case: "form",
+              value: {
+                id: `confirm_commit:${threadId}`,
+                title: "Confirm Registration: Step 1 of 2",
+                components: [
+                  {
+                    id: "confirm",
+                    component: {
+                      case: "button",
+                      value: { label: "✅ Start Registration" },
+                    },
+                  },
+                  {
+                    id: "cancel",
+                    component: {
+                      case: "button",
+                      value: { label: "❌ Cancel" },
+                    },
+                  },
+                ],
+              },
+            },
+            hexToBytes(userId as `0x${string}`),
+          );
+
+          return;
+        }
+
         await sendBotMessage(
           handler,
           channelId,
@@ -303,6 +373,7 @@ export async function handlePendingCommandResponse(
     lowerContent.includes("stop")
   ) {
     await clearUserPendingCommand(userId);
+    await clearPendingRegistration(userId);
     await sendBotMessage(
       handler,
       channelId,
@@ -311,6 +382,74 @@ export async function handlePendingCommandResponse(
       "No problem! Let me know if you want to do something else. 👋",
     );
     return;
+  }
+
+  if (pending.waitingFor === "confirmation") {
+    if (lowerContent.includes("confirm") || lowerContent.includes("yes")) {
+      // Get the pending registration data
+      const registration = await getPendingRegistration(userId);
+
+      if (!registration.success || !registration.data) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Your registration data expired. Please start again.",
+        );
+        await clearUserPendingCommand(userId);
+        return;
+      }
+
+      // Send the commit transaction directly
+      const regData = registration.data;
+      const firstCommitment = regData.names[0];
+      const commitData = encodeCommitData(firstCommitment.commitment);
+      const commitmentId = `commit:${userId}:${Date.now()}`;
+
+      await updatePendingRegistration(userId, { phase: "commit_pending" });
+
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "🚀 Starting registration...\n\nPlease approve the commit transaction.",
+      );
+
+      await handler.sendInteractionRequest(
+        channelId,
+        {
+          case: "transaction",
+          value: {
+            id: commitmentId,
+            title: `Commit ENS Registration: ${firstCommitment.name}`,
+            content: {
+              case: "evm",
+              value: {
+                chainId: "1",
+                to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+                value: "0",
+                data: commitData,
+              },
+            },
+          },
+        },
+        hexToBytes(userId as `0x${string}`),
+      );
+
+      return;
+    } else {
+      // User said something other than confirm/cancel
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Please say **confirm** to proceed with the registration, or **cancel** to stop.",
+      );
+      return;
+    }
   }
 
   const updated = extractMissingInfo(
@@ -362,24 +501,6 @@ export async function handlePendingCommandResponse(
   const command = validation.command;
 
   await executeValidCommand(handler, channelId, threadId, userId, command);
-}
-
-// send message and store in session
-async function sendBotMessage(
-  handler: BotHandler,
-  channelId: string,
-  threadId: string,
-  userId: string,
-  message: string,
-): Promise<void> {
-  await handler.sendMessage(channelId, message, { threadId });
-
-  await appendMessageToSession(threadId, userId, {
-    eventId: `bot-${Date.now()}`,
-    content: message,
-    timestamp: Date.now(),
-    role: "assistant",
-  });
 }
 
 export async function executeValidCommand(
@@ -486,9 +607,22 @@ export async function executeValidCommand(
         "Something went wrong and we can't figure out that address. Let's start again.",
       );
     }
-    const portfolioResult: PortfolioData = await getUserPorfolio(
+
+    const portfolioResult: PortfolioData | null = await getUserPorfolio(
       command.address,
     );
+
+    if (portfolioResult === null) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Looks like you don't own any. You can always register one",
+      );
+
+      return;
+    }
 
     const portfolioData = formatPortfolioResponse(
       command.address,
@@ -638,6 +772,13 @@ async function handleExecution(
         durationYears: command.duration,
       });
 
+      // checkBalance
+      const mainnetBalance = await checkBalance(
+        userTownWallet,
+        CHAIN_IDS.MAINNET,
+        registration.grandTotalWei,
+      );
+
       // Store registration data
       await setPendingRegistration(userId, registration);
 
@@ -650,8 +791,40 @@ async function handleExecution(
         "confirmation",
       );
 
+      console.log("Debugger is here ");
+      const balanceMessage = mainnetBalance.sufficient
+        ? `✅ Your L1 balance: ${formatEther(mainnetBalance.balance)} ETH (sufficient)`
+        : `⚠️ Your L1 balance: ${formatEther(mainnetBalance.balance)} ETH\n\n
+
+        Required: ~${registration.grandTotalEth} ETH\n
+        Please ensure you have enough ETH on Ethereum Mainnet.`;
+
+      if (!mainnetBalance.sufficient) {
+        await handleBridging(
+          handler,
+          userTownWallet,
+          channelId,
+          threadId,
+          userId,
+          mainnetBalance,
+          registration,
+          command,
+        );
+
+        return;
+      }
       const summary = formatPhase1Summary(registration, command.duration);
-      await sendBotMessage(handler, channelId, threadId, userId, summary);
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `${summary}\n\n💰 **Balance Check**\n
+
+              ${balanceMessage}\n
+
+              ⚠️ **Note:** ENS registration happens on Ethereum Mainnet (L1). You'll need to sign the transaction with your Ethereum wallet.`,
+      );
 
       // Send confirmation interaction
       await handler.sendInteractionRequest(
@@ -660,7 +833,7 @@ async function handleExecution(
           case: "form",
           value: {
             id: `confirm_commit:${threadId}`,
-            title: "Confirm Registration",
+            title: "Confirm Registration: Step 1 of 2",
             components: [
               {
                 id: "confirm",
@@ -689,7 +862,7 @@ async function handleExecution(
       );
     }
     // clear pending command after execution
-    await clearUserPendingCommand(userId);
+    // await clearUserPendingCommand(userId);
     return;
   }
 }

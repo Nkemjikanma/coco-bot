@@ -5,6 +5,7 @@
     "": {
       "name": "tens",
       "dependencies": {
+        "@across-protocol/app-sdk": "^0.4.4",
         "@anthropic-ai/sdk": "^0.71.2",
         "@connectrpc/connect-node": "^2.1.1",
         "@ensdomains/ensjs": "^4.2.0",
@@ -32,6 +33,8 @@
     },
   },
   "packages": {
+    "@across-protocol/app-sdk": ["@across-protocol/app-sdk@0.4.4", "", { "peerDependencies": { "viem": "^2.31.2" } }, "sha512-Yz+C1/jFJCQ3TRXRxCn+WXW1K0aLyrGi+S2p7Ot+MSO6X/rThRCbZpXdfPkSRLxdNBKXL5h3LAEgwwj1j2Pa7w=="],
+
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.10.1", "", {}, "sha512-96Z2IP3mYmF1Xg2cDm8f1gWGf/HUVedQ3FMifV4kG/PQ4yEP51xDtRAEfhVNt5f/uzpNkZHwWQuUcu6D6K+Ekw=="],
 
     "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.71.2", "", { "dependencies": { "json-schema-to-ts": "^3.1.1" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-TGNDEUuEstk/DKu0/TflXAEt+p+p/WhTlFzEnoosvbaDU2LTjm42igSdlL0VijrKpWejtOKxX0b8A7uc+XiSAQ=="],

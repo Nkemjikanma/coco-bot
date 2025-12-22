@@ -20,6 +20,11 @@ import {
   updatePendingRegistration,
 } from "./userStateStore";
 
+import {
+  getBridgeState,
+  updateBridgeState,
+  setBridgeState,
+} from "./bridgeStore";
 export {
   createSession,
   updateSession,
@@ -38,4 +43,7 @@ export {
   getPendingRegistration,
   clearPendingRegistration,
   updatePendingRegistration,
+  getBridgeState,
+  updateBridgeState,
+  setBridgeState,
 };

@@ -14,7 +14,7 @@ import {
   encodeFunctionData,
 } from "viem";
 import { readContract } from "viem/actions";
-import { mainnet } from "viem/chains";
+import { mainnet, base, sepolia } from "viem/chains";
 import type {
   ApiResponse,
   ExpiryData,
@@ -437,7 +437,7 @@ export async function resolveENSToAddress(
 
 export async function getUserPorfolio(
   address: `0x${string}`,
-): Promise<PortfolioData> {
+): Promise<PortfolioData | null> {
   const result = await getNamesForAddress(ethereumClient, {
     address,
     orderBy: "expiryDate",
@@ -447,6 +447,12 @@ export async function getUserPorfolio(
   const primaryName = await getName(ethereumClient, {
     address,
   });
+
+  console.log(primaryName);
+
+  if (primaryName === null) {
+    return null;
+  }
   const data = mapNamesForAddressToPortfolioData(result, primaryName.name);
   return data;
 }
@@ -464,26 +470,41 @@ export async function estimateCommitGas({
   account: `0x${string}`;
   commitment: `0x${string}`;
 }): Promise<{ gasWei: bigint; gasEth: string }> {
-  const sim = await ethereumClient.simulateContract({
-    address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-    abi: CONTROLLER_ABI,
-    functionName: "commit",
-    args: [commitment],
-    account,
-  });
+  try {
+    // Encode the commit function call
+    const data = encodeFunctionData({
+      abi: CONTROLLER_ABI,
+      functionName: "commit",
+      args: [commitment],
+    });
 
-  const gas = await ethereumClient.estimateGas({
-    ...sim.request,
-    to: sim.request.address,
-  });
-  const fees = await ethereumClient.estimateFeesPerGas();
-  const maxFeePerGas = fees.maxFeePerGas ?? 0n;
-  const gasWei = gas * maxFeePerGas;
+    // Estimate gas with explicit parameters
+    const gas = await ethereumClient.estimateGas({
+      account,
+      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+      data,
+    });
 
-  return {
-    gasWei,
-    gasEth: formatEther(gasWei),
-  };
+    const fees = await ethereumClient.estimateFeesPerGas();
+    const maxFeePerGas = fees.maxFeePerGas ?? 0n;
+    const gasWei = gas * maxFeePerGas;
+
+    return {
+      gasWei,
+      gasEth: formatEther(gasWei),
+    };
+  } catch (error) {
+    console.error("Error estimating commit gas:", error);
+    // Fallback to fixed estimate
+    const fees = await ethereumClient.estimateFeesPerGas();
+    const estimatedGas = 50000n;
+    const gasWei = estimatedGas * (fees.maxFeePerGas ?? 0n);
+
+    return {
+      gasWei,
+      gasEth: formatEther(gasWei),
+    };
+  }
 }
 
 // build the transaction data/hash
@@ -559,8 +580,8 @@ export async function estimateRegisterGas({
   value: bigint;
 }): Promise<{ gasWei: bigint; gasEth: string }> {
   try {
-    const sim = await ethereumClient.simulateContract({
-      address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+    // Encode the register function call
+    const calldata = encodeFunctionData({
       abi: CONTROLLER_ABI,
       functionName: "register",
       args: [
@@ -573,13 +594,14 @@ export async function estimateRegisterGas({
         reverseRecord,
         ownerControlledFuses,
       ],
-      account,
-      value,
     });
 
+    // Estimate gas with explicit parameters
     const gas = await ethereumClient.estimateGas({
-      ...sim.request,
-      to: sim.request.address,
+      account,
+      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+      data: calldata,
+      value,
     });
 
     const fees = await ethereumClient.estimateFeesPerGas();
@@ -591,7 +613,8 @@ export async function estimateRegisterGas({
       gasEth: formatEther(gasWei),
     };
   } catch (error) {
-    // If simulation fails (commit not ready), return estimate
+    console.error("Error estimating register gas:", error);
+    // Fallback to fixed estimate
     const fees = await ethereumClient.estimateFeesPerGas();
     const estimatedGas = 300000n;
     const gasWei = estimatedGas * (fees.maxFeePerGas ?? 0n);

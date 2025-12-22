@@ -1,4 +1,6 @@
 import type { ParsedCommand, PendingCommand } from "../types";
+import { BotHandler } from "@towns-protocol/bot";
+import { appendMessageToSession } from "../db";
 
 // tries to determine what we are waiting for
 export function determineWaitingFor(
@@ -196,24 +198,47 @@ _"How much does a 3-letter name cost?"_
  */
 export function getWaitingForMessage(pending: PendingCommand): string {
   const { partialCommand, waitingFor } = pending;
+  const action = partialCommand.action || "something";
+  const names =
+    "names" in partialCommand && partialCommand.names?.length
+      ? partialCommand.names.join(", ")
+      : "your name(s)";
 
   switch (waitingFor) {
+    case "duration":
+      return `Let's continue ${action}ing **${names}**. How many years would you like to register for? (1-10)`;
+
     case "names":
-      return `Which ENS name would you like to ${partialCommand.action || "work with"}?`;
-    case "duration": {
-      const names =
-        "names" in partialCommand && partialCommand.names?.length
-          ? partialCommand.names.join(", ")
-          : "the name";
-      return `For how many years would you like to ${partialCommand.action} ${names}? (1-10 years)`;
-    }
+      return `Let's continue. Which ENS name(s) would you like to ${action}?`;
+
     case "recipient":
-      return "What's the recipient address? (starts with 0x)";
+      return `Let's continue transferring **${names}**. What's the recipient's address?`;
+
     case "records":
-      return "What records would you like to set?";
+      return `Let's continue setting records for **${names}**. What records would you like to set?`;
+
     case "confirmation":
-      return "Ready when you are! Say 'confirm' to proceed or 'cancel' to stop.";
+      return `Let's continue with registering **${names}**. I'll send you the confirmation to approve.`;
+
     default:
-      return "What would you like to do next?";
+      return "Let's continue where you left off.";
   }
+}
+
+// send message and store in session
+export async function sendBotMessage(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+  message: string,
+): Promise<void> {
+  await handler.sendMessage(channelId, message, { threadId });
+
+  await appendMessageToSession(threadId, userId, {
+    eventId: `bot-${Date.now()}`,
+    content: message,
+    timestamp: Date.now(),
+    role: "assistant",
+  });
 }
