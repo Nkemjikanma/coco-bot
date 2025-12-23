@@ -26,6 +26,11 @@ import { estimateRegisterGas } from "./services/ens/ens";
 import { threadId } from "worker_threads";
 import { checkBalance } from "./utils";
 import { CHAIN_IDS } from "./services/bridge";
+import {
+  confirmCommit,
+  confirmRegister,
+  durationForm,
+} from "./handlers/interactionHandlers/form";
 
 // import { handleInteractionResponse } from "./handlers";
 
@@ -87,436 +92,60 @@ bot.onMessage(async (handler, event) => {
 });
 
 bot.onInteractionResponse(async (handler, event) => {
-  const { userId, response, channelId } = event;
+  const { userId, response, channelId, threadId, eventId } = event;
+
+  const userState = await getUserState(userId);
+
+  if (!userState?.pendingCommand) {
+    await handler.sendMessage(
+      channelId,
+      "Sorry, I lost track of what we were doing. Please start again.",
+    );
+    return;
+  }
 
   switch (response.payload.content.case) {
     case "form": {
       const form = response.payload.content.value;
 
       if (form.requestId.startsWith("confirm_commit")) {
-        const userState = await getUserState(userId);
-        if (!userState?.pendingCommand) {
-          await handler.sendMessage(
-            channelId,
-            "Sorry, I lost track of what we were doing. Please start again.",
-          );
-          return;
-        }
+        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
+        await confirmCommit(handler, event, confirmForm, userState);
 
-        const registration = await getPendingRegistration(userId);
-
-        const threadId =
-          event.threadId ?? userState.activeThreadId ?? event.eventId;
-
-        if (!registration.success) {
-          await handler.sendMessage(
-            channelId,
-            `Something went wrong: ${registration.error}. Please start again.`,
-            { threadId },
-          );
-          await clearUserPendingCommand(userId);
-          return;
-        }
-
-        if (!registration.data) {
-          await handler.sendMessage(
-            channelId,
-            "Registration expired. Please start again.",
-            { threadId },
-          );
-          return;
-        }
-
-        const updateResult = await updatePendingRegistration(userId, {
-          phase: "commit_pending",
-        });
-
-        if (!updateResult.success) {
-          await handler.sendMessage(
-            channelId,
-            "Failed to update registration. Please try again.",
-            { threadId },
-          );
-          return;
-        }
-
-        for (const component of form.components) {
-          // Handle cancel
-          if (
-            component.component.case === "button" &&
-            component.id === "cancel"
-          ) {
-            await clearPendingRegistration(userId);
-            await clearUserPendingCommand(userId);
-            await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-              threadId,
-            });
-            return;
-          }
-
-          if (component.id === "confirm") {
-            // Update phase
-            await updatePendingRegistration(userId, {
-              phase: "commit_pending",
-            });
-
-            // Update phase
-            await handler.sendMessage(
-              channelId,
-              "🚀 Starting registration process...\n\nExecuting commit transaction...",
-              { threadId },
-            );
-
-            const regData = registration.data;
-
-            // TODO!: for now, let's handle only one name
-            const firstCommitment = regData.names[0];
-
-            const commitData = encodeCommitData(firstCommitment.commitment);
-
-            // Generate a unique ID for transaction
-            const commitmentId = `commit:${userId}:${Date.now()}`;
-
-            // Send transaction interaction request
-            await handler.sendInteractionRequest(
-              channelId,
-              {
-                case: "transaction",
-                value: {
-                  id: commitmentId,
-                  title: `Commit ENS Registration: ${firstCommitment.name}`,
-                  content: {
-                    case: "evm",
-                    value: {
-                      chainId: REGISTRATION.CHAIN_ID, // Mainnet
-                      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                      value: "0",
-                      data: commitData,
-                      // signerWallet: undefined,
-                    },
-                  },
-                },
-              },
-              hexToBytes(userId as `0x${string}`),
-            );
-
-            return;
-          }
-        }
+        return;
       }
 
       if (form.requestId.startsWith("duration_form")) {
-        const userState = await getUserState(userId);
-
-        if (!userState?.pendingCommand) {
-          await handler.sendMessage(
-            channelId,
-            "Sorry, I lost track of what we were doing. Please start again.",
-          );
-          return;
-        }
-
-        const threadId =
-          event.threadId ?? userState.activeThreadId ?? event.eventId;
-        for (const component of form.components) {
-          // Handle cancel
-          if (
-            component.component.case === "button" &&
-            component.id === "cancel"
-          ) {
-            await clearUserPendingCommand(userId);
-            await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-              threadId,
-            });
-            return;
-          }
-
-          // handle duration input
-          if (
-            component.component.case === "textInput" &&
-            component.id === "duration_text_field"
-          ) {
-            const durationStr = component.component.value.value;
-            const duration = parseInt(durationStr, 10);
-
-            // Validate duration
-            if (Number.isNaN(duration) || duration < 1 || duration > 10) {
-              await handler.sendMessage(
-                channelId,
-                "Please enter a valid duration between 1 and 10 years.",
-                { threadId },
-              );
-              return;
-            }
-
-            // Type guarding to get the RegisterCommand
-            const partialCommand = userState.pendingCommand.partialCommand;
-
-            // Ensure it's a register command
-            if (partialCommand.action !== "register") {
-              await handler.sendMessage(
-                channelId,
-                "Something went wrong. Please start again.",
-                { threadId },
-              );
-              await clearUserPendingCommand(userId);
-              return;
-            }
-
-            const updatedCommand: RegisterCommand = {
-              action: "register",
-              names: partialCommand.names ?? [],
-              duration,
-            };
-
-            if (updatedCommand.names.length === 0) {
-              await handler.sendMessage(
-                channelId,
-                "Something went wrong. Please start again.",
-                { threadId },
-              );
-              await clearUserPendingCommand(userId);
-              return;
-            }
-
-            // Clear pending state
-            await clearUserPendingCommand(userId);
-            await executeValidCommand(
-              handler,
-              channelId,
-              threadId,
-              userId,
-              updatedCommand,
-            );
-            return;
-          }
-        }
+        const durationForForm =
+          form.requestId.startsWith("duration_form") && form;
+        await durationForm(handler, event, durationForForm, userState);
+        return;
       }
 
       if (form.requestId.startsWith("confirm_register")) {
-        const userState = await getUserState(userId);
-        const registration = await getPendingRegistration(userId);
-        const threadId =
-          event.threadId ?? userState?.activeThreadId ?? channelId;
+        const confirmForRegister =
+          form.requestId.startsWith("confirm_register") && form;
 
-        if (!registration.success || !registration.data) {
-          await handler.sendMessage(
-            channelId,
-            "Registration expired. Please start again.",
-            { threadId },
-          );
-          return;
-        }
-
-        for (const component of form.components) {
-          if (
-            component.component.case === "button" &&
-            component.id === "cancel"
-          ) {
-            await clearPendingRegistration(userId);
-            await clearUserPendingCommand(userId);
-            await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-              threadId,
-            });
-            return;
-          }
-
-          if (
-            component.component.case === "button" &&
-            component.id === "confirm"
-          ) {
-            const regData = registration.data;
-            const firstReg = regData.names[0];
-
-            // Encode register function call
-            const registerData = encodeRegisterData({
-              name: firstReg.name.replace(/\.eth$/, ""),
-              owner: firstReg.owner,
-              duration: firstReg.durationSec,
-              secret: firstReg.secret,
-              resolver: ENS_CONTRACTS.PUBLIC_RESOLVER,
-              data: [],
-              reverseRecord: false,
-              ownerControlledFuses: 0,
-            });
-
-            const registerId = `register:${userId}:${Date.now()}`;
-
-            await handler.sendInteractionRequest(
-              channelId,
-              {
-                case: "transaction",
-                value: {
-                  id: registerId,
-                  title: `Register: ${firstReg.name}`,
-                  content: {
-                    case: "evm",
-                    value: {
-                      chainId: REGISTRATION.CHAIN_ID,
-                      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                      value: firstReg.domainPriceWei.toString(),
-                      data: registerData,
-                      signerWallet: undefined,
-                    },
-                  },
-                },
-              },
-              hexToBytes(userId as `0x${string}`),
-            );
-
-            return;
-          }
-        }
+        await confirmRegister(handler, event, confirmForRegister, userState);
+        return;
       }
 
       if (form.requestId.startsWith("continue_after_bridge")) {
-        const userState = await getUserState(userId);
-        const pendingRegistration = await getPendingRegistration(userId);
-        const validThreadId =
-          event.threadId ?? userState?.activeThreadId ?? channelId;
+        const bridgeForm =
+          form.requestId.startsWith("continue_after_bridge") && form;
 
-        for (const component of form.components) {
-          if (
-            component.component.case === "button" &&
-            component.id === "cancel"
-          ) {
-            await clearPendingRegistration(userId);
-            await clearUserPendingCommand(userId);
-            await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-              threadId: validThreadId,
-            });
-            return;
-          }
-
-          if (
-            component.component.case === "button" &&
-            component.id === "continue"
-          ) {
-            // Verify user now has enough L1 balance
-            const partialCommand = userState?.pendingCommand?.partialCommand;
-
-            if (!partialCommand || partialCommand.action !== "register") {
-              await handler.sendMessage(
-                channelId,
-                "Lost track of your registration. Please start again.",
-                { threadId: validThreadId },
-              );
-              return;
-            }
-
-            if (!pendingRegistration.success || !pendingRegistration.data) {
-              await handler.sendMessage(
-                channelId,
-                "Registration data expired. Please start again.",
-                { threadId: validThreadId },
-              );
-              return;
-            }
-
-            // Re-check L1 balance
-            const owner = pendingRegistration.data.names[0].owner;
-            const l1Balance = await checkBalance(owner, CHAIN_IDS.MAINNET);
-            const requiredAmount = pendingRegistration.data.grandTotalWei;
-
-            if (l1Balance.balance < requiredAmount) {
-              await handler.sendMessage(
-                channelId,
-                `⏳ Your bridged ETH may not have arrived yet.
-
-        **Current L1 Balance:** ${formatEther(l1Balance.balance)} ETH
-        **Required:** ~${formatEther(requiredAmount)} ETH
-
-        Bridging can take 10-20 minutes. Please wait and try again.`,
-                { threadId: validThreadId },
-              );
-
-              // Send another continue button
-              await handler.sendInteractionRequest(
-                channelId,
-                {
-                  case: "form",
-                  value: {
-                    id: `continue_after_bridge:${validThreadId}`,
-                    title: "Check Balance & Continue",
-                    components: [
-                      {
-                        id: "continue",
-                        component: {
-                          case: "button",
-                          value: { label: "🔄 Check Again & Continue" },
-                        },
-                      },
-                      {
-                        id: "cancel",
-                        component: {
-                          case: "button",
-                          value: { label: "❌ Cancel" },
-                        },
-                      },
-                    ],
-                  },
-                },
-                hexToBytes(userId as `0x${string}`),
-              );
-              return;
-            }
-
-            // Balance is sufficient - proceed with commit
-            await handler.sendMessage(
-              channelId,
-              `✅ **Balance Confirmed!**
-
-        L1 Balance: ${formatEther(l1Balance.balance)} ETH
-
-        Proceeding with registration...`,
-              { threadId: validThreadId },
-            );
-
-            // Now send the commit transaction
-            const regData = pendingRegistration.data;
-            const firstCommitment = regData.names[0];
-            const commitData = encodeCommitData(firstCommitment.commitment);
-            const commitmentId = `commit:${userId}:${Date.now()}`;
-
-            await updatePendingRegistration(userId, {
-              phase: "commit_pending",
-            });
-
-            await handler.sendInteractionRequest(
-              channelId,
-              {
-                case: "transaction",
-                value: {
-                  id: commitmentId,
-                  title: `Commit ENS Registration: ${firstCommitment.name}`,
-                  content: {
-                    case: "evm",
-                    value: {
-                      chainId: "1",
-                      to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                      value: "0",
-                      data: commitData,
-                    },
-                  },
-                },
-              },
-              hexToBytes(userId as `0x${string}`),
-            );
-
-            return;
-          }
-        }
+        await durationForm(handler, event, bridgeForm, userState);
+        return;
       }
       break;
     }
+
     case "transaction": {
       const tx = response.payload.content.value;
       const txHash = tx.txHash; // Transaction hash if successful
-      const success = !!txHash; // Error message if failed
 
       // Check if this is a commit transaction
       if (tx.requestId.startsWith("commit:")) {
-        const userState = await getUserState(userId);
         const threadId =
           event.threadId ?? userState?.activeThreadId ?? event.eventId;
 
