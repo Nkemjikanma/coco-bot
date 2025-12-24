@@ -12,6 +12,7 @@ import type {
   BalanceCheckResult,
   BridgeQuote,
   BridgeStatusResponse,
+  SwapApprovalResponse,
 } from "./types";
 import {
   ACROSS_API_URL,
@@ -68,138 +69,91 @@ export async function checkBalance(
 }
 
 /**
- * Get a bridge quote from Across Protocol
+ * Get bridge quote AND transaction data from Across Swap API
  */
-export async function getBridgeQuote(
+export async function getBridgeQuoteAndTx(
   amount: bigint,
+  depositor: `0x${string}`,
   fromChainId: number = CHAIN_IDS.BASE,
   toChainId: number = CHAIN_IDS.MAINNET,
-): Promise<BridgeQuote> {
+): Promise<{
+  quote: BridgeQuote;
+  swapTx: {
+    to: `0x${string}`;
+    data: `0x${string}`;
+    value: string;
+  };
+}> {
   try {
-    const inputToken =
-      fromChainId === CHAIN_IDS.BASE ? WETH_ADDRESS.BASE : WETH_ADDRESS.MAINNET;
-    const outputToken =
-      toChainId === CHAIN_IDS.MAINNET
-        ? WETH_ADDRESS.MAINNET
-        : WETH_ADDRESS.BASE;
+    // Use WETH as input (will be wrapped from native ETH)
+    const inputToken = WETH_ADDRESS.BASE;
+
+    // Use zero address for native ETH output on destination
+    const outputToken = "0x0000000000000000000000000000000000000000";
 
     const params = new URLSearchParams({
+      tradeType: "exactInput",
+      amount: amount.toString(),
       inputToken,
       outputToken,
       originChainId: fromChainId.toString(),
       destinationChainId: toChainId.toString(),
-      amount: amount.toString(),
-      skipAmountLimit: "false",
+      depositor,
+      recipient: depositor,
     });
 
-    const response = await fetch(`${ACROSS_API_URL}/suggested-fees?${params}`);
+    const response = await fetch(`${ACROSS_API_URL}/swap/approval?${params}`);
 
     if (!response.ok) {
-      throw new Error(`Across API error: ${response.statusText}`);
+      const errorText = await response.text();
+      console.error("Swap API error:", errorText);
+      throw new Error(`Across Swap API error: ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data: SwapApprovalResponse = await response.json();
 
-    return {
-      estimatedFillTimeSec: data.estimatedFillTimeSec || 60,
-      totalRelayFee: data.totalRelayFee || { pct: "0", total: "0" },
-      estimatedTime: data.estimatedTime || "1 minute",
-      limits: data.limits || {
+    // Extract the transaction data
+    const swapTx = {
+      to: data.swapTx.to as `0x${string}`,
+      data: data.swapTx.data as `0x${string}`,
+      value: data.swapTx.value || amount.toString(),
+    };
+
+    // Calculate fee from input - output
+    const inputAmount = BigInt(data.inputAmount);
+    const outputAmount = BigInt(data.expectedOutputAmount);
+    const feeTotal = inputAmount - outputAmount;
+
+    const quote: BridgeQuote = {
+      estimatedFillTimeSec: data.expectedFillTime || 60,
+      totalRelayFee: {
+        pct: data.fees?.totalRelay?.pct || "0",
+        total: feeTotal.toString(),
+      },
+      estimatedTime: `${data.expectedFillTime || 60} seconds`,
+      limits: {
         minDeposit: parseEther(BRIDGE_CONFIG.MIN_BRIDGE_AMOUNT_ETH).toString(),
         maxDeposit: "0",
         maxDepositInstant: "0",
         maxDepositShortDelay: "0",
       },
-      isAmountTooLow: data.isAmountTooLow || false,
-      spokePoolAddress:
-        fromChainId === CHAIN_IDS.BASE
-          ? ACROSS_SPOKE_POOL.BASE
-          : ACROSS_SPOKE_POOL.MAINNET,
+      isAmountTooLow: false,
+      spokePoolAddress: ACROSS_SPOKE_POOL.BASE,
+      outputAmount: data.expectedOutputAmount,
+      minOutputAmount: data.minOutputAmount,
     };
+    return { quote, swapTx };
   } catch (error) {
-    console.error("Error getting bridge quote:", error);
+    console.error("Error getting bridge quote from Swap API:", error);
     throw error;
   }
-}
-
-/**
- * Prepare bridge transaction data for Across Protocol
- * This creates the transaction data that the user needs to sign
- */
-export function prepareBridgeTransaction(
-  amount: bigint,
-  recipient: `0x${string}`,
-  outputAmount: bigint,
-  fromChainId: number = CHAIN_IDS.BASE,
-  toChainId: number = CHAIN_IDS.MAINNET,
-): {
-  to: `0x${string}`;
-  value: string;
-  data: `0x${string}`;
-} {
-  // For native ETH bridging on Across, we use the SpokePool contract
-  // The deposit function signature:
-  // depositV3(
-  //   address depositor,
-  //   address recipient,
-  //   address inputToken,
-  //   address outputToken,
-  //   uint256 inputAmount,
-  //   uint256 outputAmount,
-  //   uint256 destinationChainId,
-  //   address exclusiveRelayer,
-  //   uint32 quoteTimestamp,
-  //   uint32 fillDeadline,
-  //   uint32 exclusivityDeadline,
-  //   bytes calldata message
-  // )
-
-  const spokePoolAddress =
-    fromChainId === CHAIN_IDS.BASE
-      ? ACROSS_SPOKE_POOL.BASE
-      : ACROSS_SPOKE_POOL.MAINNET;
-
-  const inputToken =
-    fromChainId === CHAIN_IDS.BASE ? WETH_ADDRESS.BASE : WETH_ADDRESS.MAINNET;
-  const outputToken =
-    toChainId === CHAIN_IDS.MAINNET ? WETH_ADDRESS.MAINNET : WETH_ADDRESS.BASE;
-
-  // Get current timestamp for the quote
-  const quoteTimestamp = Math.floor(Date.now() / 1000);
-
-  // Encode the depositV3 function call
-  const data = encodeFunctionData({
-    abi: spokePoolAbiV3,
-    functionName: "depositV3",
-    args: [
-      recipient, // depositor (user's wallet)
-      recipient, // recipient (same wallet on destination chain)
-      inputToken, // inputToken (WETH on origin chain)
-      outputToken, // outputToken (WETH on destination chain)
-      amount, // inputAmount (amount to bridge)
-      outputAmount, // outputAmount (amount after fees)
-      BigInt(toChainId), // destinationChainId
-      "0x0000000000000000000000000000000000000000" as `0x${string}`, // exclusiveRelayer (none)
-      quoteTimestamp, // quoteTimestamp (current time)
-      0, // fillDeadline (0 = no deadline)
-      0, // exclusivityDeadline (0 = no exclusivity period)
-      "0x" as `0x${string}`, // message (empty)
-    ],
-  });
-
-  return {
-    to: spokePoolAddress,
-    value: amount.toString(),
-    data,
-  };
 }
 
 /**
  * Poll Across API to check bridge status
  */
 export async function pollBridgeStatus(
-  depositId: string,
-  fromChainId: number,
+  depositTxHash: string,
   callback: (status: BridgeStatusResponse) => void,
   maxWaitMs: number = BRIDGE_CONFIG.MAX_BRIDGE_WAIT_MS,
 ): Promise<void> {
@@ -208,13 +162,13 @@ export async function pollBridgeStatus(
 
   const poll = async (): Promise<void> => {
     try {
+      // Use depositTxnRef instead of depositId for easier tracking
       const response = await fetch(
-        `${ACROSS_API_URL}/deposit/status?originChainId=${fromChainId}&depositId=${depositId}`,
+        `${ACROSS_API_URL}/deposit/status?depositTxnRef=${depositTxHash}`,
       );
 
       if (!response.ok) {
         console.error(`Bridge status check failed: ${response.statusText}`);
-        // Continue polling even if one request fails
         if (Date.now() - startTime < maxWaitMs) {
           setTimeout(poll, pollInterval);
         }
@@ -224,13 +178,11 @@ export async function pollBridgeStatus(
       const data: BridgeStatusResponse = await response.json();
 
       if (data.status === "filled") {
-        // Bridge completed successfully
         callback(data);
         return;
       }
 
       if (data.status === "expired") {
-        // Bridge failed/expired
         callback(data);
         return;
       }
@@ -239,7 +191,6 @@ export async function pollBridgeStatus(
       if (Date.now() - startTime < maxWaitMs) {
         setTimeout(poll, pollInterval);
       } else {
-        // Timeout reached
         callback({ status: "pending" });
       }
     } catch (error) {
@@ -250,7 +201,6 @@ export async function pollBridgeStatus(
     }
   };
 
-  // Start polling
   poll();
 }
 
@@ -262,19 +212,14 @@ export function calculateRequiredMainnetETH(
   registrationCostWei: bigint,
   gasBufferPercentage: number = BRIDGE_CONFIG.GAS_BUFFER_PERCENTAGE,
 ): bigint {
-  // Add estimated gas cost (rough estimate: 0.01 ETH for commit + register transactions)
   const estimatedGas = parseEther("0.01");
-
-  // Add buffer for gas price volatility
   const total = registrationCostWei + estimatedGas;
   const buffer = (total * BigInt(gasBufferPercentage)) / 100n;
-
   return total + buffer;
 }
 
 /**
  * Extract deposit ID from a bridge transaction receipt
- * Decodes the V3FundsDeposited event to get the depositId
  */
 export async function extractDepositId(
   txHash: `0x${string}`,
@@ -284,14 +229,12 @@ export async function extractDepositId(
     const client = chainId === CHAIN_IDS.BASE ? baseClient : mainnetClient;
     const receipt = await client.getTransactionReceipt({ hash: txHash });
 
-    // Parse the V3FundsDeposited event from the transaction logs
     const parsedLogs = parseEventLogs({
       abi: spokePoolAbiV3,
       eventName: "V3FundsDeposited",
       logs: receipt.logs,
     });
 
-    // Get the first (and should be only) V3FundsDeposited event
     const depositEvent = parsedLogs?.[0];
 
     if (!depositEvent) {
@@ -299,8 +242,6 @@ export async function extractDepositId(
       return null;
     }
 
-    // Extract the depositId from the event args
-    // Convert to string as the API expects a string parameter
     return depositEvent.args.depositId.toString();
   } catch (error) {
     console.error("Error extracting deposit ID:", error);

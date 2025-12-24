@@ -262,7 +262,8 @@ export type EventType = BasePayload & {
     | "history"
     | "remind"
     | "watch"
-    | "migrate";
+    | "migrate"
+    | "test_bridge";
   args: string[];
   mentions: Pick<ChannelMessage_Post_Mention, "userId" | "displayName">[];
   replyId: string | undefined;

@@ -59,11 +59,7 @@ import {
   getWaitingForMessage,
   sendBotMessage,
 } from "./handle_message_utils";
-import {
-  CHAIN_IDS,
-  getBridgeQuote,
-  prepareBridgeTransaction,
-} from "../services/bridge";
+import { CHAIN_IDS } from "../services/bridge";
 import { getBridgeState, setBridgeState } from "../db/bridgeStore";
 import { handleBridging } from "../services/bridge/bridgeUtils";
 

@@ -6,6 +6,8 @@ export const ACROSS_SPOKE_POOL = {
   MAINNET: "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5" as const, // Ethereum SpokePool
 } as const;
 
+export const NATIVE_ETH = "0x0000000000000000000000000000000000000000" as const;
+
 // WETH Token Addresses
 export const WETH_ADDRESS = {
   BASE: "0x4200000000000000000000000000000000000006" as const, // WETH on Base

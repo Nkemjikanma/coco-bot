@@ -1,4 +1,8 @@
-import { makeTownsBot, type BotHandler } from "@towns-protocol/bot";
+import {
+  getSmartAccountFromUserId,
+  makeTownsBot,
+  type BotHandler,
+} from "@towns-protocol/bot";
 import commands from "./commands";
 import {
   clearUserPendingCommand,
@@ -35,10 +39,10 @@ import {
   bridgeTransaction,
   commitTransaction,
   registerTransaction,
+  testBridgeTransaction,
 } from "./handlers/interactionHandlers/transaction";
 import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
-
-// import { handleInteractionResponse } from "./handlers";
+import { testBridge } from "./services/bridge/testBridge";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -63,10 +67,56 @@ const cocoCommands = [
   "history",
   "remind",
   "watch",
+  "test_bridge",
 ] as const;
 
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {
+    if (command === "test_bridge") {
+      const { channelId, userId, args } = event;
+      const threadId = event.threadId ?? event.eventId;
+
+      // Get amount from args, default to 0.001 ETH
+      const amountEth = args[0] || "0.001";
+
+      // Validate amount
+      const amount = parseFloat(amountEth);
+      if (isNaN(amount) || amount <= 0) {
+        await handler.sendMessage(
+          channelId,
+          `❌ Invalid amount. Usage: /test_bridge 0.01`,
+          { threadId },
+        );
+        return;
+      }
+
+      // Get user's wallet
+      const userWallet = await getSmartAccountFromUserId(bot, { userId });
+
+      if (!userWallet) {
+        await handler.sendMessage(
+          channelId,
+          `❌ Couldn't get your wallet address.`,
+          { threadId },
+        );
+        return;
+      }
+
+      await handler.sendMessage(
+        channelId,
+        `🌉 Starting bridge test for ${amountEth} ETH...\n\nWallet: ${userWallet}`,
+        { threadId },
+      );
+
+      await testBridge(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        userWallet,
+        amountEth,
+      );
+    }
     await handleSlashCommand(handler, event);
   });
 }
@@ -102,67 +152,75 @@ bot.onInteractionResponse(async (handler, event) => {
 
   const userState = await getUserState(userId);
 
-  if (!userState?.pendingCommand) {
-    await handler.sendMessage(
-      channelId,
-      "Sorry, I lost track of what we were doing. Please start again.",
-    );
-    return;
-  }
-
-  switch (response.payload.content.case) {
-    case "form": {
-      const form = response.payload.content.value;
-
-      if (form.requestId.startsWith("confirm_commit")) {
-        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
-        await confirmCommit(handler, event, confirmForm, userState);
-
-        return;
-      }
-
-      if (form.requestId.startsWith("duration_form")) {
-        const durationForForm =
-          form.requestId.startsWith("duration_form") && form;
-        await durationForm(handler, event, durationForForm, userState);
-        return;
-      }
-
-      if (form.requestId.startsWith("confirm_register")) {
-        const confirmForRegister =
-          form.requestId.startsWith("confirm_register") && form;
-
-        await confirmRegister(handler, event, confirmForRegister, userState);
-        return;
-      }
-
-      if (form.requestId.startsWith("continue_after_bridge")) {
-        const bridgeForm =
-          form.requestId.startsWith("continue_after_bridge") && form;
-
-        await durationForm(handler, event, bridgeForm, userState);
-        return;
-      }
-      break;
-    }
-
-    case "transaction": {
-      const tx = response.payload.content.value;
-
-      // Check if this is a commit transaction
-      if (tx.requestId.startsWith("commit:")) {
-        await commitTransaction(handler, event, tx, userState);
-      }
-
-      if (tx.requestId.startsWith("bridge:")) {
-        await bridgeTransaction(handler, event, tx, userState);
-      }
-
-      // Handle register transaction
-      if (tx.requestId.startsWith("register:")) {
-        await registerTransaction(handler, event, tx, userState);
-      }
-      break;
+  if (response.payload.content.case === "transaction") {
+    const tx = response.payload.content.value;
+    if (tx.requestId.startsWith("test_bridge:")) {
+      await testBridgeTransaction(handler, event, tx);
     }
   }
+
+  // if (!userState?.pendingCommand) {
+  //   await handler.sendMessage(
+  //     channelId,
+  //     "Sorry, I lost track of what we were doing. Please start again.",
+  //   );
+  //   return;
+  // }
+
+  // switch (response.payload.content.case) {
+  //   case "form": {
+  //     const form = response.payload.content.value;
+
+  //     if (form.requestId.startsWith("confirm_commit")) {
+  //       const confirmForm = form.requestId.startsWith("confirm_commit") && form;
+  //       await confirmCommit(handler, event, confirmForm, userState);
+
+  //       return;
+  //     }
+
+  //     if (form.requestId.startsWith("duration_form")) {
+  //       const durationForForm =
+  //         form.requestId.startsWith("duration_form") && form;
+  //       await durationForm(handler, event, durationForForm, userState);
+  //       return;
+  //     }
+
+  //     if (form.requestId.startsWith("confirm_register")) {
+  //       const confirmForRegister =
+  //         form.requestId.startsWith("confirm_register") && form;
+
+  //       await confirmRegister(handler, event, confirmForRegister, userState);
+  //       return;
+  //     }
+
+  //     if (form.requestId.startsWith("continue_after_bridge")) {
+  //       const bridgeForm =
+  //         form.requestId.startsWith("continue_after_bridge") && form;
+
+  //       await durationForm(handler, event, bridgeForm, userState);
+  //       return;
+  //     }
+  //     break;
+  //   }
+
+  //   case "transaction": {
+  //     const tx = response.payload.content.value;
+
+  //     // Check if this is a commit transaction
+  //     if (tx.requestId.startsWith("commit:")) {
+  //       await commitTransaction(handler, event, tx, userState);
+  //     }
+
+  //     if (tx.requestId.startsWith("bridge:")) {
+  //       await bridgeTransaction(handler, event, tx, userState);
+  //     }
+
+  //     // Handle register transaction
+  //     if (tx.requestId.startsWith("register:")) {
+  //       await registerTransaction(handler, event, tx, userState);
+  //     }
+
+  //     break;
+  //   }
+  // }
 });

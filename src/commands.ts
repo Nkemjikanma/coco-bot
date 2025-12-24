@@ -25,6 +25,7 @@ const commands = [
   { name: "history", description: "Check ENS address history" },
   { name: "remind", description: "Set ENS renewal reminder" },
   { name: "watch", description: "Watch for when name becomes available" },
+  { name: "test_bridge", description: "Test out bridge" },
   // { name: "migrate", description: "TODO: Migrate names to Namechain L2" },
 ] as const satisfies BotCommand[];
 

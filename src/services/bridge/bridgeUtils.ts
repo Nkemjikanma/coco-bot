@@ -6,11 +6,10 @@ import {
   RegisterCommand,
 } from "../../types";
 import { CHAIN_IDS } from "./bridgeConstants";
-import { getBridgeQuote } from "./bridge";
+import { getBridgeQuoteAndTx } from "./bridge"; // Use new function
 import { checkBalance } from "../../utils";
 import { sendBotMessage } from "../../handlers";
 import { BalanceCheckResult } from "./types";
-import { prepareBridgeTransaction } from "./bridge";
 import {
   setBridgeState,
   getBridgeState,
@@ -38,121 +37,140 @@ export async function handleBridging(
     `Getting bridge quote...`,
   );
 
-  // Step 1: Get initial quote to estimate fees
-  const initialQuote = await getBridgeQuote(
-    registration.grandTotalWei,
-    CHAIN_IDS.BASE,
-    CHAIN_IDS.MAINNET,
-  );
+  try {
+    // Use the new Swap API function that returns native ETH
+    const { quote, swapTx } = await getBridgeQuoteAndTx(
+      registration.grandTotalWei,
+      userTownsWallet,
+      CHAIN_IDS.BASE,
+      CHAIN_IDS.MAINNET,
+    );
 
-  if (initialQuote.isAmountTooLow) {
+    if (quote.isAmountTooLow) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ Amount too low for bridging. Minimum: ${formatEther(BigInt(quote.limits.minDeposit))} ETH`,
+      );
+      await clearPendingRegistration(userId);
+      await clearUserPendingCommand(userId);
+      return;
+    }
+
+    const bridgeFeeWei = BigInt(quote.totalRelayFee.total);
+    const outputAmount = BigInt(quote.outputAmount || "0");
+
+    // Validate that output amount covers registration cost
+    if (outputAmount < registration.grandTotalWei) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ **Bridge fees too high**\n\n` +
+          `After bridge fees of ${formatEther(bridgeFeeWei)} ETH, ` +
+          `you would only receive ${formatEther(outputAmount)} ETH on Mainnet.\n\n` +
+          `This is not enough to cover the registration cost of ${registration.grandTotalEth} ETH.\n\n` +
+          `Please fund your Mainnet wallet directly or wait for lower fees.`,
+      );
+      await clearPendingRegistration(userId);
+      await clearUserPendingCommand(userId);
+      return;
+    }
+
+    // Estimate gas needed on Base for bridge transaction
+    const baseGasEstimate = parseEther("0.001");
+    const totalNeededOnBase = registration.grandTotalWei + baseGasEstimate;
+
+    if (baseBalanceCheck.balance < totalNeededOnBase) {
+      const shortfall = totalNeededOnBase - baseBalanceCheck.balance;
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ **Insufficient funds on Base**\n\n` +
+          `**Required on Base:**\n` +
+          `• Amount to bridge: ${formatEther(registration.grandTotalWei)} ETH\n` +
+          `• Bridge fee: ~${formatEther(bridgeFeeWei)} ETH\n` +
+          `• Gas for bridge tx: ~${formatEther(baseGasEstimate)} ETH\n` +
+          `• **Total needed:** ${formatEther(totalNeededOnBase)} ETH\n\n` +
+          `**Your Base balance:** ${baseBalanceCheck.balanceEth} ETH\n` +
+          `**Shortfall:** ${formatEther(shortfall)} ETH`,
+      );
+      await clearPendingRegistration(userId);
+      await clearUserPendingCommand(userId);
+      return;
+    }
+
+    // Show bridge details
     await sendBotMessage(
       handler,
       channelId,
       threadId,
       userId,
-      `❌ Amount too low for bridging. Minimum: ${formatEther(BigInt(initialQuote.limits.minDeposit))} ETH`,
+      `💡 **Bridge Required**\n\n` +
+        `**Registration needs:** ${registration.grandTotalEth} ETH on Mainnet\n\n` +
+        `**Bridge Details:**\n` +
+        `• Sending: ${formatEther(registration.grandTotalWei)} ETH from Base\n` +
+        `• Bridge fee: ~${formatEther(bridgeFeeWei)} ETH\n` +
+        `• You'll receive: ~${formatEther(outputAmount)} ETH (native) on Mainnet\n` +
+        `• Estimated time: ~${quote.estimatedFillTimeSec} seconds\n\n` +
+        `⚠️ **Note:** The domain might be taken during bridging.\n\n` +
+        `Approve the bridge transaction to continue...`,
     );
-    await clearPendingRegistration(userId);
-    await clearUserPendingCommand(userId);
-    return;
-  }
 
-  // Step 2: Calculate actual amount to bridge (desired output + fees)
-  const bridgeFeeWei = BigInt(initialQuote.totalRelayFee.total);
-  const amountToBridge = registration.grandTotalWei + bridgeFeeWei;
-
-  // The output after fees should equal grandTotalWei
-  const expectedOutput = registration.grandTotalWei;
-
-  // Step 3: Estimate gas needed on Base for bridge transaction
-  const baseGasEstimate = parseEther("0.001"); // Slightly higher estimate
-  const totalNeededOnBase = amountToBridge + baseGasEstimate;
-
-  // Step 4: Check if user has enough on Base
-  if (baseBalanceCheck.balance < totalNeededOnBase) {
-    const shortfall = totalNeededOnBase - baseBalanceCheck.balance;
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
+    // Store bridge state
+    await setBridgeState(userId, threadId, {
       userId,
-      `❌ **Insufficient funds on Base**\n\n` +
-        `**Required on Base:**\n` +
-        `• Amount to bridge: ${formatEther(amountToBridge)} ETH\n` +
-        `• Bridge fee (included): ${formatEther(bridgeFeeWei)} ETH\n` +
-        `• Gas for bridge tx: ~${formatEther(baseGasEstimate)} ETH\n` +
-        `• **Total needed:** ${formatEther(totalNeededOnBase)} ETH\n\n` +
-        `**Your Base balance:** ${baseBalanceCheck.balanceEth} ETH\n` +
-        `**Shortfall:** ${formatEther(shortfall)} ETH`,
-    );
-    await clearPendingRegistration(userId);
-    await clearUserPendingCommand(userId);
-    return;
-  }
+      channelId,
+      domain: command.names[0],
+      label: command.names[0].replace(".eth", ""),
+      years: command.duration,
+      fromChain: CHAIN_IDS.BASE,
+      toChain: CHAIN_IDS.MAINNET,
+      amount: registration.grandTotalWei,
+      recipient: userTownsWallet,
+      timestamp: Date.now(),
+      status: "pending",
+    });
 
-  // Step 5: Show bridge details and prepare transaction
-  await sendBotMessage(
-    handler,
-    channelId,
-    threadId,
-    userId,
-    `💡 **Bridge Required**\n\n` +
-      `**Registration needs:** ${registration.grandTotalEth} ETH on Mainnet\n\n` +
-      `**Bridge Details:**\n` +
-      `• Sending: ${formatEther(amountToBridge)} ETH from Base\n` +
-      `• Bridge fee: ~${formatEther(bridgeFeeWei)} ETH\n` +
-      `• You'll receive: ~${formatEther(expectedOutput)} ETH on Mainnet\n` +
-      `• Estimated time: ~${initialQuote.estimatedFillTimeSec} seconds\n\n` +
-      `⚠️ **Note:** The domain might be taken during bridging.\n\n` +
-      `Approve the bridge transaction to continue...`,
-  );
-
-  // Step 6: Prepare bridge transaction with correct amount
-  const bridgeData = prepareBridgeTransaction(
-    amountToBridge,
-    userTownsWallet,
-    expectedOutput,
-    CHAIN_IDS.BASE,
-    CHAIN_IDS.MAINNET,
-  );
-
-  // Step 7: Store bridge state
-  await setBridgeState(userId, threadId, {
-    userId,
-    channelId,
-    domain: command.names[0],
-    label: command.names[0].replace(".eth", ""),
-    years: command.duration,
-    fromChain: CHAIN_IDS.BASE,
-    toChain: CHAIN_IDS.MAINNET,
-    amount: amountToBridge,
-    recipient: userTownsWallet,
-    timestamp: Date.now(),
-    status: "pending",
-  });
-
-  // Step 8: Send bridge transaction request
-  await handler.sendInteractionRequest(
-    channelId,
-    {
-      case: "transaction",
-      value: {
-        id: `bridge:${userId}:${threadId}`,
-        title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
-        content: {
-          case: "evm",
-          value: {
-            chainId: CHAIN_IDS.BASE.toString(),
-            to: bridgeData.to,
-            value: bridgeData.value,
-            data: bridgeData.data,
+    // Send bridge transaction request using the Swap API response
+    await handler.sendInteractionRequest(
+      channelId,
+      {
+        case: "transaction",
+        value: {
+          id: `bridge:${userId}:${threadId}`,
+          title: `Bridge ${formatEther(registration.grandTotalWei)} ETH to Mainnet`,
+          content: {
+            case: "evm",
+            value: {
+              chainId: CHAIN_IDS.BASE.toString(),
+              to: swapTx.to,
+              value: swapTx.value,
+              data: swapTx.data,
+            },
           },
         },
       },
-    },
-    hexToBytes(userId as `0x${string}`),
-  );
+      hexToBytes(userId as `0x${string}`),
+    );
 
-  return;
+    return;
+  } catch (error) {
+    console.error("Bridge error:", error);
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `❌ Failed to get bridge quote. Please try again later.`,
+    );
+    await clearPendingRegistration(userId);
+    await clearUserPendingCommand(userId);
+    return;
+  }
 }

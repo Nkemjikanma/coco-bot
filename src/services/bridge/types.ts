@@ -32,6 +32,8 @@ export interface BridgeQuote {
   };
   isAmountTooLow: boolean;
   spokePoolAddress: string;
+  outputAmount?: string;
+  minOutputAmount?: string;
 }
 
 export interface BalanceCheckResult {
@@ -63,4 +65,32 @@ export interface BridgeStatusResponse {
   status: "pending" | "filled" | "expired";
   fillTx?: string;
   fillTimestamp?: number;
+}
+
+/**
+ * Bridge quote and transaction data from Swap API
+ */
+export interface SwapApprovalResponse {
+  swapTx: {
+    to: string;
+    data: string;
+    value?: string;
+    chainId: number;
+  };
+  inputAmount: string;
+  expectedOutputAmount: string;
+  minOutputAmount: string;
+  expectedFillTime: number;
+  fees: {
+    totalRelay?: {
+      pct: string;
+      total: string;
+    };
+  };
+  checks: {
+    balance: {
+      actual: string;
+      expected: string;
+    };
+  };
 }
