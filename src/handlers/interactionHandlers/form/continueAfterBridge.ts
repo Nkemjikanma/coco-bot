@@ -18,7 +18,7 @@ export async function continueAfterBridge(
   event: OnInteractionEventType,
   bridgeForm: FormCase,
   userState: UserState,
-  // registration: RegistrationResult<PendingRegistration>,
+  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -146,6 +146,7 @@ export async function continueAfterBridge(
                 to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
                 value: "0",
                 data: commitData,
+                signerWallet: registration.data.selectedWallet || undefined,
               },
             },
           },

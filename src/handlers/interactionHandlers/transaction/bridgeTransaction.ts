@@ -20,7 +20,7 @@ export async function bridgeTransaction(
   const validThreadId =
     threadId?.toString() ?? userState?.activeThreadId ?? eventId;
 
-  if (tx.requestId !== `bridge:${userId}${validThreadId}`) {
+  if (tx.requestId !== `bridge:${userId}:${validThreadId}`) {
     await handler.sendMessage(
       channelId,
       "Couldn't reach the correct bridge. Something is wrong",
@@ -40,7 +40,7 @@ export async function bridgeTransaction(
   }
 
   // Check transaction status
-  if (!!tx.txHash) {
+  if (!tx.txHash) {
     await updateBridgeState(userId, validThreadId, {
       ...bridgeState.data,
       status: "failed",
@@ -53,19 +53,20 @@ export async function bridgeTransaction(
     return;
   }
 
-  // Bridge successful
+  // Bridge transaction submitted successfully
   await updateBridgeState(userId, validThreadId, {
     ...bridgeState.data,
-    status: "completed",
+    status: "bridging",
+    depositTxHash: tx.txHash,
   });
 
   await handler.sendMessage(
     channelId,
-    `✅ **Bridge Successful!**
+    `✅ **Bridge Transaction Submitted!**
 
-Your ETH has been bridged to Ethereum Mainnet.
+**Tx Hash:** ${tx.txHash}
 
-⏳ Please note: Bridging can take 10-20 minutes to finalize on L1. Once confirmed, we'll continue with your registration.`,
+⏳ Please note: Bridging can take 1-5 minutes to finalize on L1. Once confirmed, we'll continue with your registration.`,
     { threadId: validThreadId },
   );
 

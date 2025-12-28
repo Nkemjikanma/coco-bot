@@ -1,3 +1,5 @@
+import { BotHandler, getSmartAccountFromUserId } from "@towns-protocol/bot";
+import walletLinkAbi from "@towns-protocol/generated/dev/abis/WalletLink.abi";
 import { CHAIN_IDS, BalanceCheckResult } from "./services/bridge";
 import {
   createPublicClient,
@@ -8,6 +10,9 @@ import {
   parseEventLogs,
 } from "viem";
 import { mainnet, base } from "viem/chains";
+import { CocoBotType, EOAWalletCheckResult, WalletBalanceInfo } from "./types";
+import { readContract } from "viem/actions";
+import { bot } from "./bot";
 
 const ethereumClient = createPublicClient({
   chain: mainnet,
@@ -125,4 +130,142 @@ export async function checkBalance(
     console.error(`Error checking balance on chain ${chainId}:`, e);
     throw e;
   }
+}
+
+export async function getLinkedWallets(
+  userId: `0x${string}`,
+): Promise<`0x${string}`[]> {
+  try {
+    const walletLinkAddress =
+      bot?.client.config.base.chainConfig.addresses.spaceFactory;
+
+    const linkedWallets = (await readContract(bot.viem, {
+      address: walletLinkAddress as `0x${string}`,
+      abi: walletLinkAbi,
+      functionName: "getWalletsByRootKey",
+      args: [userId],
+    })) as `0x${string}`[];
+
+    return linkedWallets || [];
+  } catch (e) {
+    console.error("Error fetching linked wallets:", e);
+    return [];
+  }
+}
+
+export async function filterEOAs(userId: `0x${string}`) {
+  const userTownWallet = await getSmartAccountFromUserId(bot, {
+    userId: userId as `0x${string}`,
+  });
+
+  const linkedWallets = await getLinkedWallets(userId);
+
+  const filtered = linkedWallets.filter((wallet) => wallet !== userTownWallet);
+
+  return filtered;
+}
+
+/**
+ * Check balances for all EOA wallets on both L1 and L2
+ */
+export async function checkAllEOABalances(
+  userId: `0x${string}`,
+  requiredAmount: bigint,
+): Promise<EOAWalletCheckResult> {
+  const eoas = await filterEOAs(userId);
+
+  const walletBalances: WalletBalanceInfo[] = await Promise.all(
+    eoas.map(async (address) => {
+      const [l1Balance, l2Balance] = await Promise.all([
+        checkBalance(address, CHAIN_IDS.MAINNET),
+        checkBalance(address, CHAIN_IDS.BASE),
+      ]);
+
+      const totalBalance = l1Balance.balance + l2Balance.balance;
+
+      return {
+        address,
+        l1Balance: l1Balance.balance,
+        l1BalanceEth: l1Balance.balanceEth,
+        l2Balance: l2Balance.balance,
+        l2BalanceEth: l2Balance.balanceEth,
+        totalBalance,
+        totalBalanceEth: formatEther(totalBalance),
+      };
+    }),
+  );
+
+  // Sort by L1 balance (descending) - prefer wallets with L1 funds
+  const sortedByL1 = [...walletBalances].sort((a, b) =>
+    Number(b.l1Balance - a.l1Balance),
+  );
+
+  // Sort by L2 balance (descending) - for bridge candidates
+  const sortedByL2 = [...walletBalances].sort((a, b) =>
+    Number(b.l2Balance - a.l2Balance),
+  );
+
+  // Find wallet with sufficient L1 balance
+  const walletWithSufficientL1 = sortedByL1.find(
+    (w) => w.l1Balance >= requiredAmount,
+  );
+
+  // Find wallet with sufficient L2 balance for bridging
+  // Add buffer for bridge fees (~5%)
+  const bridgeBuffer = (requiredAmount * 105n) / 100n;
+  const walletWithSufficientL2 = sortedByL2.find(
+    (w) => w.l2Balance >= bridgeBuffer,
+  );
+
+  return {
+    wallets: walletBalances,
+    hasWalletWithSufficientL1: !!walletWithSufficientL1,
+    hasWalletWithSufficientL2ForBridge: !!walletWithSufficientL2,
+    bestWalletForL1: walletWithSufficientL1 || null,
+    bestWalletForBridge: walletWithSufficientL2 || null,
+  };
+}
+
+/**
+ * Format wallet balance info for display
+ */
+export function formatWalletBalanceInfo(wallet: WalletBalanceInfo): string {
+  return (
+    `${formatAddress(wallet.address)}\n` +
+    `  • Mainnet: ${Number(wallet.l1BalanceEth).toFixed(4)} ETH\n` +
+    `  • Base: ${Number(wallet.l2BalanceEth).toFixed(4)} ETH`
+  );
+}
+
+/**
+ * Format all wallet balances for display
+ */
+export function formatAllWalletBalances(
+  wallets: WalletBalanceInfo[],
+  requiredAmount: bigint,
+): string {
+  if (wallets.length === 0) {
+    return "No connected EOA wallets found.";
+  }
+
+  const requiredEth = formatEther(requiredAmount);
+
+  const walletLines = wallets
+    .map((w, i) => {
+      const l1Sufficient = w.l1Balance >= requiredAmount;
+      const l2Sufficient = w.l2Balance >= requiredAmount;
+      const status = l1Sufficient
+        ? "✅ Ready for L1"
+        : l2Sufficient
+          ? "🌉 Can bridge from Base"
+          : "⚠️ Insufficient";
+
+      return (
+        `**${i + 1}. ${formatAddress(w.address)}** ${status}\n` +
+        `   Mainnet: ${Number(w.l1BalanceEth).toFixed(4)} ETH | Base: ${Number(w.l2BalanceEth).toFixed(4)} ETH`
+      );
+    })
+    .join("\n\n");
+
+  return `**Connected Wallets** (need ~${Number(requiredEth).toFixed(4)} ETH)\n\n${walletLines}`;
 }

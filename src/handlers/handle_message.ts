@@ -43,6 +43,7 @@ import {
   encodeCommitData,
 } from "../services/ens";
 import type {
+  EOAWalletCheckResult,
   EventType,
   OnMessageEventType,
   ParsedCommand,
@@ -50,7 +51,13 @@ import type {
   QuestionCommand,
   RegisterCommand,
 } from "../types";
-import { checkBalance, formatAddress } from "../utils";
+import {
+  checkAllEOABalances,
+  checkBalance,
+  filterEOAs,
+  formatAddress,
+  formatAllWalletBalances,
+} from "../utils";
 import {
   determineWaitingFor,
   extractMissingInfo,
@@ -281,15 +288,31 @@ export async function handleMessage(
     const userState = await getUserState(userId);
 
     if (userState?.pendingCommand && userState.activeThreadId === threadId) {
-      await handlePendingCommandResponse(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        content,
-        userState.pendingCommand,
-      );
-      return;
+      const lowerContent = content.toLowerCase().trim();
+      const isNewCommand =
+        lowerContent.startsWith("register ") ||
+        lowerContent.startsWith("check ") ||
+        lowerContent.startsWith("expiry ") ||
+        lowerContent.startsWith("history ") ||
+        lowerContent.startsWith("portfolio ") ||
+        lowerContent.startsWith("/");
+
+      if (isNewCommand) {
+        // Clear pending state and process as new command
+        await clearUserPendingCommand(userId);
+        await clearPendingRegistration(userId);
+        // Fall through to normal parsing below
+      } else {
+        await handlePendingCommandResponse(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          content,
+          userState.pendingCommand,
+        );
+        return;
+      }
     }
 
     // Parse the message using Claude
@@ -427,6 +450,7 @@ export async function handlePendingCommandResponse(
                 to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
                 value: "0",
                 data: commitData,
+                signerWallet: registration.data.selectedWallet || undefined,
               },
             },
           },
@@ -632,9 +656,6 @@ export async function executeValidCommand(
 
   // handle register, renew, transfer, set
   await handleExecution(handler, channelId, threadId, userId, command);
-
-  // const response = formatRustPayload(command);
-  // await sendBotMessage(handler, channelId, threadId, userId, response);
 }
 
 async function handleExecution(
@@ -687,7 +708,7 @@ async function handleExecution(
         channelId,
         threadId,
         userId,
-        "Sorry, all provided names are already registered.",
+        "❌ Sorry, all provided names are already registered.",
       );
       return;
     }
@@ -744,121 +765,328 @@ async function handleExecution(
       return;
     }
 
-    // ---- Prepare and show costs ------
-    // Towns wallet
-    const userTownWallet = await getSmartAccountFromUserId(bot, {
-      userId: userId as `0x${string}`,
-    });
+    // ---- Get connected wallet addresses - EOAs ------
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      "🔍 Checking your connected wallets...",
+    );
 
-    if (!userTownWallet) {
+    const filteredEOAs = await filterEOAs(userId as `0x${string}`);
+
+    if (filteredEOAs.length === 0) {
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        "Couldn't get your wallet address. Please try again.",
+        "❌ **No EOA wallets found**\n\n" +
+          "ENS registration requires an Ethereum wallet (EOA) to sign transactions on Mainnet.\n\n" +
+          "Please connect an external wallet (like MetaMask) to your Towns account and try again.",
       );
       return;
     }
 
-    try {
-      const registration = await prepareRegistration({
-        names: command.names,
-        owner: userTownWallet,
-        durationYears: command.duration,
-      });
+    // Get cost estimate (using first EOA as placeholder owner)
+    const preliminaryRegistration = await prepareRegistration({
+      names: command.names,
+      owner: filteredEOAs[0],
+      durationYears: command.duration,
+    });
 
-      // checkBalance
-      const mainnetBalance = await checkBalance(
-        userTownWallet,
-        CHAIN_IDS.MAINNET,
-        registration.grandTotalWei,
-      );
+    const requiredAmount = preliminaryRegistration.grandTotalWei;
 
-      // Store registration data
-      await setPendingRegistration(userId, registration);
+    // Check balances on all EOAs
+    const walletCheck = await checkAllEOABalances(
+      userId as `0x${string}`,
+      requiredAmount,
+    );
 
-      // Store in pending state
-      await setUserPendingCommand(
-        userId,
-        threadId,
-        channelId,
-        command,
-        "confirmation",
-      );
+    // Store command for later use
+    await setUserPendingCommand(
+      userId,
+      threadId,
+      channelId,
+      command,
+      "wallet_selection",
+    );
 
-      console.log("Debugger is here ");
-      const balanceMessage = mainnetBalance.sufficient
-        ? `✅ Your L1 balance: ${formatEther(mainnetBalance.balance)} ETH (sufficient)`
-        : `⚠️ Your L1 balance: ${formatEther(mainnetBalance.balance)} ETH\n\n
+    // ---- Only one EOA ----
+    if (filteredEOAs.length === 1) {
+      const wallet = walletCheck.wallets[0];
 
-        Required: ~${registration.grandTotalEth} ETH\n
-        Please ensure you have enough ETH on Ethereum Mainnet.`;
-
-      if (!mainnetBalance.sufficient) {
-        await handleBridging(
+      // Check if L1 has enough
+      if (wallet.l1Balance >= requiredAmount) {
+        // Sufficient on L1 - proceed directly
+        await proceedWithRegistration(
           handler,
-          userTownWallet,
           channelId,
           threadId,
           userId,
-          mainnetBalance,
-          registration,
           command,
+          wallet.address,
+          walletCheck,
         );
-
         return;
       }
-      const summary = formatPhase1Summary(registration, command.duration);
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        `${summary}\n\n💰 **Balance Check**\n
 
-              ${balanceMessage}\n
+      const bridgeBuffer = (requiredAmount * 105n) / 100n; // 5% buffer for fees
+      if (wallet.l2Balance >= bridgeBuffer) {
+        // Ask if user wants to bridge
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          `💰 **Wallet Balance Check**\n\n` +
+            `**${formatAddress(wallet.address)}**\n` +
+            `• Mainnet: ${Number(wallet.l1BalanceEth).toFixed(4)} ETH\n` +
+            `• Base: ${Number(wallet.l2BalanceEth).toFixed(4)} ETH\n\n` +
+            `**Required:** ~${formatEther(requiredAmount)} ETH on Mainnet\n\n` +
+            `Your Mainnet balance is insufficient, but you have enough ETH on Base to bridge.\n\n` +
+            `Would you like to bridge ETH from Base to Mainnet?
+            `,
+        );
 
-              ⚠️ **Note:** ENS registration happens on Ethereum Mainnet (L1). You'll need to sign the transaction with your Ethereum wallet.`,
-      );
+        // Store wallet selection for bridge flow
+        await setUserPendingCommand(
+          userId,
+          threadId,
+          channelId,
+          command,
+          "bridge_confirmation",
+        );
 
-      // Send confirmation interaction
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          case: "form",
-          value: {
-            id: `confirm_commit:${threadId}`,
-            title: "Confirm Registration: Step 1 of 2",
-            components: [
-              {
-                id: "confirm",
-                component: {
-                  case: "button",
-                  value: { label: "✅ Start Registration" },
+        // Store the selected wallet in registration state
+        await setPendingRegistration(userId, {
+          ...preliminaryRegistration,
+          selectedWallet: wallet.address,
+        });
+
+        await handler.sendInteractionRequest(
+          channelId,
+          {
+            case: "form",
+            value: {
+              id: `bridge:${userId}:${threadId}`,
+              title: "Bridge ETH?",
+              components: [
+                {
+                  id: "bridge",
+                  component: {
+                    case: "button",
+                    value: { label: "🌉 Bridge from Base" },
+                  },
                 },
-              },
-              {
-                id: "cancel",
-                component: { case: "button", value: { label: "❌ Cancel" } },
-              },
-            ],
+                {
+                  id: "cancel",
+                  component: {
+                    case: "button",
+                    value: { label: "❌ Cancel" },
+                  },
+                },
+              ],
+            },
           },
-        },
-        hexToBytes(userId as `0x${string}`),
-      );
-    } catch (e) {
-      console.error("Error preparing registration:", e);
+          hexToBytes(userId as `0x${string}`),
+        );
+        return;
+      }
+
+      // Neither L1 nor L2 has enough
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        "Something went wrong. Please try again.",
+        `❌ **Insufficient Balance**\n\n` +
+          `**${formatAddress(wallet.address)}**\n` +
+          `• Mainnet: ${Number(wallet.l1BalanceEth).toFixed(4)} ETH\n` +
+          `• Base: ${Number(wallet.l2BalanceEth).toFixed(4)} ETH\n\n` +
+          `**Required:** ~${formatEther(requiredAmount)} ETH\n\n` +
+          `Please fund your wallet with more ETH on either:\n\n` +
+          `• Ethereum Mainnet (to register directly)\n\n` +
+          `• Base (to bridge and then register)\n\n
+          `,
       );
+      await clearUserPendingCommand(userId);
+      return;
     }
-    // clear pending command after execution
-    // await clearUserPendingCommand(userId);
+
+    // ---- SCENARIO 2: Multiple EOAs ----
+    // Show wallet selection with balances
+    const balanceSummary = formatAllWalletBalances(
+      walletCheck.wallets,
+      requiredAmount,
+    );
+
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `💰 **Select a Wallet for Registration**\n\n` +
+        `**Required:** ~${formatEther(requiredAmount)} ETH for ${command.names.join(", ")}\n\n` +
+        balanceSummary +
+        "\n\n" +
+        `Please select which wallet to use:`,
+    );
+
+    // Create buttons for each wallet
+    const walletButtons = walletCheck.wallets
+      .filter((wallet) => {
+        const l1Sufficient = wallet.l1Balance >= requiredAmount;
+        const l2Sufficient = wallet.l2Balance >= (requiredAmount * 105n) / 100n;
+        return l1Sufficient || l2Sufficient;
+      })
+      .map((wallet, index) => {
+        const l1Sufficient = wallet.l1Balance >= requiredAmount;
+        const statusEmoji = l1Sufficient ? "✅" : "🌉";
+
+        return {
+          id: `wallet_${index}:${wallet.address}`,
+          component: {
+            case: "button" as const,
+            value: {
+              label: `${statusEmoji} ${formatAddress(wallet.address)} (L1: ${Number(wallet.l1BalanceEth).toFixed(3)})`,
+            },
+          },
+        };
+      });
+
+    // Add cancel button
+    walletButtons.push({
+      id: "cancel",
+      component: {
+        case: "button" as const,
+        value: { label: "❌ Cancel" },
+      },
+    });
+
+    // Store wallet check result for later
+    await setPendingRegistration(userId, {
+      ...preliminaryRegistration,
+      walletCheckResult: walletCheck,
+    });
+
+    await handler.sendInteractionRequest(
+      channelId,
+      {
+        case: "form",
+        value: {
+          id: `wallet_select:${threadId}`,
+          title: "Select Wallet",
+          components: walletButtons,
+        },
+      },
+      hexToBytes(userId as `0x${string}`),
+    );
     return;
+  }
+}
+
+export async function proceedWithRegistration(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+  command: RegisterCommand,
+  selectedWallet: `0x${string}`,
+  walletCheck: EOAWalletCheckResult,
+) {
+  try {
+    // Prepare registration with the selected wallet as owner
+    const registration = await prepareRegistration({
+      names: command.names,
+      owner: selectedWallet,
+      durationYears: command.duration,
+    });
+
+    // Get the wallet's L1 balance
+    const walletInfo = walletCheck.wallets.find(
+      (w) => w.address.toLowerCase() === selectedWallet.toLowerCase(),
+    );
+
+    if (!walletInfo) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "❌ Wallet not found. Please try again.",
+      );
+      return;
+    }
+
+    // Store registration data with selected wallet
+    await setPendingRegistration(userId, {
+      ...registration,
+      selectedWallet,
+    });
+
+    // Store in pending state
+    await setUserPendingCommand(
+      userId,
+      threadId,
+      channelId,
+      command,
+      "confirmation",
+    );
+
+    const balanceMessage =
+      walletInfo.l1Balance >= registration.grandTotalWei
+        ? `✅ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (sufficient)`
+        : `⚠️ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (need bridging)`;
+
+    const summary = formatPhase1Summary(registration, command.duration);
+
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `${summary}\n\n` +
+        `💰 **Wallet:** ${formatAddress(selectedWallet)}\n` +
+        `${balanceMessage}\n\n` +
+        `⚠️ **Note:** ENS registration happens on Ethereum Mainnet (L1). \n\n` +
+        `Make sure to select the correct wallet when approving transactions. \n\n`,
+    );
+
+    // Send confirmation interaction
+    await handler.sendInteractionRequest(
+      channelId,
+      {
+        case: "form",
+        value: {
+          id: `confirm_commit:${threadId}`,
+          title: "Confirm Registration: Step 1 of 2",
+          components: [
+            {
+              id: "confirm",
+              component: {
+                case: "button",
+                value: { label: "✅ Start Registration" },
+              },
+            },
+            {
+              id: "cancel",
+              component: { case: "button", value: { label: "❌ Cancel" } },
+            },
+          ],
+        },
+      },
+      hexToBytes(userId as `0x${string}`),
+    );
+  } catch (e) {
+    console.error("Error preparing registration:", e);
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      "Something went wrong. Please try again.",
+    );
   }
 }

@@ -90,6 +90,7 @@ export async function testBridge(
               to: swapTx.to,
               value: swapTx.value,
               data: swapTx.data,
+              signerWallet: userWallet,
             },
           },
         },

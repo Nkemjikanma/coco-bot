@@ -20,6 +20,7 @@ export async function confirmCommit(
   event: OnInteractionEventType,
   confirmForm: FormCase,
   userState: UserState,
+  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -97,6 +98,14 @@ export async function confirmCommit(
       // Generate a unique ID for transaction
       const commitmentId = `commit:${userId}:${Date.now()}`;
 
+      if (!userTownWallet) {
+        await handler.sendMessage(
+          channelId,
+          "You need a Towns wallet to complete this transaction",
+        );
+        return;
+      }
+
       // Send transaction interaction request
       await handler.sendInteractionRequest(
         channelId,
@@ -108,11 +117,11 @@ export async function confirmCommit(
             content: {
               case: "evm",
               value: {
-                chainId: REGISTRATION.CHAIN_ID, // Mainnet
+                chainId: REGISTRATION.CHAIN_ID.toString(), // Mainnet
                 to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
                 value: "0",
                 data: commitData,
-                // signerWallet: undefined,
+                signerWallet: registration.data.selectedWallet || undefined,
               },
             },
           },

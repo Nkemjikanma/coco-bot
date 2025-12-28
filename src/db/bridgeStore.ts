@@ -25,7 +25,7 @@ export async function getBridgeState(
   userId: string,
   threadId: string,
 ): Promise<ApiResponse<BridgeState>> {
-  const key = `${PENDING_BRIDGE_PREFIX}${userId}${threadId}`;
+  const key = `${PENDING_BRIDGE_PREFIX}${userId}:${threadId}`;
 
   try {
     const data = await client.get(key);
@@ -50,7 +50,7 @@ export async function setBridgeState(
   threadId: string,
   bridge: BridgeState,
 ): Promise<ApiResponse<void>> {
-  const key = `${PENDING_BRIDGE_PREFIX}${userId}${threadId}`;
+  const key = `${PENDING_BRIDGE_PREFIX}${userId}:${threadId}`;
 
   try {
     const serialized = serializeBridge(bridge);
@@ -91,7 +91,7 @@ export async function clearBridge(
   userId: string,
   threadId: string,
 ): Promise<ApiResponse<void>> {
-  const key = `${PENDING_BRIDGE_PREFIX}${userId}${threadId}`;
+  const key = `${PENDING_BRIDGE_PREFIX}${userId}:${threadId}`;
 
   try {
     await client.del(key);

@@ -16,7 +16,7 @@ export async function confirmRegister(
   event: OnInteractionEventType,
   registerForm: FormCase,
   userState: UserState,
-  // registration: RegistrationResult<PendingRegistration>,
+  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -79,7 +79,7 @@ export async function confirmRegister(
                 to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
                 value: firstReg.domainPriceWei.toString(),
                 data: registerData,
-                signerWallet: undefined,
+                signerWallet: registration.data.selectedWallet || undefined,
               },
             },
           },

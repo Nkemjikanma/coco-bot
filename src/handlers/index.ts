@@ -3,6 +3,7 @@ import {
   handleSlashCommand,
   handlePendingCommandResponse,
   executeValidCommand,
+  proceedWithRegistration,
 } from "./handle_message";
 
 import { sendBotMessage } from "./handle_message_utils";
@@ -12,4 +13,5 @@ export {
   handleOnMessage,
   handlePendingCommandResponse,
   sendBotMessage,
+  proceedWithRegistration,
 };

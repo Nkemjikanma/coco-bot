@@ -12,6 +12,7 @@ import {
   http,
   zeroAddress,
   encodeFunctionData,
+  parseUnits,
 } from "viem";
 import { readContract } from "viem/actions";
 import { mainnet, base, sepolia } from "viem/chains";

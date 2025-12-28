@@ -12,4 +12,5 @@ export {
   CHAIN_IDS,
   type BridgeState,
   type BalanceCheckResult,
+  getBridgeQuoteAndTx,
 };

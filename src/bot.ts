@@ -2,6 +2,8 @@ import {
   getSmartAccountFromUserId,
   makeTownsBot,
   type BotHandler,
+  Bot,
+  BotCommand,
 } from "@towns-protocol/bot";
 import commands from "./commands";
 import {
@@ -14,26 +16,14 @@ import {
   getBridgeState,
   updateBridgeState,
 } from "./db";
-import {
-  executeValidCommand,
-  handleOnMessage,
-  handlePendingCommandResponse,
-  handleSlashCommand,
-} from "./handlers";
+import { handleOnMessage, handleSlashCommand } from "./handlers";
 
-import { hexToBytes, formatEther } from "viem";
-import { ENS_CONTRACTS, REGISTRATION } from "./services/ens/constants";
-
-import type { ParsedCommand, PendingCommand, RegisterCommand } from "./types";
-import { encodeCommitData, encodeRegisterData } from "./services/ens";
-import { estimateRegisterGas } from "./services/ens/ens";
-import { threadId } from "worker_threads";
-import { checkBalance } from "./utils";
-import { CHAIN_IDS } from "./services/bridge";
 import {
   confirmCommit,
   confirmRegister,
+  continueAfterBridge,
   durationForm,
+  walletSelection,
 } from "./handlers/interactionHandlers/form";
 import {
   bridgeTransaction,
@@ -43,6 +33,8 @@ import {
 } from "./handlers/interactionHandlers/transaction";
 import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
 import { testBridge } from "./services/bridge/testBridge";
+import { SpaceAddressFromSpaceId } from "@towns-protocol/web3";
+import { CocoBotType } from "./types";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -50,7 +42,8 @@ const SECRET = process.env.JWT_SECRET;
 if (!APP_DATA || !SECRET) {
   throw new Error("Missing APP_DATA or SECRET information. Fix env");
 }
-export const bot = await makeTownsBot(APP_DATA, SECRET, {
+
+export const bot: CocoBotType = await makeTownsBot(APP_DATA, SECRET, {
   commands,
 });
 
@@ -73,49 +66,44 @@ const cocoCommands = [
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {
     if (command === "test_bridge") {
-      const { channelId, userId, args } = event;
-      const threadId = event.threadId ?? event.eventId;
-
-      // Get amount from args, default to 0.001 ETH
-      const amountEth = args[0] || "0.001";
-
-      // Validate amount
-      const amount = parseFloat(amountEth);
-      if (isNaN(amount) || amount <= 0) {
-        await handler.sendMessage(
-          channelId,
-          `❌ Invalid amount. Usage: /test_bridge 0.01`,
-          { threadId },
-        );
-        return;
-      }
-
-      // Get user's wallet
-      const userWallet = await getSmartAccountFromUserId(bot, { userId });
-
-      if (!userWallet) {
-        await handler.sendMessage(
-          channelId,
-          `❌ Couldn't get your wallet address.`,
-          { threadId },
-        );
-        return;
-      }
-
-      await handler.sendMessage(
-        channelId,
-        `🌉 Starting bridge test for ${amountEth} ETH...\n\nWallet: ${userWallet}`,
-        { threadId },
-      );
-
-      await testBridge(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        userWallet,
-        amountEth,
-      );
+      return;
+      // const { channelId, userId, args } = event;
+      // const threadId = event.threadId ?? event.eventId;
+      // // Get amount from args, default to 0.001 ETH
+      // const amountEth = args[0] || "0.001";
+      // // Validate amount
+      // const amount = parseFloat(amountEth);
+      // if (isNaN(amount) || amount <= 0) {
+      //   await handler.sendMessage(
+      //     channelId,
+      //     `❌ Invalid amount. Usage: /test_bridge 0.01`,
+      //     { threadId },
+      //   );
+      //   return;
+      // }
+      // // Get user's wallet
+      // const userWallet = await getSmartAccountFromUserId(bot, { userId });
+      // if (!userWallet) {
+      //   await handler.sendMessage(
+      //     channelId,
+      //     `❌ Couldn't get your wallet address.`,
+      //     { threadId },
+      //   );
+      //   return;
+      // }
+      // await handler.sendMessage(
+      //   channelId,
+      //   `🌉 Starting bridge test for ${amountEth} ETH...\n\nWallet: ${userWallet}`,
+      //   { threadId },
+      // );
+      // await testBridge(
+      //   handler,
+      //   channelId,
+      //   threadId,
+      //   userId,
+      //   userWallet,
+      //   amountEth,
+      // );
     }
     await handleSlashCommand(handler, event);
   });
@@ -152,75 +140,107 @@ bot.onInteractionResponse(async (handler, event) => {
 
   const userState = await getUserState(userId);
 
-  if (response.payload.content.case === "transaction") {
-    const tx = response.payload.content.value;
-    if (tx.requestId.startsWith("test_bridge:")) {
-      await testBridgeTransaction(handler, event, tx);
-    }
+  // if (response.payload.content.case === "transaction") {
+  //   const tx = response.payload.content.value;
+  //   if (tx.requestId.startsWith("test_bridge:")) {
+  //     await testBridgeTransaction(handler, event, tx);
+  //   }
+  // }
+
+  if (!userState?.pendingCommand) {
+    await handler.sendMessage(
+      channelId,
+      "Sorry, I lost track of what we were doing. Please start again.",
+    );
+    return;
   }
 
-  // if (!userState?.pendingCommand) {
-  //   await handler.sendMessage(
-  //     channelId,
-  //     "Sorry, I lost track of what we were doing. Please start again.",
-  //   );
-  //   return;
-  // }
+  const userTownWallet = await getSmartAccountFromUserId(bot, {
+    userId: userId as `0x${string}`,
+  });
+  switch (response.payload.content.case) {
+    case "form": {
+      const form = response.payload.content.value;
 
-  // switch (response.payload.content.case) {
-  //   case "form": {
-  //     const form = response.payload.content.value;
+      if (form.requestId.startsWith("confirm_commit")) {
+        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
+        await confirmCommit(
+          handler,
+          event,
+          confirmForm,
+          userState,
+          userTownWallet,
+        );
 
-  //     if (form.requestId.startsWith("confirm_commit")) {
-  //       const confirmForm = form.requestId.startsWith("confirm_commit") && form;
-  //       await confirmCommit(handler, event, confirmForm, userState);
+        return;
+      }
 
-  //       return;
-  //     }
+      if (form.requestId.startsWith("duration_form")) {
+        const durationForForm =
+          form.requestId.startsWith("duration_form") && form;
+        await durationForm(handler, event, durationForForm, userState);
+        return;
+      }
 
-  //     if (form.requestId.startsWith("duration_form")) {
-  //       const durationForForm =
-  //         form.requestId.startsWith("duration_form") && form;
-  //       await durationForm(handler, event, durationForForm, userState);
-  //       return;
-  //     }
+      if (form.requestId.startsWith("confirm_register")) {
+        const confirmForRegister =
+          form.requestId.startsWith("confirm_register") && form;
 
-  //     if (form.requestId.startsWith("confirm_register")) {
-  //       const confirmForRegister =
-  //         form.requestId.startsWith("confirm_register") && form;
+        await confirmRegister(
+          handler,
+          event,
+          confirmForRegister,
+          userState,
+          userTownWallet,
+        );
+        return;
+      }
 
-  //       await confirmRegister(handler, event, confirmForRegister, userState);
-  //       return;
-  //     }
+      if (form.requestId.startsWith("continue_after_bridge")) {
+        const bridgeForm =
+          form.requestId.startsWith("continue_after_bridge") && form;
 
-  //     if (form.requestId.startsWith("continue_after_bridge")) {
-  //       const bridgeForm =
-  //         form.requestId.startsWith("continue_after_bridge") && form;
+        await continueAfterBridge(
+          handler,
+          event,
+          bridgeForm,
+          userState,
+          userTownWallet,
+        );
+        return;
+      }
 
-  //       await durationForm(handler, event, bridgeForm, userState);
-  //       return;
-  //     }
-  //     break;
-  //   }
+      if (form.requestId.startsWith("wallet_select:")) {
+        const walletSelectForm =
+          form.requestId.startsWith("wallet_select") && form;
 
-  //   case "transaction": {
-  //     const tx = response.payload.content.value;
+        await walletSelection(handler, event, walletSelectForm, userState);
 
-  //     // Check if this is a commit transaction
-  //     if (tx.requestId.startsWith("commit:")) {
-  //       await commitTransaction(handler, event, tx, userState);
-  //     }
+        return;
+      }
+      break;
+    }
 
-  //     if (tx.requestId.startsWith("bridge:")) {
-  //       await bridgeTransaction(handler, event, tx, userState);
-  //     }
+    case "transaction": {
+      const tx = response.payload.content.value;
 
-  //     // Handle register transaction
-  //     if (tx.requestId.startsWith("register:")) {
-  //       await registerTransaction(handler, event, tx, userState);
-  //     }
+      console.log(response);
 
-  //     break;
-  //   }
-  // }
+      // Check if this is a commit transaction
+      if (tx.requestId.startsWith("commit:")) {
+        await commitTransaction(handler, event, tx, userState);
+      }
+
+      if (tx.requestId.startsWith("bridge:")) {
+        await bridgeTransaction(handler, event, tx, userState);
+      }
+
+      // Handle register transaction
+      if (tx.requestId.startsWith("register:")) {
+        await registerTransaction(handler, event, tx, userState);
+      }
+
+      break;
+    }
+  }
 });

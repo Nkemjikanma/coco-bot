@@ -1,7 +1,9 @@
-import type { BasePayload } from "@towns-protocol/bot";
+import type { BasePayload, Bot } from "@towns-protocol/bot";
 import type { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
 import type { Address } from "./api/types";
+import commands from "./commands";
 
+export type CocoBotType = Bot<typeof commands>;
 export interface Message {
   eventId: string;
   userId: string;
@@ -19,7 +21,14 @@ export interface Session {
 
 export interface PendingCommand {
   partialCommand: Partial<ParsedCommand>;
-  waitingFor: "duration" | "names" | "recipient" | "records" | "confirmation";
+  waitingFor:
+    | "duration"
+    | "names"
+    | "recipient"
+    | "records"
+    | "confirmation"
+    | "wallet_selection"
+    | "bridge_confirmation";
   attemptCount: number;
   createdAt: number;
 }
@@ -91,6 +100,8 @@ export interface PendingRegistration {
   grandTotalEth: string;
   commitTxHash?: `0x${string}`; // Set after commit tx sent
   commitTimestamp?: number; // Set after commit tx confirmed
+  selectedWallet?: `0x${string}`;
+  walletCheckResult?: EOAWalletCheckResult;
 }
 // ============================================
 // Valid Actions
@@ -277,3 +288,27 @@ export type OnMessageEventType = BasePayload & {
   mentions: Pick<ChannelMessage_Post_Mention, "userId" | "displayName">[];
   isMentioned: boolean;
 };
+
+/**
+ * Wallet balance info for both L1 and L2
+ */
+export interface WalletBalanceInfo {
+  address: `0x${string}`;
+  l1Balance: bigint;
+  l1BalanceEth: string;
+  l2Balance: bigint;
+  l2BalanceEth: string;
+  totalBalance: bigint;
+  totalBalanceEth: string;
+}
+
+/**
+ * Result of checking all EOA wallets
+ */
+export interface EOAWalletCheckResult {
+  wallets: WalletBalanceInfo[];
+  hasWalletWithSufficientL1: boolean;
+  hasWalletWithSufficientL2ForBridge: boolean;
+  bestWalletForL1: WalletBalanceInfo | null;
+  bestWalletForBridge: WalletBalanceInfo | null;
+}
