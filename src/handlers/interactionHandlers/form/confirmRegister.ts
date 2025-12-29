@@ -65,27 +65,19 @@ export async function confirmRegister(
 
       const registerId = `register:${userId}:${Date.now()}`;
 
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          case: "transaction",
-          value: {
-            id: registerId,
-            title: `Register: ${firstReg.name}`,
-            content: {
-              case: "evm",
-              value: {
-                chainId: REGISTRATION.CHAIN_ID,
-                to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                value: firstReg.domainPriceWei.toString(),
-                data: registerData,
-                signerWallet: registration.data.selectedWallet || undefined,
-              },
-            },
-          },
+      await handler.sendInteractionRequest(channelId, {
+        type: "transaction",
+        id: registerId,
+        title: `Register: ${firstReg.name}`,
+        tx: {
+          chainId: REGISTRATION.CHAIN_ID,
+          to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+          value: firstReg.domainPriceWei.toString(),
+          data: registerData,
+          signerWallet: registration.data.selectedWallet || undefined,
         },
-        hexToBytes(userId as `0x${string}`),
-      );
+        recipient: userId as `0x${string}`,
+      });
 
       return;
     }

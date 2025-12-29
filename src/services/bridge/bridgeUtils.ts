@@ -158,27 +158,19 @@ export async function handleBridging(
     });
 
     // Send bridge transaction request using the Swap API response
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        case: "transaction",
-        value: {
-          id: `bridge:${userId}:${threadId}`,
-          title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
-          content: {
-            case: "evm",
-            value: {
-              chainId: CHAIN_IDS.BASE.toString(),
-              to: swapTx.to,
-              data: swapTx.data.toString(),
-              value: swapTx.value,
-              signerWallet: userWallet || undefined,
-            },
-          },
-        },
+    await handler.sendInteractionRequest(channelId, {
+      type: "transaction",
+      id: `bridge:${userId}:${threadId}`,
+      title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
+      tx: {
+        chainId: CHAIN_IDS.BASE.toString(),
+        to: swapTx.to,
+        data: swapTx.data.toString(),
+        value: swapTx.value,
+        signerWallet: userWallet || undefined,
       },
-      hexToBytes(userId as `0x${string}`),
-    );
+      recipient: userId as `0x${string}`,
+    });
 
     return;
   } catch (error) {

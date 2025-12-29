@@ -134,28 +134,19 @@ export async function continueAfterBridge(
         phase: "commit_pending",
       });
 
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          case: "transaction",
-          value: {
-            id: commitmentId,
-            title: `Commit ENS Registration: ${firstCommitment.name}`,
-            content: {
-              case: "evm",
-              value: {
-                chainId: "1",
-                to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                value: "0",
-                data: commitData,
-                signerWallet: registration.data.selectedWallet || undefined,
-              },
-            },
-          },
+      await handler.sendInteractionRequest(channelId, {
+        type: "transaction",
+        id: commitmentId,
+        title: `Commit ENS Registration: ${firstCommitment.name}`,
+        tx: {
+          chainId: "1",
+          to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+          value: "0",
+          data: commitData,
+          signerWallet: registration.data.selectedWallet || undefined,
         },
-        hexToBytes(userId as `0x${string}`),
-      );
-
+        recipient: userId as `0x${string}`,
+      });
       return;
     }
   }

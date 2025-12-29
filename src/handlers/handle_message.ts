@@ -1,6 +1,7 @@
 import { ENS_CONTRACTS } from "../services/ens/constants";
 import {
   type BotHandler,
+  FlattenedFormComponent,
   getSmartAccountFromUserId,
 } from "@towns-protocol/bot";
 import { formatEther, hexToBytes, isAddress, parseEther } from "viem";
@@ -210,33 +211,24 @@ export async function handleMessage(
           );
 
           // Send the confirmation interaction
-          await handler.sendInteractionRequest(
-            channelId,
-            {
-              case: "form",
-              value: {
-                id: `confirm_commit:${threadId}`,
-                title: "Confirm Registration: Step 1 of 2",
-                components: [
-                  {
-                    id: "confirm",
-                    component: {
-                      case: "button",
-                      value: { label: "✅ Start Registration" },
-                    },
-                  },
-                  {
-                    id: "cancel",
-                    component: {
-                      case: "button",
-                      value: { label: "❌ Cancel" },
-                    },
-                  },
-                ],
+          await handler.sendInteractionRequest(channelId, {
+            type: "form",
+            id: `confirm_commit:${threadId}`,
+            title: "Confirm Registration: Step 1 of 2",
+            components: [
+              {
+                id: "confirm",
+                type: "button",
+                label: "✅ Start Registration",
               },
-            },
-            hexToBytes(userId as `0x${string}`),
-          );
+              {
+                id: "cancel",
+                type: "button",
+                label: "❌ Cancel",
+              },
+            ],
+            recipient: userId as `0x${string}`,
+          });
 
           return;
         }
@@ -437,27 +429,19 @@ export async function handlePendingCommandResponse(
         "🚀 Starting registration...\n\nPlease approve the commit transaction.",
       );
 
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          case: "transaction",
-          value: {
-            id: commitmentId,
-            title: `Commit ENS Registration: ${firstCommitment.name}`,
-            content: {
-              case: "evm",
-              value: {
-                chainId: "1",
-                to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-                value: "0",
-                data: commitData,
-                signerWallet: registration.data.selectedWallet || undefined,
-              },
-            },
-          },
+      await handler.sendInteractionRequest(channelId, {
+        type: "transaction",
+        id: commitmentId,
+        title: `Commit ENS Registration: ${firstCommitment.name}`,
+        tx: {
+          chainId: "1",
+          to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+          value: "0",
+          data: commitData,
+          signerWallet: registration.data.selectedWallet || undefined,
         },
-        hexToBytes(userId as `0x${string}`),
-      );
+        recipient: userId as `0x${string}`,
+      });
 
       return;
     } else {
@@ -761,34 +745,29 @@ async function handleExecution(
         "Duration hasn't been set for the names. ",
       );
 
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          case: "form",
-          value: {
-            id: `duration_form:${threadId}`,
-            title: "Registration Duration",
-            components: [
-              {
-                id: "duration_text_field",
-                component: {
-                  case: "textInput",
-                  value: { placeholder: "Enter years (1-10)..." },
-                },
-              },
-              {
-                id: "confirm",
-                component: { case: "button", value: { label: "Submit" } },
-              },
-              {
-                id: "cancel",
-                component: { case: "button", value: { label: "Cancel" } },
-              },
-            ],
+      await handler.sendInteractionRequest(channelId, {
+        type: "form",
+        id: `duration_form:${threadId}`,
+        title: "Registration Duration",
+        components: [
+          {
+            id: "duration_text_field",
+            type: "textInput",
+            placeholder: "Enter years (1-10)...",
           },
-        },
-        hexToBytes(userId as `0x${string}`),
-      );
+          {
+            id: "confirm",
+            type: "button",
+            label: "Submit",
+          },
+          {
+            id: "cancel",
+            type: "button",
+            label: "Cancel",
+          },
+        ],
+        recipient: userId as `0x${string}`,
+      });
       return;
     }
 
@@ -892,33 +871,24 @@ async function handleExecution(
           selectedWallet: wallet.address,
         });
 
-        await handler.sendInteractionRequest(
-          channelId,
-          {
-            case: "form",
-            value: {
-              id: `bridge:${userId}:${threadId}`,
-              title: "Bridge ETH?",
-              components: [
-                {
-                  id: "bridge",
-                  component: {
-                    case: "button",
-                    value: { label: "🌉 Bridge from Base" },
-                  },
-                },
-                {
-                  id: "cancel",
-                  component: {
-                    case: "button",
-                    value: { label: "❌ Cancel" },
-                  },
-                },
-              ],
+        await handler.sendInteractionRequest(channelId, {
+          type: "form",
+          id: `bridge:${userId}:${threadId}`,
+          title: "Bridge ETH?",
+          components: [
+            {
+              id: "bridge",
+              type: "button",
+              label: "🌉 Bridge from Base",
             },
-          },
-          hexToBytes(userId as `0x${string}`),
-        );
+            {
+              id: "cancel",
+              type: "button",
+              label: "❌ Cancel",
+            },
+          ],
+          recipient: userId as `0x${string}`,
+        });
         return;
       }
 
@@ -962,7 +932,7 @@ async function handleExecution(
     );
 
     // Create buttons for each wallet
-    const walletButtons = walletCheck.wallets
+    const walletButtons: FlattenedFormComponent[] = walletCheck.wallets
       .filter((wallet) => {
         const l1Sufficient = wallet.l1Balance >= requiredAmount;
         const l2Sufficient = wallet.l2Balance >= (requiredAmount * 105n) / 100n;
@@ -974,22 +944,16 @@ async function handleExecution(
 
         return {
           id: `wallet_${index}:${wallet.address}`,
-          component: {
-            case: "button" as const,
-            value: {
-              label: `${statusEmoji} ${formatAddress(wallet.address)} (L1: ${Number(wallet.l1BalanceEth).toFixed(3)})`,
-            },
-          },
+          type: "button",
+          label: `${statusEmoji} ${formatAddress(wallet.address)} (L1: ${Number(wallet.l1BalanceEth).toFixed(3)})`,
         };
       });
 
     // Add cancel button
     walletButtons.push({
       id: "cancel",
-      component: {
-        case: "button" as const,
-        value: { label: "❌ Cancel" },
-      },
+      type: "button",
+      label: "❌ Cancel",
     });
 
     // Store wallet check result for later
@@ -998,18 +962,13 @@ async function handleExecution(
       walletCheckResult: walletCheck,
     });
 
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        case: "form",
-        value: {
-          id: `wallet_select:${threadId}`,
-          title: "Select Wallet",
-          components: walletButtons,
-        },
-      },
-      hexToBytes(userId as `0x${string}`),
-    );
+    await handler.sendInteractionRequest(channelId, {
+      type: "form",
+      id: `wallet_select:${threadId}`,
+      title: "Select Wallet",
+      components: walletButtons,
+      recipient: userId as `0x${string}`,
+    });
     return;
   }
 }
@@ -1082,30 +1041,24 @@ export async function proceedWithRegistration(
     );
 
     // Send confirmation interaction
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        case: "form",
-        value: {
-          id: `confirm_commit:${threadId}`,
-          title: "Confirm Registration: Step 1 of 2",
-          components: [
-            {
-              id: "confirm",
-              component: {
-                case: "button",
-                value: { label: "✅ Start Registration" },
-              },
-            },
-            {
-              id: "cancel",
-              component: { case: "button", value: { label: "❌ Cancel" } },
-            },
-          ],
+    await handler.sendInteractionRequest(channelId, {
+      type: "form",
+      id: `confirm_commit:${threadId}`,
+      title: "Confirm Registration: Step 1 of 2",
+      components: [
+        {
+          id: "confirm",
+          type: "button",
+          label: "✅ Start Registration",
         },
-      },
-      hexToBytes(userId as `0x${string}`),
-    );
+        {
+          id: "cancel",
+          type: "button",
+          label: "❌ Cancel",
+        },
+      ],
+      recipient: userId as `0x${string}`,
+    });
   } catch (e) {
     console.error("Error preparing registration:", e);
     await sendBotMessage(

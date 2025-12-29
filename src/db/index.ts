@@ -24,6 +24,7 @@ import {
   getBridgeState,
   updateBridgeState,
   setBridgeState,
+  clearBridge,
 } from "./bridgeStore";
 export {
   createSession,
@@ -46,4 +47,5 @@ export {
   getBridgeState,
   updateBridgeState,
   setBridgeState,
+  clearBridge,
 };

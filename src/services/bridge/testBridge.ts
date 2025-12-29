@@ -76,27 +76,19 @@ export async function testBridge(
     });
 
     // Step 5: Send transaction request
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        case: "transaction",
-        value: {
-          id: `test_bridge:${userId}`,
-          title: `Test Bridge: ${amountEth} ETH to Mainnet`,
-          content: {
-            case: "evm",
-            value: {
-              chainId: CHAIN_IDS.BASE.toString(),
-              to: swapTx.to,
-              value: swapTx.value,
-              data: swapTx.data,
-              signerWallet: userWallet,
-            },
-          },
-        },
+    await handler.sendInteractionRequest(channelId, {
+      type: "transaction",
+      id: `test_bridge:${userId}`,
+      title: `Test Bridge: ${amountEth} ETH to Mainnet`,
+      tx: {
+        chainId: CHAIN_IDS.BASE.toString(),
+        to: swapTx.to,
+        value: swapTx.value,
+        data: swapTx.data,
+        signerWallet: userWallet,
       },
-      hexToBytes(userId as `0x${string}`),
-    );
+      recipient: userId as `0x${string}`,
+    });
 
     await handler.sendMessage(
       channelId,
