@@ -122,26 +122,24 @@ The waiting period is over. Let's finish registering **${commitment.name}**.
       await handler.sendInteractionRequest(
         channelId,
         {
-          case: "form",
-          value: {
-            id: `confirm_register:${threadId}`,
-            title: "Complete Registration",
-            components: [
-              {
-                id: "confirm",
-                component: {
-                  case: "button",
-                  value: { label: "✅ Complete Registration" },
-                },
-              },
-              {
-                id: "cancel",
-                component: { case: "button", value: { label: "❌ Cancel" } },
-              },
-            ],
-          },
+          type: "form",
+          id: `confirm_register:${threadId}`,
+          title: "Complete Registration",
+          components: [
+            {
+              id: "confirm",
+              type: "button",
+              label: "✅ Complete Registration",
+            },
+            {
+              id: "cancel",
+              type: "button",
+              label: "❌ Cancel",
+            },
+          ],
+          recipient: userId as `0x${string}`,
         },
-        hexToBytes(userId as `0x${string}`),
+        { threadId },
       );
     } catch (error) {
       console.error("Error in commit wait timer:", error);

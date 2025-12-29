@@ -21,7 +21,7 @@ export async function confirmRegister(
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
 
-  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
+  const validThreadId = userState.activeThreadId ?? threadId ?? channelId;
 
   if (!registration.success || !registration.data) {
     await handler.sendMessage(
@@ -64,19 +64,25 @@ export async function confirmRegister(
 
       const registerId = `register:${userId}:${Date.now()}`;
 
-      await handler.sendInteractionRequest(channelId, {
-        type: "transaction",
-        id: registerId,
-        title: `Register: ${firstReg.name}`,
-        tx: {
-          chainId: REGISTRATION.CHAIN_ID,
-          to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-          value: firstReg.domainPriceWei.toString(),
-          data: registerData,
-          signerWallet: registration.data.selectedWallet || undefined,
+      await handler.sendInteractionRequest(
+        channelId,
+        {
+          type: "transaction",
+          id: registerId,
+          title: `Register: ${firstReg.name}`,
+          tx: {
+            chainId: REGISTRATION.CHAIN_ID,
+            to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+            value: firstReg.domainPriceWei.toString(),
+            data: registerData,
+            signerWallet: registration.data.selectedWallet || undefined,
+          },
+          recipient: userId as `0x${string}`,
         },
-        recipient: userId as `0x${string}`,
-      });
+        {
+          threadId: validThreadId,
+        },
+      );
 
       return;
     }

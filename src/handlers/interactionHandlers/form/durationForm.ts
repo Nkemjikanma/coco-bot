@@ -16,7 +16,7 @@ export async function durationForm(
 ) {
   const { userId, channelId, threadId } = event;
 
-  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
+  const validThreadId = userState.activeThreadId ?? event.threadId ?? channelId;
 
   if (!confirmForm) {
     return;

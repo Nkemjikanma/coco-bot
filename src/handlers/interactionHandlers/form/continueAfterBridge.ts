@@ -24,7 +24,7 @@ export async function continueAfterBridge(
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
 
-  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
+  const validThreadId = userState.activeThreadId ?? event.threadId ?? channelId;
 
   if (!bridgeForm) {
     return;
@@ -84,24 +84,28 @@ export async function continueAfterBridge(
         );
 
         // Send another continue button
-        await handler.sendInteractionRequest(channelId, {
-          type: "form",
-          id: `continue_after_bridge:${validThreadId}`,
-          title: "Check Balance & Continue",
-          components: [
-            {
-              id: "continue",
-              type: "button",
-              label: "🔄 Check Again & Continue",
-            },
-            {
-              id: "cancel",
-              type: "button",
-              label: "❌ Cancel",
-            },
-          ],
-          recipient: userId as `0x${string}`,
-        });
+        await handler.sendInteractionRequest(
+          channelId,
+          {
+            type: "form",
+            id: `continue_after_bridge:${validThreadId}`,
+            title: "Check Balance & Continue",
+            components: [
+              {
+                id: "continue",
+                type: "button",
+                label: "🔄 Check Again & Continue",
+              },
+              {
+                id: "cancel",
+                type: "button",
+                label: "❌ Cancel",
+              },
+            ],
+            recipient: userId as `0x${string}`,
+          },
+          { threadId: validThreadId },
+        );
         return;
       }
 
@@ -126,19 +130,25 @@ export async function continueAfterBridge(
         phase: "commit_pending",
       });
 
-      await handler.sendInteractionRequest(channelId, {
-        type: "transaction",
-        id: commitmentId,
-        title: `Commit ENS Registration: ${firstCommitment.name}`,
-        tx: {
-          chainId: "1",
-          to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-          value: "0",
-          data: commitData,
-          signerWallet: registration.data.selectedWallet || undefined,
+      await handler.sendInteractionRequest(
+        channelId,
+        {
+          type: "transaction",
+          id: commitmentId,
+          title: `Commit ENS Registration: ${firstCommitment.name}`,
+          tx: {
+            chainId: "1",
+            to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+            value: "0",
+            data: commitData,
+            signerWallet: registration.data.selectedWallet || undefined,
+          },
+          recipient: userId as `0x${string}`,
         },
-        recipient: userId as `0x${string}`,
-      });
+        {
+          threadId: validThreadId,
+        },
+      );
       return;
     }
   }

@@ -308,29 +308,26 @@ async function handlePostBridgeRegistration(
   await handler.sendInteractionRequest(
     channelId,
     {
-      case: "form",
-      value: {
-        id: `confirm_commit:${threadId}`,
-        title: "Confirm Registration: Step 1 of 2",
-        components: [
-          {
-            id: "confirm",
-            component: {
-              case: "button",
-              value: { label: "✅ Start Registration" },
-            },
-          },
-          {
-            id: "cancel",
-            component: {
-              case: "button",
-              value: { label: "❌ Cancel" },
-            },
-          },
-        ],
-      },
+      type: "form",
+      id: `confirm_commit:${threadId}`,
+      title: "Confirm Registration: Step 1 of 2",
+      components: [
+        {
+          id: "confirm",
+          type: "button",
+          label: "✅ Start Registration",
+        },
+        {
+          id: "cancel",
+          type: "button",
+          label: "❌ Cancel",
+        },
+      ],
+      recipient: userId as `0x${string}`,
     },
-    hexToBytes(userId as `0x${string}`),
+    {
+      threadId,
+    },
   );
 }
 
@@ -346,29 +343,26 @@ async function sendContinueButton(
   await handler.sendInteractionRequest(
     channelId,
     {
-      case: "form",
-      value: {
-        id: `continue_after_bridge:${threadId}`,
-        title: "Continue Registration",
-        components: [
-          {
-            id: "continue",
-            component: {
-              case: "button",
-              value: { label: "🔄 Check Balance & Continue" },
-            },
-          },
-          {
-            id: "cancel",
-            component: {
-              case: "button",
-              value: { label: "❌ Cancel" },
-            },
-          },
-        ],
-      },
+      type: "form",
+      id: `continue_after_bridge:${threadId}`,
+      title: "Continue Registration",
+      components: [
+        {
+          id: "continue",
+          type: "button",
+          label: "🔄 Check Balance & Continue",
+        },
+        {
+          id: "cancel",
+          type: "button",
+          label: "❌ Cancel",
+        },
+      ],
+      recipient: userId as `0x${string}`,
     },
-    hexToBytes(userId as `0x${string}`),
+    {
+      threadId,
+    },
   );
 }
 
