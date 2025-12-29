@@ -131,6 +131,7 @@ export const QUESTION_TYPES = [
   "records",
   "process",
   "general",
+  "subdomains",
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];

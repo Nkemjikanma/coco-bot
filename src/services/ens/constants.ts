@@ -3,6 +3,7 @@ export const ENS_CONTRACTS = {
   REGISTRAR_CONTROLLER: "0x253553366Da8546fC250F225fe3d25d0C782303b" as const,
   BASE_REGISTRAR: "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85" as const,
   ENS_REGISTRY: "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e" as const,
+  ENS_NAMEWRAPPER: "0xD4416b13d2b3a9aBae7AcdBB3092D31d512a2C71" as const,
   PUBLIC_RESOLVER: "0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63" as const,
   // Mainnet ENS Subgraph endpoint (legacy endpoint - free, no API key required)
   SUBGRAPH_URL:
@@ -144,5 +145,78 @@ export const ENS_REGISTRY_ABI = [
     stateMutability: "view",
     inputs: [{ name: "node", type: "bytes32" }],
     outputs: [{ type: "address" }],
+  },
+  {
+    name: "setSubnodeRecord",
+    type: "function",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "label", type: "bytes32" },
+      { name: "owner", type: "address" },
+      { name: "resolver", type: "address" },
+      { name: "ttl", type: "uint64" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "setSubnodeOwner",
+    type: "function",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "label", type: "bytes32" },
+      { name: "owner", type: "address" },
+    ],
+    outputs: [{ name: "", type: "bytes32" }],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+export const NAME_WRAPPER_ABI = [
+  {
+    name: "setSubnodeOwner",
+    type: "function",
+    inputs: [
+      { name: "parentNode", type: "bytes32" },
+      { name: "label", type: "string" },
+      { name: "owner", type: "address" },
+      { name: "fuses", type: "uint32" },
+      { name: "expiry", type: "uint64" },
+    ],
+    outputs: [{ name: "", type: "bytes32" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "setSubnodeRecord",
+    type: "function",
+    inputs: [
+      { name: "parentNode", type: "bytes32" },
+      { name: "label", type: "string" },
+      { name: "owner", type: "address" },
+      { name: "resolver", type: "address" },
+      { name: "ttl", type: "uint64" },
+      { name: "fuses", type: "uint32" },
+      { name: "expiry", type: "uint64" },
+    ],
+    outputs: [{ name: "", type: "bytes32" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "ownerOf",
+    type: "function",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+  {
+    name: "getData",
+    type: "function",
+    inputs: [{ name: "id", type: "uint256" }],
+    outputs: [
+      { name: "owner", type: "address" },
+      { name: "fuses", type: "uint32" },
+      { name: "expiry", type: "uint64" },
+    ],
+    stateMutability: "view",
   },
 ] as const;
