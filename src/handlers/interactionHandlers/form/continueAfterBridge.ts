@@ -24,8 +24,7 @@ export async function continueAfterBridge(
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
 
-  const validThreadId =
-    event.threadId ?? userState.activeThreadId ?? event.eventId;
+  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
 
   if (!bridgeForm) {
     return;
@@ -35,10 +34,12 @@ export async function continueAfterBridge(
     if (component.component.case === "button" && component.id === "cancel") {
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
-      await clearBridge(userId, validThreadId);
+      if (validThreadId) {
+        await clearBridge(userId, validThreadId);
+      }
 
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-        threadId: validThreadId,
+        threadId: validThreadId || undefined,
       });
       return;
     }
@@ -51,7 +52,7 @@ export async function continueAfterBridge(
         await handler.sendMessage(
           channelId,
           "Lost track of your registration. Please start again.",
-          { threadId: validThreadId },
+          { threadId: validThreadId || undefined },
         );
         return;
       }
@@ -60,7 +61,7 @@ export async function continueAfterBridge(
         await handler.sendMessage(
           channelId,
           "Registration data expired. Please start again.",
-          { threadId: validThreadId },
+          { threadId: validThreadId || undefined },
         );
         return;
       }
@@ -79,37 +80,28 @@ export async function continueAfterBridge(
      **Required:** ~${formatEther(requiredAmount)} ETH
 
      Bridging can take 10-20 minutes. Please wait and try again.`,
-          { threadId: validThreadId },
+          { threadId: validThreadId || undefined },
         );
 
         // Send another continue button
-        await handler.sendInteractionRequest(
-          channelId,
-          {
-            case: "form",
-            value: {
-              id: `continue_after_bridge:${validThreadId}`,
-              title: "Check Balance & Continue",
-              components: [
-                {
-                  id: "continue",
-                  component: {
-                    case: "button",
-                    value: { label: "🔄 Check Again & Continue" },
-                  },
-                },
-                {
-                  id: "cancel",
-                  component: {
-                    case: "button",
-                    value: { label: "❌ Cancel" },
-                  },
-                },
-              ],
+        await handler.sendInteractionRequest(channelId, {
+          type: "form",
+          id: `continue_after_bridge:${validThreadId}`,
+          title: "Check Balance & Continue",
+          components: [
+            {
+              id: "continue",
+              type: "button",
+              label: "🔄 Check Again & Continue",
             },
-          },
-          hexToBytes(userId as `0x${string}`),
-        );
+            {
+              id: "cancel",
+              type: "button",
+              label: "❌ Cancel",
+            },
+          ],
+          recipient: userId as `0x${string}`,
+        });
         return;
       }
 
@@ -121,7 +113,7 @@ export async function continueAfterBridge(
      L1 Balance: ${formatEther(l1Balance.balance)} ETH
 
      Proceeding with registration...`,
-        { threadId: validThreadId },
+        { threadId: validThreadId || undefined },
       );
 
       // Now send the commit transaction

@@ -25,14 +25,13 @@ export async function confirmCommit(
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
 
-  const validThreadId =
-    event.threadId ?? userState.activeThreadId ?? event.eventId;
+  const validThreadId = threadId ?? userState.activeThreadId ?? channelId;
 
   if (!registration.success) {
     await handler.sendMessage(
       channelId,
       `Something went wrong: ${registration.error}. Please start again.`,
-      { threadId: validThreadId },
+      { threadId: validThreadId || undefined },
     );
     await clearUserPendingCommand(userId);
     return;
@@ -42,7 +41,7 @@ export async function confirmCommit(
     await handler.sendMessage(
       channelId,
       "Registration expired. Please start again.",
-      { threadId: validThreadId },
+      { threadId: validThreadId || undefined },
     );
     return;
   }
@@ -55,7 +54,7 @@ export async function confirmCommit(
     await handler.sendMessage(
       channelId,
       "Failed to update registration. Please try again.",
-      { threadId: validThreadId },
+      { threadId: validThreadId || undefined },
     );
     return;
   }

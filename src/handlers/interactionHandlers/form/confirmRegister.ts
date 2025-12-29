@@ -21,14 +21,13 @@ export async function confirmRegister(
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
 
-  const validThreadId =
-    event.threadId ?? userState.activeThreadId ?? event.eventId;
+  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
 
   if (!registration.success || !registration.data) {
     await handler.sendMessage(
       channelId,
       "Registration expired. Please start again.",
-      { threadId },
+      { threadId: validThreadId || undefined },
     );
     return;
   }
@@ -42,7 +41,7 @@ export async function confirmRegister(
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-        threadId,
+        threadId: validThreadId || undefined,
       });
       return;
     }

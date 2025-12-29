@@ -19,13 +19,13 @@ export async function registerTransaction(
 ) {
   const { userId, eventId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
-  const validThreadId = threadId ?? userState?.activeThreadId ?? eventId;
+  const validThreadId = userState?.activeThreadId ?? threadId;
 
   if (!registration.success || !registration.data) {
     await handler.sendMessage(
       channelId,
       "Something went wrong retrieving your registration data.",
-      { threadId },
+      { threadId: validThreadId || undefined },
     );
     return;
   }
@@ -57,7 +57,9 @@ Welcome to ENS! 🚀`,
     // Clean up
     await clearPendingRegistration(userId);
     await clearUserPendingCommand(userId);
-    await clearBridge(userId, validThreadId);
+    if (validThreadId) {
+      await clearBridge(userId, validThreadId);
+    }
   } else {
     await handler.sendMessage(
       channelId,
@@ -76,7 +78,10 @@ Would you like to try again? Use \`/register ${registeredName}\``,
 
     await clearPendingRegistration(userId);
     await clearUserPendingCommand(userId);
-    await clearBridge(userId, validThreadId);
+
+    if (validThreadId) {
+      await clearBridge(userId, validThreadId);
+    }
   }
 
   return;

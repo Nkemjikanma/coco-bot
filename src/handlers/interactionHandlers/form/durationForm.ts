@@ -16,8 +16,7 @@ export async function durationForm(
 ) {
   const { userId, channelId, threadId } = event;
 
-  const validThreadId =
-    event.threadId ?? userState.activeThreadId ?? event.eventId;
+  const validThreadId = event.threadId ?? userState.activeThreadId ?? channelId;
 
   if (!confirmForm) {
     return;
@@ -28,7 +27,7 @@ export async function durationForm(
     if (component.component.case === "button" && component.id === "cancel") {
       await clearUserPendingCommand(userId);
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-        threadId,
+        threadId: validThreadId || undefined,
       });
       return;
     }
@@ -46,7 +45,7 @@ export async function durationForm(
         await handler.sendMessage(
           channelId,
           "Please enter a valid duration between 1 and 10 years.",
-          { threadId },
+          { threadId: validThreadId || undefined },
         );
         return;
       }
@@ -64,7 +63,7 @@ export async function durationForm(
         await handler.sendMessage(
           channelId,
           "Something went wrong. Please start again.",
-          { threadId },
+          { threadId: validThreadId || undefined },
         );
         await clearUserPendingCommand(userId);
         return;
@@ -80,7 +79,7 @@ export async function durationForm(
         await handler.sendMessage(
           channelId,
           "Something went wrong. Please start again.",
-          { threadId },
+          { threadId: validThreadId || undefined },
         );
         await clearUserPendingCommand(userId);
         return;

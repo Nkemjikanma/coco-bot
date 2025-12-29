@@ -24,7 +24,7 @@ export async function walletSelection(
 ) {
   const { userId, channelId, threadId, eventId } = event;
 
-  const validThreadId = threadId ?? userState.activeThreadId ?? eventId;
+  const validThreadId = threadId ?? userState.activeThreadId ?? channelId;
 
   if (!walletForm) {
     return;

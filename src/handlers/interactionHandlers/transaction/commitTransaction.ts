@@ -21,7 +21,7 @@ export async function commitTransaction(
   userState: UserState,
 ) {
   const { userId, eventId, channelId, threadId } = event;
-  const validThreadId = threadId ?? userState?.activeThreadId ?? eventId;
+  const validThreadId = userState?.activeThreadId ?? threadId;
 
   if (tx.txHash) {
     // Update registration with tx hash and timestamp
@@ -38,7 +38,7 @@ export async function commitTransaction(
     );
 
     // Start the wait timer
-    startCommitWaitTimer(handler, channelId, validThreadId, userId);
+    startCommitWaitTimer(handler, channelId, userId, validThreadId);
   } else if (!tx.txHash) {
     await handler.sendMessage(
       channelId,
@@ -54,8 +54,8 @@ export async function commitTransaction(
 function startCommitWaitTimer(
   handler: BotHandler,
   channelId: string,
-  threadId: string,
   userId: string,
+  threadId?: string,
 ) {
   // Wait 65 seconds to be safe (ENS requires 60 seconds)
   const waitTime = 65 * 1000;

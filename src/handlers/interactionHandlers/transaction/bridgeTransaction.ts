@@ -26,7 +26,7 @@ export async function bridgeTransaction(
   userState: UserState,
 ) {
   const { userId, channelId, threadId, eventId } = event;
-  const validThreadId = threadId ?? userState?.activeThreadId ?? eventId;
+  const validThreadId = userState?.activeThreadId ?? threadId;
 
   // Debug logging
   console.log("=== BRIDGE TRANSACTION RESPONSE ===");
