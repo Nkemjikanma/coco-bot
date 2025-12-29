@@ -12,6 +12,7 @@ import { CHAIN_IDS } from "../../../services/bridge";
 import { formatEther, hexToBytes } from "viem";
 import { encodeCommitData } from "../../../services/ens";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
+import { clearBridge } from "../../../db/bridgeStore";
 
 export async function continueAfterBridge(
   handler: BotHandler,
@@ -34,6 +35,7 @@ export async function continueAfterBridge(
     if (component.component.case === "button" && component.id === "cancel") {
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
+      await clearBridge(userId, validThreadId);
 
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
         threadId: validThreadId,

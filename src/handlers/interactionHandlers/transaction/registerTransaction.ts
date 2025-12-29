@@ -6,6 +6,7 @@ import {
   getPendingRegistration,
   UserState,
 } from "../../../db/userStateStore";
+import { clearBridge } from "../../../db/bridgeStore";
 
 export async function registerTransaction(
   handler: BotHandler,
@@ -56,6 +57,7 @@ Welcome to ENS! 🚀`,
     // Clean up
     await clearPendingRegistration(userId);
     await clearUserPendingCommand(userId);
+    await clearBridge(userId, validThreadId);
   } else {
     await handler.sendMessage(
       channelId,
@@ -74,6 +76,7 @@ Would you like to try again? Use \`/register ${registeredName}\``,
 
     await clearPendingRegistration(userId);
     await clearUserPendingCommand(userId);
+    await clearBridge(userId, validThreadId);
   }
 
   return;

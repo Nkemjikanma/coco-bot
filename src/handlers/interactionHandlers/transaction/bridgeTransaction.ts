@@ -1,9 +1,15 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { OnInteractionEventType } from "../types";
-import { getPendingRegistration, UserState } from "../../../db/userStateStore";
+import {
+  clearPendingRegistration,
+  clearUserPendingCommand,
+  getPendingRegistration,
+  UserState,
+} from "../../../db/userStateStore";
 import { getBridgeState, updateBridgeState } from "../../../db";
 import { RegisterCommand } from "../../../types";
 import { hexToBytes } from "viem";
+import { clearBridge } from "../../../db/bridgeStore";
 
 export async function bridgeTransaction(
   handler: BotHandler,
@@ -40,11 +46,74 @@ export async function bridgeTransaction(
   }
 
   // Check transaction status
-  if (!tx.txHash) {
+
+  // DETAILED LOGGING: Log transaction response structure
+  console.log("=== BRIDGE TRANSACTION RESPONSE ===");
+  console.log("Full tx object:", JSON.stringify(tx, null, 2));
+  console.log("Transaction details:", {
+    requestId: tx.requestId,
+    txHash: tx.txHash,
+    txHashType: typeof tx.txHash,
+    txHashLength: tx.txHash?.length,
+    isTxHashTruthy: !!tx.txHash,
+    isTxHashEmptyString: tx.txHash === "",
+    isTxHashUndefined: tx.txHash === undefined,
+    isTxHashNull: tx.txHash === null,
+  });
+  console.log("Event context:", {
+    userId,
+    channelId,
+    threadId,
+    eventId,
+    validThreadId,
+  });
+  console.log("===================================");
+  // DEFENSIVE CHECK: Validate tx object structure
+  if (!tx || typeof tx !== "object") {
+    console.error("ERROR: tx object is invalid or missing:", tx);
     await updateBridgeState(userId, validThreadId, {
       ...bridgeState.data,
       status: "failed",
     });
+    await clearBridge(userId, validThreadId); // ADD - clear after marking failed
+    await clearPendingRegistration(userId);
+    await clearUserPendingCommand(userId);
+    await handler.sendMessage(
+      channelId,
+      "❌ Bridging failed - invalid response structure. Please try again or bridge manually.",
+      { threadId: validThreadId },
+    );
+    return;
+  }
+  // DEFENSIVE CHECK: Check if txHash field exists
+  if (!("txHash" in tx)) {
+    console.error("ERROR: txHash field missing from response:", tx);
+    await updateBridgeState(userId, validThreadId, {
+      ...bridgeState.data,
+      status: "failed",
+    });
+
+    await clearBridge(userId, validThreadId); // ADD - clear after marking failed
+    await clearPendingRegistration(userId);
+    await clearUserPendingCommand(userId);
+    await handler.sendMessage(
+      channelId,
+      "❌ Bridging failed - txHash field missing. Please try again or bridge manually.",
+      { threadId: validThreadId },
+    );
+    return;
+  }
+  // Check transaction status - handle empty string, null, undefined
+  if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
+    console.log("Bridge transaction rejected or failed - no valid txHash");
+    await updateBridgeState(userId, validThreadId, {
+      ...bridgeState.data,
+      status: "failed",
+    });
+
+    await clearBridge(userId, validThreadId); // ADD - clear after marking failed
+    await clearPendingRegistration(userId);
+    await clearUserPendingCommand(userId);
     await handler.sendMessage(
       channelId,
       "❌ Bridging failed. Please try again or bridge manually.",
@@ -52,6 +121,19 @@ export async function bridgeTransaction(
     );
     return;
   }
+  console.log("✅ Bridge transaction has valid txHash:", tx.txHash);
+  // if (!tx.txHash) {
+  //   await updateBridgeState(userId, validThreadId, {
+  //     ...bridgeState.data,
+  //     status: "failed",
+  //   });
+  //   await handler.sendMessage(
+  //     channelId,
+  //     "❌ Bridging failed. Please try again or bridge manually.",
+  //     { threadId: validThreadId },
+  //   );
+  //   return;
+  // }
 
   // Bridge transaction submitted successfully
   await updateBridgeState(userId, validThreadId, {

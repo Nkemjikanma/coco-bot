@@ -14,6 +14,7 @@ import { formatAddress } from "../../../utils";
 import { proceedWithRegistration } from "../../handle_message";
 import { formatEther } from "viem";
 import { handleBridging } from "../../../services/bridge/bridgeUtils";
+import { clearBridge } from "../../../db/bridgeStore";
 
 export async function walletSelection(
   handler: BotHandler,
@@ -34,6 +35,8 @@ export async function walletSelection(
       if (component.id === "cancel") {
         await clearPendingRegistration(userId);
         await clearUserPendingCommand(userId);
+        await clearBridge(userId, validThreadId);
+
         await handler.sendMessage(channelId, "Registration cancelled. 👋", {
           threadId: validThreadId,
         });
@@ -153,6 +156,7 @@ export async function walletSelection(
           { threadId: validThreadId },
         );
 
+        await clearBridge(userId, validThreadId);
         return;
       }
     }

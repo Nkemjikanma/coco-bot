@@ -10,6 +10,7 @@ import {
   clearPendingRegistration,
   clearUserPendingCommand,
 } from "../../db";
+import { clearBridge } from "../../db/bridgeStore";
 
 export async function handleBridging(
   handler: BotHandler,
@@ -70,6 +71,7 @@ export async function handleBridging(
       );
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
+      await clearBridge(userId, threadId);
       return;
     }
 
@@ -92,6 +94,7 @@ export async function handleBridging(
       );
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
+      await clearBridge(userId, threadId);
       return;
     }
 
@@ -117,6 +120,7 @@ export async function handleBridging(
       );
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
+      await clearBridge(userId, threadId);
       return;
     }
 
@@ -166,7 +170,7 @@ export async function handleBridging(
             value: {
               chainId: CHAIN_IDS.BASE.toString(),
               to: swapTx.to,
-              data: swapTx.data,
+              data: swapTx.data.toString(),
               value: swapTx.value,
               signerWallet: userWallet || undefined,
             },
@@ -175,6 +179,8 @@ export async function handleBridging(
       },
       hexToBytes(userId as `0x${string}`),
     );
+
+    return;
   } catch (error) {
     console.error("Bridge error:", error);
     await sendBotMessage(
@@ -186,6 +192,7 @@ export async function handleBridging(
     );
     await clearPendingRegistration(userId);
     await clearUserPendingCommand(userId);
+    await clearBridge(userId, threadId);
     return;
   }
 }

@@ -67,7 +67,7 @@ import {
   sendBotMessage,
 } from "./handle_message_utils";
 import { CHAIN_IDS } from "../services/bridge";
-import { getBridgeState, setBridgeState } from "../db/bridgeStore";
+import { clearBridge, getBridgeState, setBridgeState } from "../db/bridgeStore";
 import { handleBridging } from "../services/bridge/bridgeUtils";
 
 type UnifiedEvent = {
@@ -301,6 +301,7 @@ export async function handleMessage(
         // Clear pending state and process as new command
         await clearUserPendingCommand(userId);
         await clearPendingRegistration(userId);
+        await clearBridge(userId, threadId);
         // Fall through to normal parsing below
       } else {
         await handlePendingCommandResponse(
@@ -667,6 +668,32 @@ async function handleExecution(
 ) {
   if (command.action === "register") {
     const check = await checkAvailability(command.names);
+
+    // CLEANUP: Clear any stale state from previous registration attempts // This ensures each /register command starts with a clean slate console.log(🧹 Cleaning up any existing state for user ${userId} before starting new registration);
+    const existingState = await getUserState(userId);
+    const existingRegistration = await getPendingRegistration(userId);
+    if (existingState?.pendingCommand || existingRegistration.success) {
+      console.log("Found existing state, clearing:", {
+        hasPendingCommand: !!existingState?.pendingCommand,
+        hasPendingRegistration: existingRegistration.success,
+        activeThreadId: existingState?.activeThreadId,
+      });
+      // Clear all user state to prevent conflicts
+      await clearUserPendingCommand(userId);
+      await clearPendingRegistration(userId);
+      // Clear bridge state if it exists (we don't have the threadId, so we'll log it)
+      if (existingState?.activeThreadId) {
+        await clearBridge(userId, existingState.activeThreadId);
+        console.log(
+          `Cleared bridge state for threadId: ${existingState.activeThreadId}`,
+        );
+      }
+      console.log("✅ State cleanup complete, starting fresh registration");
+    } else {
+      console.log(
+        "No existing state found, proceeding with fresh registration",
+      );
+    }
 
     if (!check.success) {
       await sendBotMessage(

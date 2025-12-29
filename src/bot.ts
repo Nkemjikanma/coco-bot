@@ -138,6 +138,25 @@ bot.onMessage(async (handler, event) => {
 bot.onInteractionResponse(async (handler, event) => {
   const { userId, response, channelId, threadId, eventId } = event;
 
+  // TOP-LEVEL LOGGING: Log ALL interaction responses
+  console.log("========================================");
+  console.log("🔔 INTERACTION RESPONSE RECEIVED");
+  console.log("========================================");
+  console.log("Response type:", response.payload.content.case);
+  console.log("User ID:", userId);
+  console.log("Channel ID:", channelId);
+  console.log("Thread ID:", threadId);
+  console.log("Event ID:", eventId);
+  if (response.payload.content.case === "transaction") {
+    const tx = response.payload.content.value;
+    console.log("📝 TRANSACTION RESPONSE:");
+    console.log(" Request ID:", tx.requestId);
+    console.log(" TX Hash:", tx.txHash);
+    console.log(" TX Hash exists:", !!tx.txHash);
+    console.log(" TX Hash length:", tx.txHash?.length);
+  }
+  console.log("========================================\n");
+
   const userState = await getUserState(userId);
 
   // if (response.payload.content.case === "transaction") {
@@ -224,7 +243,29 @@ bot.onInteractionResponse(async (handler, event) => {
     case "transaction": {
       const tx = response.payload.content.value;
 
-      console.log(response);
+      // ENHANCED LOGGING: Transaction response details
+      console.log("=== TRANSACTION RESPONSE IN BOT.TS ===");
+      console.log(
+        "Response payload content case:",
+        response.payload.content.case,
+      );
+      console.log("Extracted tx object:", JSON.stringify(tx, null, 2));
+      console.log("Transaction fields:", {
+        requestId: tx.requestId,
+        txHash: tx.txHash,
+        txHashExists: "txHash" in tx,
+        txHashType: typeof tx.txHash,
+        txHashValue: tx.txHash,
+      });
+      console.log("Full response structure:", {
+        payload: {
+          content: {
+            case: response.payload.content.case,
+            value: response.payload.content.value,
+          },
+        },
+      });
+      console.log("======================================");
 
       // Check if this is a commit transaction
       if (tx.requestId.startsWith("commit:")) {

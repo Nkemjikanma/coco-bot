@@ -20,6 +20,8 @@ import type {
   PortfolioData,
 } from "../../api";
 import { ENS_VALIDATION } from "./constants";
+import { clearPendingRegistration, clearUserPendingCommand } from "../../db";
+import { clearBridge } from "../../db/bridgeStore";
 /**
  * Normalizes and validates an ENS domain name
  */
@@ -246,4 +248,15 @@ function computeExpiry(expiryDate: Date | null): {
 export function generateSecret(): `0x${string}` {
   const randomBytes = crypto.getRandomValues(new Uint8Array(32));
   return toHex(randomBytes);
+}
+
+export async function clearAllUserState(
+  userId: string,
+  threadId: string,
+): Promise<void> {
+  await Promise.all([
+    clearBridge(userId, threadId),
+    clearPendingRegistration(userId),
+    clearUserPendingCommand(userId),
+  ]);
 }
