@@ -6,6 +6,7 @@ import {
   prepareRegistration,
   encodeCommitData,
   encodeRegisterData,
+  estimateRegistrationCost,
 } from "./ens";
 import {
   mapEnsHistoryResponse,
@@ -22,4 +23,5 @@ export {
   prepareRegistration,
   encodeCommitData,
   encodeRegisterData,
+  estimateRegistrationCost,
 };

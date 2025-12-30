@@ -141,6 +141,8 @@ export async function walletSelection(
             registration.data,
             command,
           );
+
+          console.log("walletSelect: ‼️ We are done handling bridging");
           return;
         }
 

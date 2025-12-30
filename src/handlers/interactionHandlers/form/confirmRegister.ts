@@ -16,7 +16,6 @@ export async function confirmRegister(
   event: OnInteractionEventType,
   registerForm: FormCase,
   userState: UserState,
-  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -49,6 +48,25 @@ export async function confirmRegister(
     if (component.component.case === "button" && component.id === "confirm") {
       const regData = registration.data;
       const firstReg = regData.names[0];
+
+      // validate owner matches signer - safety
+      if (firstReg.owner !== regData.selectedWallet) {
+        console.error("Owner/signer mismatch detected", {
+          owner: firstReg.owner,
+          signer: regData.selectedWallet,
+        });
+
+        await handler.sendMessage(
+          channelId,
+          "Internal error: Wallet mismatch detected. Please start registratioin again",
+          { threadId: validThreadId },
+        );
+
+        await clearPendingRegistration(userId);
+        await clearUserPendingCommand(userId);
+
+        return;
+      }
 
       // Encode register function call
       const registerData = encodeRegisterData({

@@ -10,7 +10,7 @@ import { OnInteractionEventType, FormCase } from "../types";
 import { checkBalance } from "../../../utils";
 import { CHAIN_IDS } from "../../../services/bridge";
 import { formatEther, hexToBytes } from "viem";
-import { encodeCommitData } from "../../../services/ens";
+import { encodeCommitData, prepareRegistration } from "../../../services/ens";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
 import { clearBridge } from "../../../db/bridgeStore";
 
@@ -19,7 +19,6 @@ export async function continueAfterBridge(
   event: OnInteractionEventType,
   bridgeForm: FormCase,
   userState: UserState,
-  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -67,7 +66,7 @@ export async function continueAfterBridge(
       }
 
       // Re-check L1 balance
-      const owner = registration.data.names[0].owner;
+      const owner = registration.data.selectedWallet!;
       const l1Balance = await checkBalance(owner, CHAIN_IDS.MAINNET);
       const requiredAmount = registration.data.grandTotalWei;
 
@@ -121,7 +120,60 @@ export async function continueAfterBridge(
       );
 
       // Now send the commit transaction
-      const regData = registration.data;
+      let regData = registration.data;
+
+      if (
+        !regData.names ||
+        regData.names.length === 0 ||
+        !regData.names[0].commitment
+      ) {
+        console.log("No commitment found, preparing registration...");
+
+        // Get the domain name from partialCommand
+        const domainNames = partialCommand.names;
+        const duration = partialCommand.duration || 1;
+
+        if (!domainNames || domainNames.length === 0) {
+          await handler.sendMessage(
+            channelId,
+            "❌ Could not find domain name. Please start again.",
+            { threadId: validThreadId || undefined },
+          );
+          return;
+        }
+
+        try {
+          // Prepare registration with commitment
+          const preparedReg = await prepareRegistration({
+            names: domainNames,
+            owner: owner,
+            durationYears: duration,
+          });
+
+          // Update the stored registration with the prepared data
+          await updatePendingRegistration(userId, {
+            ...preparedReg,
+            selectedWallet: owner,
+            phase: "commit_pending",
+          });
+
+          // Refresh registration data
+          const updatedReg = await getPendingRegistration(userId);
+          if (!updatedReg.success || !updatedReg.data) {
+            throw new Error("Failed to update registration");
+          }
+          regData = updatedReg.data;
+        } catch (error) {
+          console.error("Error preparing registration:", error);
+          await handler.sendMessage(
+            channelId,
+            "❌ Failed to prepare registration. Please try again.",
+            { threadId: validThreadId || undefined },
+          );
+          return;
+        }
+      }
+
       const firstCommitment = regData.names[0];
       const commitData = encodeCommitData(firstCommitment.commitment);
       const commitmentId = `commit:${userId}:${Date.now()}`;

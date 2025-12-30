@@ -20,7 +20,6 @@ export async function confirmCommit(
   event: OnInteractionEventType,
   confirmForm: FormCase,
   userState: UserState,
-  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   const registration = await getPendingRegistration(userId);
@@ -92,18 +91,29 @@ export async function confirmCommit(
       // TODO!: for now, let's handle only one name
       const firstCommitment = regData.names[0];
 
+      // validate owner matches signer - safety
+      if (firstCommitment.owner !== regData.selectedWallet) {
+        console.error("Owner/signer mismatch detected", {
+          owner: firstCommitment.owner,
+          signer: regData.selectedWallet,
+        });
+
+        await handler.sendMessage(
+          channelId,
+          "Internal error: Wallet mismatch detected. Please start registratioin again",
+          { threadId: validThreadId },
+        );
+
+        await clearPendingRegistration(userId);
+        await clearUserPendingCommand(userId);
+
+        return;
+      }
+
       const commitData = encodeCommitData(firstCommitment.commitment);
 
       // Generate a unique ID for transaction
       const commitmentId = `commit:${userId}:${Date.now()}`;
-
-      if (!userTownWallet) {
-        await handler.sendMessage(
-          channelId,
-          "You need a Towns wallet to complete this transaction",
-        );
-        return;
-      }
 
       // Send transaction interaction request
       await handler.sendInteractionRequest(

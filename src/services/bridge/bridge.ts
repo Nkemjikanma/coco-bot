@@ -85,6 +85,7 @@ export async function getBridgeQuoteAndTx(
   };
 }> {
   try {
+    console.log("Bridging started");
     // Use WETH as input (will be wrapped from native ETH)
     const inputToken = WETH_ADDRESS.BASE;
 
@@ -142,6 +143,10 @@ export async function getBridgeQuoteAndTx(
       outputAmount: data.expectedOutputAmount,
       minOutputAmount: data.minOutputAmount,
     };
+    console.log(
+      "Bridging should have ended and returing the following",
+      swapTx,
+    );
     return { quote, swapTx };
   } catch (error) {
     console.error("Error getting bridge quote from Swap API:", error);

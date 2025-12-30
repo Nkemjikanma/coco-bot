@@ -166,80 +166,18 @@ bot.onInteractionResponse(async (handler, event) => {
   //   }
   // }
 
-  if (!userState?.pendingCommand) {
-    await handler.sendMessage(
-      channelId,
-      "Sorry, I lost track of what we were doing. Please start again.",
-    );
-    return;
-  }
+  console.log("🔍 USER STATE CHECK:");
+  console.log("  userState exists:", !!userState);
+  console.log("  pendingCommand exists:", !!userState?.pendingCommand);
+  console.log(
+    "  pendingCommand:",
+    JSON.stringify(userState?.pendingCommand, null, 2),
+  );
 
-  const userTownWallet = await getSmartAccountFromUserId(bot, {
-    userId: userId as `0x${string}`,
-  });
+  // const userTownWallet = await getSmartAccountFromUserId(bot, {
+  //   userId: userId as `0x${string}`,
+  // });
   switch (response.payload.content.case) {
-    case "form": {
-      const form = response.payload.content.value;
-
-      if (form.requestId.startsWith("confirm_commit")) {
-        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
-        await confirmCommit(
-          handler,
-          event,
-          confirmForm,
-          userState,
-          userTownWallet,
-        );
-
-        return;
-      }
-
-      if (form.requestId.startsWith("duration_form")) {
-        const durationForForm =
-          form.requestId.startsWith("duration_form") && form;
-        await durationForm(handler, event, durationForForm, userState);
-        return;
-      }
-
-      if (form.requestId.startsWith("confirm_register")) {
-        const confirmForRegister =
-          form.requestId.startsWith("confirm_register") && form;
-
-        await confirmRegister(
-          handler,
-          event,
-          confirmForRegister,
-          userState,
-          userTownWallet,
-        );
-        return;
-      }
-
-      if (form.requestId.startsWith("continue_after_bridge")) {
-        const bridgeForm =
-          form.requestId.startsWith("continue_after_bridge") && form;
-
-        await continueAfterBridge(
-          handler,
-          event,
-          bridgeForm,
-          userState,
-          userTownWallet,
-        );
-        return;
-      }
-
-      if (form.requestId.startsWith("wallet_select:")) {
-        const walletSelectForm =
-          form.requestId.startsWith("wallet_select") && form;
-
-        await walletSelection(handler, event, walletSelectForm, userState);
-
-        return;
-      }
-      break;
-    }
-
     case "transaction": {
       const tx = response.payload.content.value;
 
@@ -269,19 +207,86 @@ bot.onInteractionResponse(async (handler, event) => {
 
       // Check if this is a commit transaction
       if (tx.requestId.startsWith("commit:")) {
-        await commitTransaction(handler, event, tx, userState);
+        await commitTransaction(handler, event, tx, userState!);
+
+        return;
       }
 
       if (tx.requestId.startsWith("bridge:")) {
-        await bridgeTransaction(handler, event, tx, userState);
+        await bridgeTransaction(handler, event, tx, userState!);
+
+        return;
       }
 
       // Handle register transaction
       if (tx.requestId.startsWith("register:")) {
-        await registerTransaction(handler, event, tx, userState);
+        await registerTransaction(handler, event, tx, userState!);
+
+        return;
       }
 
       break;
+    }
+
+    case "form": {
+      if (!userState?.pendingCommand) {
+        console.log(
+          "❌ EARLY EXIT: No pending command, returning before transaction handling!",
+        );
+        await handler.sendMessage(
+          channelId,
+          "Sorry, I lost track of what we were doing. Please start again.",
+        );
+
+        return;
+      }
+
+      const form = response.payload.content.value;
+
+      if (form.requestId.startsWith("confirm_commit")) {
+        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
+        await confirmCommit(handler, event, confirmForm, userState!);
+
+        return;
+      }
+
+      if (form.requestId.startsWith("duration_form")) {
+        const durationForForm =
+          form.requestId.startsWith("duration_form") && form;
+        await durationForm(handler, event, durationForForm, userState!);
+        return;
+      }
+
+      if (form.requestId.startsWith("confirm_register")) {
+        const confirmForRegister =
+          form.requestId.startsWith("confirm_register") && form;
+
+        await confirmRegister(handler, event, confirmForRegister, userState!);
+        return;
+      }
+
+      if (form.requestId.startsWith("continue_after_bridge")) {
+        const bridgeForm =
+          form.requestId.startsWith("continue_after_bridge") && form;
+
+        await continueAfterBridge(handler, event, bridgeForm, userState!);
+        return;
+      }
+
+      if (form.requestId.startsWith("wallet_select:")) {
+        const walletSelectForm =
+          form.requestId.startsWith("wallet_select") && form;
+
+        await walletSelection(handler, event, walletSelectForm, userState!);
+
+        console.log("Bot.ts: ‼️ We have passed to wallet select");
+        return;
+      }
+      break;
+    }
+
+    default: {
+      console.log("‼️ Unknown response type:", response.payload.content.case);
     }
   }
 });
