@@ -462,12 +462,12 @@ function validateSubdomainCommand(
       needsClarification: true,
       question:
         "Which subdomain would you like to create? For example: blog.yourname.eth",
-      partial: { action: "subdomain" },
+      partial: { action: "subdomain", names: [] },
     };
   }
 
+  // If no subdomain object provided, try to parse from names
   if (!subdomain || typeof subdomain !== "object") {
-    // Try to parse from names
     const parsed = parseSubname(names[0]);
     if (!parsed) {
       return {
@@ -483,7 +483,7 @@ function validateSubdomainCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `What address should ${names[0]} point to? Please provide an Ethereum address (0x...).`,
+      question: `What address should ${names[0]} point to? Please provide an Ethereum address (0x...) or ENS name.`,
       partial: {
         action: "subdomain",
         names,
@@ -492,19 +492,44 @@ function validateSubdomainCommand(
     };
   }
 
+  // Type the subdomain object
   const sub = subdomain as {
-    parent: string;
-    label: string;
+    parent?: string;
+    label?: string;
     resolveAddress?: string;
     owner?: string;
   };
 
-  // CRITICAL: Must have resolveAddress
+  // Validate parent and label exist
+  if (!sub.parent || !sub.label) {
+    const parsed = parseSubname(names[0]);
+    if (!parsed) {
+      return {
+        valid: false,
+        needsClarification: true,
+        question:
+          "I couldn't determine the parent domain. Please specify like: blog.yourname.eth",
+        partial: {
+          action: "subdomain",
+          names,
+          subdomain: {
+            parent: sub.parent,
+            label: sub.label,
+            resolveAddress: sub.resolveAddress as `0x${string}`,
+          },
+        },
+      };
+    }
+    // Use parsed values
+    sub.parent = parsed.parent;
+    sub.label = parsed.label;
+  }
+
   if (!sub.resolveAddress) {
     return {
       valid: false,
       needsClarification: true,
-      question: `What address should ${sub.label}.${sub.parent} point to? Please provide an Ethereum address (0x...).`,
+      question: `What address should ${sub.label}.${sub.parent} point to? Please provide an Ethereum address (0x...) or ENS name.`,
       partial: {
         action: "subdomain",
         names,
@@ -514,11 +539,13 @@ function validateSubdomainCommand(
   }
 
   // Validate the address format
-  if (!isAddress(sub.resolveAddress)) {
+  // Note: We allow ENS names here too (ending in .eth), they'll be resolved later
+  const isENSName = sub.resolveAddress.toLowerCase().endsWith(".eth");
+  if (!isENSName && !isAddress(sub.resolveAddress)) {
     return {
       valid: false,
       needsClarification: true,
-      question: `"${sub.resolveAddress}" doesn't look like a valid Ethereum address. Please provide a valid address starting with 0x.`,
+      question: `"${sub.resolveAddress}" doesn't look like a valid Ethereum address or ENS name. Please provide a valid address (0x...) or ENS name (.eth).`,
       partial: {
         action: "subdomain",
         names,
@@ -527,16 +554,22 @@ function validateSubdomainCommand(
     };
   }
 
+  // For valid addresses, cast to the right type
+  // For ENS names, we'll resolve them later in the handler
+  const resolveAddress = sub.resolveAddress as `0x${string}`;
+  const owner = (sub.owner || sub.resolveAddress) as `0x${string}`;
+
+  // All valid!
   return {
     valid: true,
     command: {
       action: "subdomain",
-      names,
+      names: names.map((n) => n.toLowerCase()),
       subdomain: {
         parent: sub.parent,
         label: sub.label,
-        resolveAddress: sub.resolveAddress,
-        owner: sub.owner || sub.resolveAddress, // Default owner to resolveAddress
+        resolveAddress,
+        owner,
       },
     },
   };

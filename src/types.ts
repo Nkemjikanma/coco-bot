@@ -28,7 +28,8 @@ export interface PendingCommand {
     | "records"
     | "confirmation"
     | "wallet_selection"
-    | "bridge_confirmation";
+    | "bridge_confirmation"
+    | "subdomain_address";
   attemptCount: number;
   createdAt: number;
 }
@@ -205,15 +206,25 @@ export interface PortfolioCommand extends BaseCommand {
   // options?: CommandOptions;
 }
 
+// For clarification flow when we don't have all info yet
+export interface CompleteSubdomainInfo {
+  parent: string;
+  label: string;
+  resolveAddress: Address;
+  owner: Address;
+}
+
+// Complete subdomain info with all required fields
+export interface SubdomainInfo {
+  parent?: string;
+  label?: string;
+  resolveAddress?: Address;
+  owner?: Address;
+}
 export interface SubdomainCommand extends BaseCommand {
   action: "subdomain";
   names: string[];
-  subdomain?: {
-    parent: string;
-    label: string;
-    resolveAddress: Address;
-    owner: Address;
-  };
+  subdomain?: SubdomainInfo;
 }
 
 export interface ExpiryCommand extends BaseCommand {

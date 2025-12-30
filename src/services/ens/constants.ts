@@ -174,19 +174,6 @@ export const ENS_REGISTRY_ABI = [
 
 export const NAME_WRAPPER_ABI = [
   {
-    name: "setSubnodeOwner",
-    type: "function",
-    inputs: [
-      { name: "parentNode", type: "bytes32" },
-      { name: "label", type: "string" },
-      { name: "owner", type: "address" },
-      { name: "fuses", type: "uint32" },
-      { name: "expiry", type: "uint64" },
-    ],
-    outputs: [{ name: "", type: "bytes32" }],
-    stateMutability: "nonpayable",
-  },
-  {
     name: "setSubnodeRecord",
     type: "function",
     inputs: [
@@ -219,10 +206,17 @@ export const NAME_WRAPPER_ABI = [
     ],
     stateMutability: "view",
   },
+  {
+    name: "isWrapped",
+    type: "function",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
 ] as const;
 
 // Public Resolver - for setting address records after subname creation
-const PUBLIC_RESOLVER_ABI = [
+export const PUBLIC_RESOLVER_ABI = [
   {
     name: "setAddr",
     type: "function",

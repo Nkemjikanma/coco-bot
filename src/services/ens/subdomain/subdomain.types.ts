@@ -27,3 +27,33 @@ export interface ParsedSubname {
   parentNode: `0x${string}`; // namehash of parent
   labelHash: `0x${string}`; // labelhash of the label
 }
+
+export interface SubdomainPrepareResult {
+  success: boolean;
+  reason?: string;
+  subdomain?: string;
+  domain?: string;
+  fullName?: string;
+  parentNode?: `0x${string}`;
+  subdomainNode?: `0x${string}`;
+  labelHash?: `0x${string}`;
+  recipient?: `0x${string}`;
+  ownerWallet?: `0x${string}`;
+  isWrapped?: boolean;
+}
+
+export interface SubdomainAssignmentState {
+  userId: string;
+  channelId: string;
+  threadId: string;
+  subdomain: string;
+  domain: string;
+  fullName: string;
+  recipient: `0x${string}`;
+  ownerWallet: `0x${string}`;
+  isWrapped: boolean;
+  timestamp: number;
+  status: "pending" | "step1_complete" | "completed" | "failed";
+  step1TxHash?: string;
+  step2TxHash?: string;
+}

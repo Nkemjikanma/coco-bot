@@ -11,10 +11,19 @@ import {
   ENS_CONTRACTS,
   ENS_REGISTRY_ABI,
   NAME_WRAPPER_ABI,
+  PUBLIC_RESOLVER_ABI,
 } from "../constants";
 import { FUSES } from "./subdomain.constants";
-import { SubnameTransactionData } from "./subdomain.types";
-import { parseSubname } from "./subdomain.utils";
+import {
+  SubdomainPrepareResult,
+  SubnameTransactionData,
+} from "./subdomain.types";
+import {
+  isValidEOAAddress,
+  parseSubname,
+  validateSubdomainParts,
+} from "./subdomain.utils";
+import { formatAddress } from "../../../utils";
 
 export class SubdomainService {
   private publicClient: PublicClient;
@@ -29,17 +38,77 @@ export class SubdomainService {
   }
 
   /**
+   * Resolve an ENS name or validate an Ethereum address
+   */
+  async resolveRecipient(
+    recipient: string,
+  ): Promise<{ address: `0x${string}` | null; error?: string }> {
+    // Check if it's already an address
+    if (isValidEOAAddress(recipient)) {
+      return { address: recipient as `0x${string}` };
+    }
+
+    // Try to resolve as ENS name
+    if (recipient.endsWith(".eth")) {
+      try {
+        const address = await this.publicClient.getEnsAddress({
+          name: recipient,
+        });
+
+        if (!address) {
+          return {
+            address: null,
+            error: `ENS name "${recipient}" does not resolve to an address`,
+          };
+        }
+
+        return { address };
+      } catch (error) {
+        return {
+          address: null,
+          error: `Failed to resolve ENS name "${recipient}"`,
+        };
+      }
+    }
+
+    return {
+      address: null,
+      error: `Invalid recipient "${recipient}". Must be an Ethereum address or ENS name.`,
+    };
+  }
+  /**
+   * Check if a parent name is wrapped in NameWrapper
+   */
+  async isNameWrapped(parentName: string): Promise<boolean> {
+    try {
+      const node = namehash(parentName);
+      const isWrapped = await this.publicClient.readContract({
+        address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+        abi: NAME_WRAPPER_ABI,
+        functionName: "isWrapped",
+        args: [node as `0x${string}`],
+      });
+      return isWrapped as boolean;
+    } catch {
+      // If the call fails, assume not wrapped
+      return false;
+    }
+  }
+
+  /**
    * Check if the caller owns the parent name (can create subnames)
    */
   async canCreateSubname(
     parentName: string,
     callerAddress: `0x${string}`,
-    contract: "registry" | "nameWrapper" = "nameWrapper",
-  ): Promise<{ canCreate: boolean; reason?: string }> {
+  ): Promise<{ canCreate: boolean; reason?: string; isWrapped: boolean }> {
     const parentNode = namehash(parentName);
 
     try {
-      if (contract === "nameWrapper") {
+      // First check if the name is wrapped
+      const isWrapped = await this.isNameWrapped(parentName);
+
+      if (isWrapped) {
         // Check NameWrapper ownership
         const tokenId = BigInt(parentNode);
         const owner = await this.publicClient.readContract({
@@ -49,10 +118,11 @@ export class SubdomainService {
           args: [tokenId],
         });
 
-        if (owner.toLowerCase() !== callerAddress.toLowerCase()) {
+        if ((owner as string).toLowerCase() !== callerAddress.toLowerCase()) {
           return {
             canCreate: false,
-            reason: `You don't own ${parentName}. The owner is ${owner}`,
+            reason: `You don't own ${parentName}. The owner is ${formatAddress(owner as string)}`,
+            isWrapped: true,
           };
         }
 
@@ -64,16 +134,17 @@ export class SubdomainService {
           args: [tokenId],
         });
 
-        if ((fuses & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
+        if (((fuses as number) & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
           return {
             canCreate: false,
             reason: `The CANNOT_CREATE_SUBDOMAIN fuse is burned on ${parentName}`,
+            isWrapped: true,
           };
         }
 
-        return { canCreate: true };
+        return { canCreate: true, isWrapped: true };
       } else {
-        // Check Registry ownership
+        // Check Registry ownership for unwrapped names
         const owner = await this.publicClient.readContract({
           address: ENS_CONTRACTS.ENS_REGISTRY,
           abi: ENS_REGISTRY_ABI,
@@ -81,23 +152,24 @@ export class SubdomainService {
           args: [parentNode as `0x${string}`],
         });
 
-        if (owner.toLowerCase() !== callerAddress.toLowerCase()) {
+        if ((owner as string).toLowerCase() !== callerAddress.toLowerCase()) {
           return {
             canCreate: false,
-            reason: `You don't own ${parentName}. The owner is ${owner}`,
+            reason: `You don't own ${parentName}. The owner is ${formatAddress(owner as string)}`,
+            isWrapped: false,
           };
         }
 
-        return { canCreate: true };
+        return { canCreate: true, isWrapped: false };
       }
     } catch (error) {
       return {
         canCreate: false,
         reason: `Error checking ownership: ${error instanceof Error ? error.message : "Unknown error"}`,
+        isWrapped: false,
       };
     }
   }
-
   /**
    * Check if a subname already exists
    */
@@ -105,7 +177,6 @@ export class SubdomainService {
     const node = namehash(fullSubname);
 
     try {
-      // Check registry first
       const owner = await this.publicClient.readContract({
         address: ENS_CONTRACTS.ENS_REGISTRY,
         abi: ENS_REGISTRY_ABI,
@@ -113,89 +184,169 @@ export class SubdomainService {
         args: [node as `0x${string}`],
       });
 
-      return owner !== "0x0000000000000000000000000000000000000000";
+      return (owner as string) !== "0x0000000000000000000000000000000000000000";
     } catch {
       return false;
     }
   }
 
   /**
-   * Build transaction data for creating a subname via NameWrapper
-   * This is for WRAPPED parent names (most common case)
+   * Verify parent domain ownership against user's wallets
    */
-  buildCreateSubnameWithAddress(params: {
-    fullSubname: string;
+  async verifyParentOwnership(
+    parentName: string,
+    userWallets: `0x${string}`[],
+  ): Promise<{
+    owned: boolean;
+    ownerWallet?: `0x${string}`;
+    isWrapped: boolean;
+    error?: string;
+  }> {
+    for (const wallet of userWallets) {
+      const result = await this.canCreateSubname(parentName, wallet);
+      if (result.canCreate) {
+        return {
+          owned: true,
+          ownerWallet: wallet,
+          isWrapped: result.isWrapped,
+        };
+      }
+    }
+
+    return {
+      owned: false,
+      isWrapped: false,
+      error: `None of your wallets own ${parentName}`,
+    };
+  }
+  /**
+   * Prepare subdomain assignment - validate everything before building transactions
+   */
+  async prepareSubdomainAssignment(
+    subdomainInput: string,
+    recipientInput: string,
+    userWallets: `0x${string}`[],
+  ): Promise<SubdomainPrepareResult> {
+    try {
+      // Step 1: Parse subdomain input
+      const parsed = parseSubname(subdomainInput);
+      if (!parsed) {
+        return {
+          success: false,
+          reason:
+            'Invalid format. Use "subdomain.domain.eth" (e.g., "alice.mydomain.eth")',
+        };
+      }
+
+      const {
+        label: subdomain,
+        parent: domain,
+        full: fullName,
+        parentNode,
+        labelHash,
+      } = parsed;
+
+      // Step 2: Validate subdomain and domain labels
+      const domainLabel = domain.replace(".eth", "");
+      const validation = validateSubdomainParts(subdomain, domainLabel);
+      if (!validation.valid) {
+        return {
+          success: false,
+          reason: validation.reason,
+        };
+      }
+
+      // Step 3: Verify parent domain ownership
+      const ownershipCheck = await this.verifyParentOwnership(
+        domain,
+        userWallets,
+      );
+      if (!ownershipCheck.owned) {
+        return {
+          success: false,
+          reason: ownershipCheck.error,
+        };
+      }
+
+      // Step 4: Resolve recipient
+      const recipientResult = await this.resolveRecipient(recipientInput);
+      if (!recipientResult.address) {
+        return {
+          success: false,
+          reason: recipientResult.error,
+        };
+      }
+
+      // Step 5: Check if subdomain already exists
+      const exists = await this.subnameExists(fullName);
+      if (exists) {
+        return {
+          success: false,
+          reason: `Subdomain "${fullName}" already exists`,
+        };
+      }
+      // Step 6: Calculate subdomain node
+      const subdomainNode = namehash(fullName) as `0x${string}`;
+
+      // Success - return all prepared data
+      return {
+        success: true,
+        subdomain,
+        domain,
+        fullName,
+        parentNode,
+        subdomainNode,
+        labelHash,
+        recipient: recipientResult.address,
+        ownerWallet: ownershipCheck.ownerWallet,
+        isWrapped: ownershipCheck.isWrapped,
+      };
+    } catch (error) {
+      console.error("Error preparing subdomain assignment:", error);
+      return {
+        success: false,
+        reason: "An unexpected error occurred while preparing the assignment",
+      };
+    }
+  }
+
+  /**
+   * Build transaction for creating a subname (wrapped names via NameWrapper)
+   */
+  buildCreateSubnameWrapped(params: {
+    parentNode: `0x${string}`;
+    label: string;
     owner: `0x${string}`;
-    resolveAddress: `0x${string}`;
     resolverAddress?: `0x${string}`;
     fuses?: number;
     expiry?: bigint;
-  }): {
-    step1_createSubname: SubnameTransactionData;
-    step2_setAddress: SubnameTransactionData;
-    note: string;
-  } {
-    const parsed = parseSubname(params.fullSubname);
-    if (!parsed) {
-      throw new Error(`Invalid subname: ${params.fullSubname}`);
-    }
-
+  }): SubnameTransactionData {
     const resolverAddress =
-      params.resolverAddress || ENS_CONTRACTS.publicResolver;
-    const subnameNode = namehash(params.fullSubname) as `0x${string}`;
+      params.resolverAddress || ENS_CONTRACTS.PUBLIC_RESOLVER;
 
-    // Step 1: Parent owner creates the subname
-    const createData = encodeFunctionData({
+    const data = encodeFunctionData({
       abi: NAME_WRAPPER_ABI,
       functionName: "setSubnodeRecord",
       args: [
-        parsed.parentNode,
-        parsed.label,
+        params.parentNode,
+        params.label,
         params.owner,
         resolverAddress,
-        0n,
+        0n, // TTL
         params.fuses || 0,
         params.expiry || 0n,
       ],
     });
-
-    // Step 2: New owner sets the address record
-    // NOTE: This must be called by the NEW OWNER of the subname
-    const setAddrData = encodeFunctionData({
-      abi: PUBLIC_RESOLVER_ABI,
-      functionName: "setAddr",
-      args: [subnameNode, params.resolveAddress],
-    });
-
     return {
-      step1_createSubname: {
-        to: ENS_CONTRACTS.nameWrapper,
-        data: createData,
-        value: 0n,
-        chainId: this.chainId,
-      },
-      step2_setAddress: {
-        to: resolverAddress,
-        data: setAddrData,
-        value: 0n,
-        chainId: this.chainId,
-      },
-      note:
-        params.owner === params.resolveAddress
-          ? "Both transactions can be sent by the same address."
-          : `Step 1 must be sent by the parent owner. Step 2 must be sent by ${params.owner} (the new subname owner).`,
+      to: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+      data,
+      value: 0n,
+      chainId: this.chainId,
     };
-  }
-  // Helper to get name from node (would need reverse resolution in production)
-  private getNameFromNode(node: `0x${string}`): string {
-    // In production, you'd use reverse resolution
-    // For now, this is a placeholder - the actual name should be passed in
-    return "unknown.eth";
   }
 
   /**
-   * Build transaction data for creating a subname via Registry
-   * This is for UNWRAPPED parent names
+   * Build transaction for creating a subname (unwrapped names via Registry)
    */
   buildCreateSubnameUnwrapped(params: {
     parentNode: `0x${string}`;
@@ -203,20 +354,16 @@ export class SubdomainService {
     owner: `0x${string}`;
     resolverAddress?: `0x${string}`;
   }): SubnameTransactionData {
-    const {
-      parentNode,
-      labelHash,
-      owner,
-      resolverAddress = ENS_CONTRACTS.PUBLIC_RESOLVER,
-    } = params;
+    const resolverAddress =
+      params.resolverAddress || ENS_CONTRACTS.PUBLIC_RESOLVER;
 
     const data = encodeFunctionData({
       abi: ENS_REGISTRY_ABI,
       functionName: "setSubnodeRecord",
       args: [
-        parentNode,
-        labelHash,
-        owner,
+        params.parentNode,
+        params.labelHash,
+        params.owner,
         resolverAddress,
         0n, // TTL
       ],
@@ -229,44 +376,96 @@ export class SubdomainService {
       chainId: this.chainId,
     };
   }
-   /**
-    * High-level function: Build transaction for creating any subname
-    */
-   async buildCreateSubnameTransaction(
-     fullSubname: string,
-     owner: `0x${string}`,
-     options: {
-       contract?: "registry" | "nameWrapper";
-       resolverAddress?: `0x${string}`;
-       fuses?: number;
-       expiry?: bigint;
-     } = {}
-   ): Promise<SubnameTransactionData> {
-     const parsed = parseSubname(fullSubname);
+  /**
+   * Build transaction to set the address record on the resolver
+   */
+  buildSetAddressRecord(params: {
+    subdomainNode: `0x${string}`;
+    address: `0x${string}`;
+    resolverAddress?: `0x${string}`;
+  }): SubnameTransactionData {
+    const resolverAddress =
+      params.resolverAddress || ENS_CONTRACTS.PUBLIC_RESOLVER;
 
-     if (!parsed) {
-       throw new Error(`Invalid subname format: ${fullSubname}`);
-     }
+    const data = encodeFunctionData({
+      abi: PUBLIC_RESOLVER_ABI,
+      functionName: "setAddr",
+      args: [params.subdomainNode, params.address],
+    });
 
-     const contract = options.contract || "nameWrapper";
+    return {
+      to: resolverAddress,
+      data,
+      value: 0n,
+      chainId: this.chainId,
+    };
+  }
+  /**
+   * Build all transactions needed for subdomain assignment
+   * Returns transactions based on whether the parent is wrapped or not
+   */
+  buildSubdomainAssignmentTransactions(params: {
+    fullSubname: string;
+    recipient: `0x${string}`;
+    isWrapped: boolean;
+    fuses?: number;
+    expiry?: bigint;
+  }): {
+    step1_createSubname: SubnameTransactionData;
+    step2_setAddress: SubnameTransactionData;
+    description: string;
+  } {
+    const parsed = parseSubname(params.fullSubname);
+    if (!parsed) {
+      throw new Error(`Invalid subname: ${params.fullSubname}`);
+    }
 
-     if (contract === "nameWrapper") {
-       return this.buildCreateSubnameWithAddress({
-         parentNode: parsed.parentNode,
-         label: parsed.label,
-         owner,
-         resolverAddress: options.resolverAddress,
-         fuses: options.fuses,
-         expiry: options.expiry,
-       });
-     } else {
-       return this.buildCreateSubnameUnwrapped({
-         parentNode: parsed.parentNode,
-         labelHash: parsed.labelHash,
-         owner,
-         resolverAddress: options.resolverAddress,
-       });
-     }
-   }
- }
+    const subdomainNode = namehash(params.fullSubname) as `0x${string}`;
+
+    let step1: SubnameTransactionData;
+
+    if (params.isWrapped) {
+      // Use NameWrapper for wrapped names
+      step1 = this.buildCreateSubnameWrapped({
+        parentNode: parsed.parentNode,
+        label: parsed.label,
+        owner: params.recipient,
+        fuses: params.fuses || FUSES.EMANCIPATED_AND_EXTENDABLE,
+        expiry: params.expiry,
+      });
+    } else {
+      // Use Registry for unwrapped names
+      step1 = this.buildCreateSubnameUnwrapped({
+        parentNode: parsed.parentNode,
+        labelHash: parsed.labelHash,
+        owner: params.recipient,
+      });
+    }
+
+    // Step 2: Set address record (same for both wrapped and unwrapped)
+    const step2 = this.buildSetAddressRecord({
+      subdomainNode,
+      address: params.recipient,
+    });
+
+    return {
+      step1_createSubname: step1,
+      step2_setAddress: step2,
+      description: `Transaction 1: Create subdomain and set owner\nTransaction 2: Set address record to point to recipient`,
+    };
+  }
+}
+
+// ============ Exporting singleton for convenience ============
+let subdomainServiceInstance: SubdomainService | null = null;
+
+export function getSubdomainService(rpcUrl?: string): SubdomainService {
+  if (!subdomainServiceInstance) {
+    const url = rpcUrl || process.env.MAINNET_RPC_URL;
+    if (!url) {
+      throw new Error("MAINNET_RPC_URL is required");
+    }
+    subdomainServiceInstance = new SubdomainService(url);
+  }
+  return subdomainServiceInstance;
 }
