@@ -12,7 +12,7 @@ import {
   updatePendingRegistration,
 } from "../../db";
 import { clearBridge } from "../../db/bridgeStore";
-import { prepareRegistration } from "../../services/ens"; // ✅ ADD THIS IMPORT
+import { prepareRegistration } from "../../services/ens";
 
 export async function handleBridging(
   handler: BotHandler,
@@ -34,21 +34,28 @@ export async function handleBridging(
   );
 
   try {
-    // ✅ FIX: Prepare registration with commitment BEFORE bridging
-    // This ensures we have the commitment data for after the bridge completes
-    if (
+    // ✅ FIX: Check BOTH that commitment exists AND owner matches selected wallet
+    const needsNewCommitment =
       !registration.names ||
       registration.names.length === 0 ||
-      !registration.names[0]?.commitment
-    ) {
-      console.log(
-        "handleBridging: No commitment found, preparing registration...",
-      );
+      !registration.names[0]?.commitment ||
+      registration.names[0]?.owner?.toLowerCase() !== userWallet.toLowerCase();
+
+    if (needsNewCommitment) {
+      const reason = !registration.names?.length
+        ? "no names"
+        : !registration.names[0]?.commitment
+          ? "no commitment"
+          : "owner mismatch";
+
+      console.log(`handleBridging: Need new commitment - reason: ${reason}`);
+      console.log(`  Current owner: ${registration.names?.[0]?.owner}`);
+      console.log(`  Selected wallet: ${userWallet}`);
 
       try {
         const preparedReg = await prepareRegistration({
           names: command.names,
-          owner: userWallet,
+          owner: userWallet, // ✅ Always use the selected wallet
           durationYears: command.duration,
         });
 
@@ -66,9 +73,12 @@ export async function handleBridging(
         };
 
         console.log(
-          "handleBridging: Registration prepared with commitment:",
-          registration.names[0]?.commitment ? "✅ exists" : "❌ missing",
+          "handleBridging: Registration prepared with correct owner:",
         );
+        console.log(
+          `  Commitment exists: ${registration.names[0]?.commitment ? "✅" : "❌"}`,
+        );
+        console.log(`  Owner: ${registration.names[0]?.owner}`);
       } catch (prepError) {
         console.error(
           "handleBridging: Error preparing registration:",
@@ -85,6 +95,11 @@ export async function handleBridging(
         await clearUserPendingCommand(userId);
         return;
       }
+    } else {
+      console.log(
+        "handleBridging: Commitment valid, owner matches:",
+        userWallet,
+      );
     }
 
     // First, get a quote to understand the fee structure

@@ -14,7 +14,7 @@ import { formatAddress } from "../../../utils";
 import { proceedWithRegistration } from "../../handle_message";
 import { formatEther } from "viem";
 import { handleBridging } from "../../../services/bridge/bridgeUtils";
-import { clearBridge } from "../../../db/bridgeStore";
+import { prepareRegistration } from "../../../services/ens"; // ✅ ADD THIS IMPORT
 
 export async function walletSelection(
   handler: BotHandler,
@@ -24,7 +24,7 @@ export async function walletSelection(
 ) {
   const { userId, channelId, threadId, eventId } = event;
 
-  const validThreadId = userState.activeThreadId ?? threadId ?? channelId;
+  const validThreadId = threadId ?? userState.activeThreadId ?? eventId;
 
   if (!walletForm) {
     return;
@@ -35,8 +35,6 @@ export async function walletSelection(
       if (component.id === "cancel") {
         await clearPendingRegistration(userId);
         await clearUserPendingCommand(userId);
-        await clearBridge(userId, validThreadId);
-
         await handler.sendMessage(channelId, "Registration cancelled. 👋", {
           threadId: validThreadId,
         });
@@ -117,33 +115,68 @@ export async function walletSelection(
             { threadId: validThreadId },
           );
 
-          // Update registration with selected wallet
-          await updatePendingRegistration(userId, {
-            selectedWallet: walletAddress,
-          });
-
-          // Update pending command state
-          await setUserPendingCommand(
-            userId,
-            validThreadId,
-            channelId,
-            command,
-            "bridge_confirmation",
+          // ✅ FIX: Prepare fresh registration with the CORRECT owner (selected wallet)
+          console.log(
+            "walletSelection: Preparing registration with correct owner:",
+            walletAddress,
           );
 
-          // confirm bridge transaction request
-          await handleBridging(
-            handler,
-            selectedWalletInfo.address,
-            channelId,
-            validThreadId,
-            userId,
-            registration.data,
-            command,
-          );
+          try {
+            const freshRegistration = await prepareRegistration({
+              names: command.names,
+              owner: walletAddress, // ✅ Use the selected wallet!
+              durationYears: command.duration,
+            });
 
-          console.log("walletSelect: ‼️ We are done handling bridging");
-          return;
+            // Update registration with FULL prepared data including commitment
+            await updatePendingRegistration(userId, {
+              ...freshRegistration,
+              selectedWallet: walletAddress,
+            });
+
+            console.log(
+              "walletSelection: Registration prepared with owner:",
+              freshRegistration.names[0]?.owner,
+            );
+
+            // Update pending command state
+            await setUserPendingCommand(
+              userId,
+              validThreadId,
+              channelId,
+              command,
+              "bridge_confirmation",
+            );
+
+            // Pass the fresh registration to handleBridging
+            await handleBridging(
+              handler,
+              selectedWalletInfo.address,
+              channelId,
+              validThreadId,
+              userId,
+              {
+                ...registration.data,
+                ...freshRegistration,
+                selectedWallet: walletAddress,
+              },
+              command,
+            );
+
+            console.log("walletSelect: ‼️ We are done handling bridging");
+            return;
+          } catch (error) {
+            console.error(
+              "walletSelection: Error preparing registration:",
+              error,
+            );
+            await handler.sendMessage(
+              channelId,
+              "❌ Failed to prepare registration. Please try again.",
+              { threadId: validThreadId },
+            );
+            return;
+          }
         }
 
         // Neither L1 nor L2 has enough
@@ -158,7 +191,6 @@ export async function walletSelection(
           { threadId: validThreadId },
         );
 
-        await clearBridge(userId, validThreadId);
         return;
       }
     }

@@ -380,7 +380,7 @@ async function pollForBalanceIncrease(
 ) {
   const initialBalance = await checkBalance(address, CHAIN_IDS.MAINNET);
 
-  const maxWaitMs = 5 * 60 * 1000; // 5 minutes
+  const maxWaitMs = 2 * 60 * 1000; // 2 minutes
   const pollIntervalMs = 10 * 1000; // 10 seconds
   const startTime = Date.now();
 
