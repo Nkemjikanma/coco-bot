@@ -236,6 +236,9 @@ bot.onInteractionResponse(async (handler, event) => {
         await handler.sendMessage(
           channelId,
           "Sorry, I lost track of what we were doing. Please start again.",
+          {
+            threadId,
+          },
         );
 
         return;
