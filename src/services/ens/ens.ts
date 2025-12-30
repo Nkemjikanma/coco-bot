@@ -758,43 +758,62 @@ export async function estimateRegistrationCost({
   names: string[];
   durationYears: number;
 }): Promise<{
+  costs: {
+    commitGasWei: bigint;
+    commitGasEth: string;
+    registerGasWei: bigint;
+    registerGasEth: string;
+    isRegisterEstimate: boolean;
+  };
   totalDomainCostWei: bigint;
   totalDomainCostEth: string;
-  estimatedCommitGasWei: bigint;
-  estimatedRegisterGasWei: bigint;
   grandTotalWei: bigint;
   grandTotalEth: string;
 }> {
   const durationSec = BigInt(durationYears * 365 * 24 * 60 * 60);
+
   let totalDomainCostWei = 0n;
-  // Calculate domain prices
+
   for (const name of names) {
-    const label = name.replace(/.eth$/, "");
-    // Get domain price from contract
+    const label = name.replace(/\.eth$/, "");
+
     const priceData = (await ethereumClient.readContract({
       address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
       abi: CONTROLLER_ABI,
       functionName: "rentPrice",
       args: [label, durationSec],
     })) as { base: bigint; premium: bigint };
+
     const domainPriceWei = priceData.base + priceData.premium;
     totalDomainCostWei += domainPriceWei;
   }
-  // Estimate gas costs (rough estimates)
+
   const fees = await ethereumClient.estimateFeesPerGas();
-  const commitGasPerName = 50000n; // Conservative estimate
-  const registerGasPerName = 280000n; // Conservative estimate
-  const estimatedCommitGasWei =
-    commitGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
-  const estimatedRegisterGasWei =
-    registerGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
+  const maxFeePerGas = fees.maxFeePerGas ?? 0n;
+
+  // Commit gas estimate: ~46,000 gas per commit
+  const commitGasPerName = 46000n;
+  const totalCommitGasWei =
+    commitGasPerName * BigInt(names.length) * maxFeePerGas;
+
+  // Register gas estimate: ~280,000 gas per registration
+  const registerGasPerName = 280000n;
+  const totalRegisterGasWei =
+    registerGasPerName * BigInt(names.length) * maxFeePerGas;
+
   const grandTotalWei =
-    totalDomainCostWei + estimatedCommitGasWei + estimatedRegisterGasWei;
+    totalDomainCostWei + totalCommitGasWei + totalRegisterGasWei;
+
   return {
+    costs: {
+      commitGasWei: totalCommitGasWei,
+      commitGasEth: formatEther(totalCommitGasWei),
+      registerGasWei: totalRegisterGasWei,
+      registerGasEth: formatEther(totalRegisterGasWei),
+      isRegisterEstimate: true,
+    },
     totalDomainCostWei,
     totalDomainCostEth: formatEther(totalDomainCostWei),
-    estimatedCommitGasWei,
-    estimatedRegisterGasWei,
     grandTotalWei,
     grandTotalEth: formatEther(grandTotalWei),
   };

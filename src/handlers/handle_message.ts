@@ -808,14 +808,13 @@ async function handleExecution(
       return;
     }
 
-    // Get cost estimate (using first EOA as placeholder owner)
-    const preliminaryRegistration = await prepareRegistration({
+    // Get cost estimate
+    const costEstimate = await estimateRegistrationCost({
       names: command.names,
-      owner: filteredEOAs[0],
       durationYears: command.duration,
     });
 
-    const requiredAmount = preliminaryRegistration.grandTotalWei;
+    const requiredAmount = costEstimate.grandTotalWei;
 
     // Check balances on all EOAs
     const walletCheck = await checkAllEOABalances(
@@ -878,14 +877,18 @@ async function handleExecution(
           "bridge_confirmation",
         );
 
-        // // Store the selected wallet in registration state
-        // await setPendingRegistration(userId, {
-        //   ...preliminaryRegistration,
-        //   phase: "awaiting_commit_confirmation",
-        //   names: [],
-        //   grandTotalWei: preliminaryRegistration.grandTotalWei,
-        //   selectedWallet: wallet.address,
-        // });
+        // Store the selected wallet in registration state
+        await setPendingRegistration(userId, {
+          phase: "awaiting_commit_confirmation",
+          names: [], // Empty - handleBridging will populate with correct owner
+          costs: costEstimate.costs,
+          totalDomainCostWei: costEstimate.totalDomainCostWei,
+          totalDomainCostEth: costEstimate.totalDomainCostEth,
+          grandTotalWei: costEstimate.grandTotalWei,
+          grandTotalEth: costEstimate.grandTotalEth,
+          selectedWallet: wallet.address,
+          walletCheckResult: walletCheck,
+        });
 
         await handler.sendInteractionRequest(
           channelId,
@@ -978,9 +981,13 @@ async function handleExecution(
 
     // Store wallet check result for later
     await setPendingRegistration(userId, {
-      ...preliminaryRegistration,
-      // phase: "awaiting_commit_confirmation",
-      // names: [],
+      phase: "awaiting_commit_confirmation",
+      names: [], // Empty - walletSelection will populate with correct owner
+      costs: costEstimate.costs,
+      totalDomainCostWei: costEstimate.totalDomainCostWei,
+      totalDomainCostEth: costEstimate.totalDomainCostEth,
+      grandTotalWei: costEstimate.grandTotalWei,
+      grandTotalEth: costEstimate.grandTotalEth,
       walletCheckResult: walletCheck,
     });
 
