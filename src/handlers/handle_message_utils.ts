@@ -1,4 +1,4 @@
-import type { ParsedCommand, PendingCommand } from "../types";
+import type { ParsedCommand, PendingCommand, SubdomainCommand } from "../types";
 import { BotHandler } from "@towns-protocol/bot";
 import { appendMessageToSession } from "../db";
 
@@ -17,6 +17,7 @@ export function determineWaitingFor(
     "history",
     "remind",
     "watch",
+    "subdomain",
   ].includes(partial.action || "");
 
   if (
@@ -41,6 +42,13 @@ export function determineWaitingFor(
   // Check if we need records
   if (partial.action === "set" && !("records" in partial)) {
     return "records";
+  }
+
+  if (partial.action === "subdomain") {
+    const subCmd = partial as Partial<SubdomainCommand>;
+    if (!subCmd.subdomain?.resolveAddress) {
+      return "subdomain_address";
+    }
   }
 
   return "confirmation";
@@ -100,68 +108,80 @@ export function formatRustPayload(command: ParsedCommand) {
   return lines.join("\n");
 }
 
-export function extractMissingInfo(
+export async function extractMissingInfo(
   partial: Partial<ParsedCommand>,
   userResponse: string,
   waitingFor: PendingCommand["waitingFor"],
-): Partial<ParsedCommand> {
+): Promise<Partial<ParsedCommand>> {
   const updated = { ...partial };
 
   switch (waitingFor) {
-    case "duration": {
-      // Extract number from response (e.g., "3 years", "3", "three years")
+    case "duration":
       const match = userResponse.match(/(\d+)\s*(?:year|yr)?s?/i);
       if (
         match &&
         (updated.action === "register" || updated.action === "renew")
       ) {
-        (updated as any).duration = parseInt(match[1], 10);
+        updated.duration = parseInt(match[1]);
       }
       break;
-    }
 
-    case "names": {
-      // First, try to extract names that already have .eth
-      const namesWithEth = userResponse.match(/[\w-]+\.eth/gi) || [];
+    case "names":
+      const names = userResponse.match(/[\w-]+\.eth/gi) || [];
+      if (
+        names.length > 0 &&
+        (updated.action === "check" ||
+          updated.action === "register" ||
+          updated.action === "renew" ||
+          updated.action === "transfer" ||
+          updated.action === "set" ||
+          updated.action === "expiry" ||
+          updated.action === "history" ||
+          updated.action === "remind" ||
+          updated.action === "watch" ||
+          updated.action === "subdomain") // ✅ ADD subdomain here
+      ) {
+        updated.names = names;
+      }
+      break;
 
-      if (namesWithEth.length > 0) {
-        (updated as any).names = namesWithEth;
-      } else {
-        // User typed something without .eth - extract words and add .eth
-        // This handles responses like "alice" or "alice bob charlie"
-        const words = userResponse
-          .toLowerCase()
-          .split(/[\s,]+/) // Split on spaces or commas
-          .map((w) => w.trim())
-          .filter((word) => /^[\w-]+$/.test(word) && word.length >= 3);
+    case "recipient":
+      const addressMatch = userResponse.match(/0x[a-fA-F0-9]{40}/);
+      if (addressMatch && updated.action === "transfer") {
+        updated.recipient = addressMatch[0];
+      }
+      break;
 
-        if (words.length > 0) {
-          // Add .eth to each word - validator will confirm with user
-          (updated as any).names = words.map((w) => `${w}.eth`);
+    // ✅ ADD THIS CASE:
+    case "subdomain_address":
+      if (updated.action === "subdomain") {
+        // Extract address or ENS name
+        const addrMatch = userResponse.match(/0x[a-fA-F0-9]{40}/);
+        const ensMatch = userResponse.match(/[\w-]+\.eth/gi);
+
+        const subdomainCmd = updated as Partial<SubdomainCommand>;
+
+        if (addrMatch) {
+          subdomainCmd.subdomain = {
+            ...subdomainCmd.subdomain,
+            resolveAddress: addrMatch[0] as `0x${string}`,
+            owner: addrMatch[0] as `0x${string}`,
+          };
+        } else if (ensMatch && ensMatch.length > 0) {
+          // User provided an ENS name - will be resolved later
+          subdomainCmd.subdomain = {
+            ...subdomainCmd.subdomain,
+            resolveAddress: ensMatch[0] as `0x${string}`,
+            owner: ensMatch[0] as `0x${string}`,
+          };
         }
       }
       break;
-    }
 
-    case "recipient": {
-      // Extract Ethereum address
-      const addressMatch = userResponse.match(/0x[a-fA-F0-9]{40}/);
-      if (addressMatch && updated.action === "transfer") {
-        (updated as any).recipient = addressMatch[0];
-      }
+    case "confirmation":
+    case "wallet_selection":
+    case "bridge_confirmation":
       break;
-    }
-
-    case "records": {
-      // This is complex - for now, re-parse with LLM would be better
-      // Just pass through for now
-      break;
-    }
-
-    case "confirmation": {
-      // User confirmed - return as-is
-      break;
-    }
   }
 
   return updated;

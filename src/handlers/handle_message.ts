@@ -52,6 +52,7 @@ import type {
   PendingCommand,
   QuestionCommand,
   RegisterCommand,
+  SubdomainCommand,
 } from "../types";
 import {
   checkAllEOABalances,
@@ -71,6 +72,8 @@ import {
 import { CHAIN_IDS } from "../services/bridge";
 import { clearBridge, getBridgeState, setBridgeState } from "../db/bridgeStore";
 import { handleBridging } from "../services/bridge/bridgeUtils";
+import { handleSubdomainCommand } from "./handleSubdomainCommand";
+import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 
 type UnifiedEvent = {
   channelId: string;
@@ -466,6 +469,87 @@ export async function handlePendingCommandResponse(
     }
   }
 
+  if (pending.waitingFor === "subdomain_address") {
+    // User provided an address in response to our question
+    const userMessage = content.trim();
+
+    // Validate it's an address or ENS name
+    const isENSName = userMessage.toLowerCase().endsWith(".eth");
+    if (!isENSName && !isAddress(userMessage)) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `"${userMessage}" doesn't look like a valid address. Please provide an Ethereum address (0x...) or ENS name (.eth).`,
+      );
+      return; // ✅ FIX: Return to avoid falling through
+    }
+
+    // Valid address or ENS name provided
+    const partialCommand = pending.partialCommand as SubdomainCommand;
+
+    // Make sure we have the subdomain info
+    if (!partialCommand.subdomain?.parent || !partialCommand.subdomain?.label) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "I lost track of which subdomain you wanted to create. Let's start again - which subdomain would you like to create?",
+      );
+      await clearUserPendingCommand(userId);
+      return;
+    }
+
+    const updatedCommand: SubdomainCommand = {
+      ...partialCommand,
+      subdomain: {
+        parent: partialCommand.subdomain.parent,
+        label: partialCommand.subdomain.label,
+        resolveAddress: userMessage as `0x${string}`,
+        owner: userMessage as `0x${string}`,
+      },
+    };
+
+    // Re-validate the updated command
+    const validation = validate_parse(updatedCommand);
+
+    if (validation.valid) {
+      // Clear pending command before executing
+      await clearUserPendingCommand(userId);
+
+      // Now process the complete subdomain command
+      await handleSubdomainCommand(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        validation.command as SubdomainCommand,
+      );
+      return; // ✅ FIX: Return here!
+    } else {
+      // Validation still failed
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        validation.question || "Something went wrong. Please try again.",
+      );
+
+      // Update with new partial
+      await setUserPendingCommand(
+        userId,
+        threadId,
+        channelId,
+        validation.partial,
+        determineWaitingFor(validation.partial),
+      );
+      return; // ✅ FIX: Return here!
+    }
+  }
+
   const updated = extractMissingInfo(
     pending.partialCommand,
     content,
@@ -659,6 +743,76 @@ async function handleExecution(
   userId: string,
   command: ParsedCommand,
 ) {
+  if (command.action === "subdomain") {
+    // Check if subdomain info is complete
+    if (!isCompleteSubdomainInfo(command.subdomain)) {
+      // Determine what's missing and ask for it
+      const subdomain = command.subdomain;
+
+      if (!subdomain?.parent || !subdomain?.label) {
+        // Missing the subdomain name itself - need to start over
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "I lost track of which subdomain you wanted to create. Could you tell me again? For example: blog.yourname.eth",
+        );
+
+        // Update pending command to wait for the name
+        await setUserPendingCommand(
+          userId,
+          threadId,
+          channelId,
+          { action: "subdomain", names: [] },
+          "names",
+        );
+        return;
+      }
+
+      if (!subdomain?.resolveAddress) {
+        // Have name but missing address - ask for it
+        const fullName = `${subdomain.label}.${subdomain.parent}`;
+
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          `What address should **${fullName}** point to? Please provide an Ethereum address (0x...) or ENS name.`,
+        );
+
+        // Update pending command to wait for address
+        await setUserPendingCommand(
+          userId,
+          threadId,
+          channelId,
+          {
+            action: "subdomain",
+            names: [fullName],
+            subdomain: {
+              parent: subdomain.parent,
+              label: subdomain.label,
+            },
+          },
+          "subdomain_address", // New waitingFor state
+        );
+        return;
+      }
+
+      // Shouldn't reach here, but fallback
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "Something went wrong with your subdomain request. Please try again.",
+      );
+      await clearUserPendingCommand(userId);
+      return;
+    }
+    await handleSubdomainCommand(handler, channelId, threadId, userId, command);
+  }
   if (command.action === "register") {
     const check = await checkAvailability(command.names);
 

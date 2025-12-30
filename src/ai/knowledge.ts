@@ -131,6 +131,40 @@ Complete the registration and the name is yours!
 • A wallet (like MetaMask or Towns wallet)
 
 _The whole process takes about 2-3 minutes!_`,
+
+  subdomains: `🏷️ **ENS Subdomains**
+
+Subdomains let you create names under your existing ENS name!
+
+**Example:**
+- You own: alice.eth
+- You can create: blog.alice.eth, mail.alice.eth, wallet.alice.eth
+
+**Key Facts:**
+- **Free to create** - no registration fee (just gas)
+- **You control them** - create, delete, or transfer anytime
+- **Inherit parent** - they work as long as alice.eth is valid
+- **Unlimited** - create as many as you want
+
+**Use Cases:**
+- **Wallet organization:** vault.alice.eth, hot.alice.eth, cold.alice.eth
+- **Projects:** dao.alice.eth, nft.alice.eth
+- **Family/team:** mom.alice.eth, partner.alice.eth
+- **Services:** mail.alice.eth, blog.alice.eth
+
+**Common Use Cases:**
+• **Wallet organization:** vault.alice.eth, hot.alice.eth, cold.alice.eth
+• **Projects:** dao.alice.eth, nft.alice.eth
+• **Family/team:** mom.alice.eth, partner.alice.eth
+• **Services:** mail.alice.eth, blog.alice.eth
+
+**Requirements:**
+• You must own the parent name (alice.eth)
+• Parent should be "wrapped" for best features
+• Single transaction (no commit-reveal like top-level names)
+
+_Tip: Subdomains are great for organizing your web3 life without buying multiple names!_
+_You must own the parent name to create subdomains under it._`,
 };
 
 // ============================================

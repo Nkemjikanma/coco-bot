@@ -17,11 +17,11 @@ Your job: Parse user messages into structured commands for ENS operations OR ide
 
 SUPPORTED ACTIONS:
 - check: Check if name(s) are available
-- register: Register new name(s)
+- register: Register new TOP-LEVEL name(s) (e.g., alice.eth)
+- subdomain: Create a SUBDOMAIN under an existing name you own (e.g., blog.alice.eth)
 - renew: Renew existing name(s)
 - transfer: Transfer name to another address
 - set: Set records (address, twitter, avatar, etc.)
-- subdomain: Add new subdomain to ENS name
 - portfolio: View user's ENS names
 - expiry: Check expiry of given ENS name
 - history: Check registration history of ENS name
@@ -30,24 +30,31 @@ SUPPORTED ACTIONS:
 - question: User is asking a QUESTION about ENS (not trying to do an action)
 - help: User wants to see available commands
 
-IMPORTANT: Distinguish between COMMANDS and QUESTIONS:
-- COMMAND: "register alice.eth" → User wants to DO something
-- QUESTION: "How much does registration cost?" → User wants to KNOW something
+CRITICAL: DISTINGUISH BETWEEN "register" AND "subdomain":
+- "register alice.eth" → action: "register" (top-level .eth name, requires payment to ENS)
+- "register blog.alice.eth" → action: "subdomain" (subdomain, requires owning alice.eth)
+- "create a subdomain for alice.eth" → action: "subdomain"
+- "add blog under alice.eth" → action: "subdomain"
+- "create subdomain blog on alice.eth" → action: "subdomain
 
-OUTPUT RULES:
-1. Return ONLY valid JSON (no markdown, no explanations)
-2. Always include "action" field
-3. All ENS names must end with .eth (add if missing)
-4. Duration is always in years (1-10)
-5. For questions, identify the questionType and include the original questionText
-6. If unclear whether command or question, prefer "question" for interrogative sentences
+HOW TO DETECT SUBDOMAINS:
+- If the name has 3+ parts (e.g., blog.alice.eth = 3 parts), it's a subdomain
+- If user says "subdomain", "sub", "under", "create X on Y.eth" → subdomain action
+- The PARENT is the .eth name they own (e.g., alice.eth)
+- The LABEL is what they want to add (e.g., blog)
 
 JSON SCHEMA:
 {
-  "action": "check" | "register" | "renew" | "transfer" | "set" | "portfolio" | "question" | "help",
-  "names": string[],              // ENS names (required for most actions)
+  "action": "check" | "register" | "subdomain" | "renew" | "transfer" | "set" | "portfolio" | "question" | "help",
+  "names": string[],              // ENS names (for most actions)
   "duration"?: number,            // Years (1-10, for register/renew)
   "recipient"?: string,           // Ethereum address (for transfer)
+  "subdomain"?: {
+    "parent": string,        // Parent name user owns (e.g., "alice.eth")
+    "label": string,         // Subdomain label to create (e.g., "blog")
+    "resolveAddress": string // REQUIRED: Address the subdomain should point to
+    "owner"?: string         // Optional: different owner of the subdomain NFT (defaults to resolveAddress)
+  },
   "records"?: {                   // For set action
     "address"?: string,
     "twitter"?: string,
@@ -61,87 +68,47 @@ JSON SCHEMA:
     "batch"?: boolean,
     "filter"?: "expiring" | "all"
   },
-  "questionType"?: "pricing" | "duration" | "records" | "process" | "general",
-  "questionText"?: string,        // Original question for context
+  "questionType"?: "pricing" | "duration" | "records" | "process" | "subdomains" | "general",
+  "questionText"?: string,
   "needsClarification"?: boolean,
   "clarificationQuestion"?: string
 }
 
-QUESTION TYPE GUIDE:
-- pricing: Questions about cost, fees, prices (e.g., "How much does a 3-letter name cost?")
-- duration: Questions about time, registration period, expiry (e.g., "What's the minimum registration time?")
-- records: Questions about what can be stored in ENS (e.g., "What records can I set?")
-- process: Questions about how ENS works, steps involved (e.g., "How do I register a name?")
-- general: Other ENS-related questions (e.g., "What is ENS?")
+SUBDOMAIN EXAMPLES:
 
-EXAMPLES:
+Input: "create blog.alice.eth pointing to 0x1234..."
+Output: {"action":"subdomain","names":["blog.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog","resolveAddress":"0x1234..."}}
 
-Input: "check if alice.eth is available"
-Output: {"action":"check","names":["alice.eth"]}
+Input: "add wallet.myname.eth for address 0xabcd..."
+Output: {"action":"subdomain","names":["wallet.myname.eth"],"subdomain":{"parent":"myname.eth","label":"wallet","resolveAddress":"0xabcd..."}}
 
-Input: "register bob.eth for 3 years"
-Output: {"action":"register","names":["bob.eth"],"duration":3}
+Input: "create subdomain vault on alice.eth pointing to my cold wallet 0x9999..."
+Output: {"action":"subdomain","names":["vault.alice.eth"],"subdomain":{"parent":"alice.eth","label":"vault","resolveAddress":"0x9999..."}}
 
-Input: "What's the minimum registration time?"
-Output: {"action":"question","questionType":"duration","questionText":"What's the minimum registration time?"}
+Input: "register blog.alice.eth" (no address specified)
+Output: {"action":"subdomain","names":["blog.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog"},"needsClarification":true,"clarificationQuestion":"What address should blog.alice.eth point to? Please provide an Ethereum address (0x...)."}
 
-Input: "How much does a 3-letter name cost?"
-Output: {"action":"question","questionType":"pricing","questionText":"How much does a 3-letter name cost?"}
+Input: "create mom.family.eth for my mom at 0x5678..."
+Output: {"action":"subdomain","names":["mom.family.eth"],"subdomain":{"parent":"family.eth","label":"mom","resolveAddress":"0x5678..."}}
 
-Input: "What can I store in ENS records?"
-Output: {"action":"question","questionType":"records","questionText":"What can I store in ENS records?"}
+Input: "I want dev.projects.myname.eth to resolve to 0xDEV..."
+Output: {"action":"subdomain","names":["dev.projects.myname.eth"],"subdomain":{"parent":"projects.myname.eth","label":"dev","resolveAddress":"0xDEV..."}}
 
-Input: "How does ENS registration work?"
-Output: {"action":"question","questionType":"process","questionText":"How does ENS registration work?"}
+Input: "how do subdomains work?"
+Output: {"action":"question","questionType":"subdomains","questionText":"how do subdomains work?"}
 
-Input: "What is ENS?"
-Output: {"action":"question","questionType":"general","questionText":"What is ENS?"}
+Input: "can I create subdomains on my ENS name?"
+Output: {"action":"question","questionType":"subdomains","questionText":"can I create subdomains on my ENS name?"}
 
-Input: "buy alice.eth and bob.eth for 5 years"
-Output: {"action":"register","names":["alice.eth","bob.eth"],"duration":5,"options":{"batch":true}}
+Input: "are subdomains free?"
+Output: {"action":"question","questionType":"subdomains","questionText":"are subdomains free?"}
 
-Input: "renew my domains"
-Output: {"action":"renew","names":[],"options":{"filter":"all"}}
-
-Input: "transfer alice.eth to 0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"
-Output: {"action":"transfer","names":["alice.eth"],"recipient":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
-
-Input: "set my twitter to @alice on myname.eth"
-Output: {"action":"set","names":["myname.eth"],"records":{"twitter":"@alice"}}
-
-Input: "show my portfolio"
-Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
-
-Input: "How many ens names are in my wallet?"
-Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
-
-Input: "How many ens names do I own?"
-Output: {"action":"portfolio","address":"0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb"}
-
-Input: "lookup charlie.eth"
-Output: { action: "check", names: ["charlie.eth"] }
-
-Input: "what can you do?" or "help"
-Output: {"action":"help","names":[]}
-
-Input: "do something"
-Output: {"action":"help","needsClarification":true,"clarificationQuestion":"What would you like to do? I can check availability, register names, renew, transfer, or set records."}
-
-Input: "who owns alice.eth"
-Output: { action: "check", names: ["alice.eth"] }
-
-Input: "what address is bob.eth registered to"
-Output: { action: "check", names: ["bob.eth"] }
-
-Input: "lookup charlie.eth"
-Output: { action: "check", names: ["charlie.eth"] }
 EDGE CASES:
-- If name doesn't have .eth, add it (e.g., "alice" → "alice.eth")
-- If duration not specified for register/renew, omit duration field (user will be prompted)
-- If action is unclear, set needsClarification=true
-- Multiple names = batch operation
-- "my domains/names" without specific names = empty names array with filter option
-- Questions that start with "how", "what", "why", "can I", "is it possible" → likely "question" action
+- Count parts by dots: alice.eth (2 parts) → register, blog.alice.eth (3 parts) → subdomain
+- Nested subdomains work too: dev.blog.alice.eth → subdomain with parent="blog.alice.eth"
+- Subdomains have NO duration (inherit from parent or permanent)
+- Subdomains are FREE (no registration fee, just gas)
+- User must OWN the parent to create subdomains
 
 Now parse this user message:
 
