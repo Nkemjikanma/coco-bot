@@ -42,6 +42,7 @@ import {
   getUserPorfolio,
   prepareRegistration,
   encodeCommitData,
+  estimateRegistrationCost,
 } from "../services/ens";
 import type {
   EOAWalletCheckResult,
@@ -877,11 +878,14 @@ async function handleExecution(
           "bridge_confirmation",
         );
 
-        // Store the selected wallet in registration state
-        await setPendingRegistration(userId, {
-          ...preliminaryRegistration,
-          selectedWallet: wallet.address,
-        });
+        // // Store the selected wallet in registration state
+        // await setPendingRegistration(userId, {
+        //   ...preliminaryRegistration,
+        //   phase: "awaiting_commit_confirmation",
+        //   names: [],
+        //   grandTotalWei: preliminaryRegistration.grandTotalWei,
+        //   selectedWallet: wallet.address,
+        // });
 
         await handler.sendInteractionRequest(
           channelId,
@@ -975,6 +979,8 @@ async function handleExecution(
     // Store wallet check result for later
     await setPendingRegistration(userId, {
       ...preliminaryRegistration,
+      // phase: "awaiting_commit_confirmation",
+      // names: [],
       walletCheckResult: walletCheck,
     });
 

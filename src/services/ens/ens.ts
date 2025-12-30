@@ -748,3 +748,54 @@ export function encodeRegisterData({
     ],
   });
 }
+
+// TODO: Consider for removal - Not used
+/** * Estimate registration costs without creating commitments. * Use this for cost calculation before wallet selection. * Does not require an owner address since no commitments are generated. */
+export async function estimateRegistrationCost({
+  names,
+  durationYears,
+}: {
+  names: string[];
+  durationYears: number;
+}): Promise<{
+  totalDomainCostWei: bigint;
+  totalDomainCostEth: string;
+  estimatedCommitGasWei: bigint;
+  estimatedRegisterGasWei: bigint;
+  grandTotalWei: bigint;
+  grandTotalEth: string;
+}> {
+  const durationSec = BigInt(durationYears * 365 * 24 * 60 * 60);
+  let totalDomainCostWei = 0n;
+  // Calculate domain prices
+  for (const name of names) {
+    const label = name.replace(/.eth$/, "");
+    // Get domain price from contract
+    const priceData = (await ethereumClient.readContract({
+      address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+      abi: CONTROLLER_ABI,
+      functionName: "rentPrice",
+      args: [label, durationSec],
+    })) as { base: bigint; premium: bigint };
+    const domainPriceWei = priceData.base + priceData.premium;
+    totalDomainCostWei += domainPriceWei;
+  }
+  // Estimate gas costs (rough estimates)
+  const fees = await ethereumClient.estimateFeesPerGas();
+  const commitGasPerName = 50000n; // Conservative estimate
+  const registerGasPerName = 280000n; // Conservative estimate
+  const estimatedCommitGasWei =
+    commitGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
+  const estimatedRegisterGasWei =
+    registerGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
+  const grandTotalWei =
+    totalDomainCostWei + estimatedCommitGasWei + estimatedRegisterGasWei;
+  return {
+    totalDomainCostWei,
+    totalDomainCostEth: formatEther(totalDomainCostWei),
+    estimatedCommitGasWei,
+    estimatedRegisterGasWei,
+    grandTotalWei,
+    grandTotalEth: formatEther(grandTotalWei),
+  };
+}

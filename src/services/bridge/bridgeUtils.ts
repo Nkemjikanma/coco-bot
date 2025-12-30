@@ -2,15 +2,17 @@ import { formatEther, parseEther, hexToBytes } from "viem";
 import { BotHandler } from "@towns-protocol/bot";
 import { PendingRegistration, RegisterCommand } from "../../types";
 import { CHAIN_IDS } from "./bridgeConstants";
-import { getBridgeQuoteAndTx } from "./bridge"; // Use new function
+import { getBridgeQuoteAndTx } from "./bridge";
 import { checkBalance } from "../../utils";
 import { sendBotMessage } from "../../handlers";
 import {
   setBridgeState,
   clearPendingRegistration,
   clearUserPendingCommand,
+  updatePendingRegistration,
 } from "../../db";
 import { clearBridge } from "../../db/bridgeStore";
+import { prepareRegistration } from "../../services/ens"; // ✅ ADD THIS IMPORT
 
 export async function handleBridging(
   handler: BotHandler,
@@ -32,9 +34,60 @@ export async function handleBridging(
   );
 
   try {
+    // ✅ FIX: Prepare registration with commitment BEFORE bridging
+    // This ensures we have the commitment data for after the bridge completes
+    if (
+      !registration.names ||
+      registration.names.length === 0 ||
+      !registration.names[0]?.commitment
+    ) {
+      console.log(
+        "handleBridging: No commitment found, preparing registration...",
+      );
+
+      try {
+        const preparedReg = await prepareRegistration({
+          names: command.names,
+          owner: userWallet,
+          durationYears: command.duration,
+        });
+
+        // Update the stored registration with the prepared data (including commitment)
+        await updatePendingRegistration(userId, {
+          ...preparedReg,
+          selectedWallet: userWallet,
+        });
+
+        // Update local reference
+        registration = {
+          ...registration,
+          ...preparedReg,
+          selectedWallet: userWallet,
+        };
+
+        console.log(
+          "handleBridging: Registration prepared with commitment:",
+          registration.names[0]?.commitment ? "✅ exists" : "❌ missing",
+        );
+      } catch (prepError) {
+        console.error(
+          "handleBridging: Error preparing registration:",
+          prepError,
+        );
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          `❌ Failed to prepare registration. Please try again.`,
+        );
+        await clearPendingRegistration(userId);
+        await clearUserPendingCommand(userId);
+        return;
+      }
+    }
+
     // First, get a quote to understand the fee structure
-    // We need to figure out how much to send so that OUTPUT >= grandTotalWei
-    // Start by getting a quote for the required amount to estimate fees
     const initialQuote = await getBridgeQuoteAndTx(
       registration.grandTotalWei,
       userWallet,
@@ -48,9 +101,7 @@ export async function handleBridging(
     const feeAmount = initialInput - initialOutput;
 
     // Calculate amount to bridge: we need output >= grandTotalWei
-    // So input = grandTotalWei + fees
-    // Add a small buffer (1%) to account for fee fluctuations
-    const feeWithBuffer = (feeAmount * 110n) / 100n; // 10% buffer on fees
+    const feeWithBuffer = (feeAmount * 110n) / 100n;
     const amountToBridge = registration.grandTotalWei + feeWithBuffer;
 
     // Now get the actual quote with the correct input amount
@@ -89,8 +140,7 @@ export async function handleBridging(
           `After bridge fees of ${formatEther(bridgeFeeWei)} ETH, ` +
           `you would only receive ${formatEther(outputAmount)} ETH on Mainnet.\n\n` +
           `This is not enough to cover the registration cost of ${registration.grandTotalEth} ETH.\n\n` +
-          `Please fund your Mainnet wallet directly or wait for lower fees.\n\n
-          `,
+          `Please fund your Mainnet wallet directly or wait for lower fees.\n\n`,
       );
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
@@ -115,8 +165,7 @@ export async function handleBridging(
           `• Gas for bridge tx: ~${formatEther(baseGasEstimate)} ETH\n\n` +
           `• **Total needed:** ${formatEther(totalNeededOnBase)} ETH\n\n` +
           `**Your Base balance:** ${baseBalanceCheck.balanceEth} ETH\n\n` +
-          `**Shortfall:** ${formatEther(shortfall)} ETH \n\n
-          `,
+          `**Shortfall:** ${formatEther(shortfall)} ETH \n\n`,
       );
       await clearPendingRegistration(userId);
       await clearUserPendingCommand(userId);
@@ -138,8 +187,7 @@ export async function handleBridging(
         `• You'll receive: ~${formatEther(outputAmount)} ETH (native) on Mainnet\n\n` +
         `• Estimated time: ~${quote.estimatedFillTimeSec} seconds\n\n` +
         `⚠️ **Note:** The domain might be taken during bridging.\n\n` +
-        `Approve the bridge transaction to continue... \n\n
-        `,
+        `Approve the bridge transaction to continue... \n\n`,
     );
 
     // Store bridge state
@@ -151,13 +199,13 @@ export async function handleBridging(
       years: command.duration,
       fromChain: CHAIN_IDS.BASE,
       toChain: CHAIN_IDS.MAINNET,
-      amount: amountToBridge, // Use the calculated amount
+      amount: amountToBridge,
       recipient: userWallet,
       timestamp: Date.now(),
       status: "pending",
     });
 
-    // Send bridge transaction request using the Swap API response
+    // Send bridge transaction request
     await handler.sendInteractionRequest(
       channelId,
       {
@@ -167,7 +215,7 @@ export async function handleBridging(
         tx: {
           chainId: CHAIN_IDS.BASE.toString(),
           to: swapTx.to,
-          data: swapTx.data.toString(),
+          data: swapTx.data,
           value: swapTx.value,
           signerWallet: userWallet || undefined,
         },
@@ -175,6 +223,8 @@ export async function handleBridging(
       },
       { threadId },
     );
+
+    console.log("handleBridging: ‼️ We are done handling bridging");
 
     return;
   } catch (error) {
