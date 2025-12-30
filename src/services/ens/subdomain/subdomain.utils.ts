@@ -5,6 +5,7 @@
 
 import { namehash } from "@ensdomains/ensjs/utils";
 import { ParsedSubname } from "./subdomain.types";
+import { labelhash } from "viem";
 
 export function parseSubname(fullName: string): ParsedSubname | null {
   const parts = fullName.split(".");
@@ -21,7 +22,7 @@ export function parseSubname(fullName: string): ParsedSubname | null {
     parent,
     full: fullName,
     parentNode: namehash(parent) as `0x${string}`,
-    labelHash: namehash(label) as `0x${string}`,
+    labelHash: labelhash(label) as `0x${string}`,
   };
 }
 

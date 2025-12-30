@@ -147,9 +147,10 @@ Subdomains let you create names under your existing ENS name!
 - **Unlimited** - create as many as you want
 
 **Use Cases:**
-- Organize wallets (savings.alice.eth, trading.alice.eth)
-- Share with family/team (mom.alice.eth)
-- Project identities (dao.alice.eth)
+- **Wallet organization:** vault.alice.eth, hot.alice.eth, cold.alice.eth
+- **Projects:** dao.alice.eth, nft.alice.eth
+- **Family/team:** mom.alice.eth, partner.alice.eth
+- **Services:** mail.alice.eth, blog.alice.eth
 
 **Common Use Cases:**
 • **Wallet organization:** vault.alice.eth, hot.alice.eth, cold.alice.eth

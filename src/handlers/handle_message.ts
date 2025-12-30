@@ -70,6 +70,7 @@ import {
 import { CHAIN_IDS } from "../services/bridge";
 import { clearBridge, getBridgeState, setBridgeState } from "../db/bridgeStore";
 import { handleBridging } from "../services/bridge/bridgeUtils";
+import { handleSubdomainCommand } from "./handleSubdomainCommand";
 
 type UnifiedEvent = {
   channelId: string;
@@ -658,6 +659,9 @@ async function handleExecution(
   userId: string,
   command: ParsedCommand,
 ) {
+  if (command.action === "subdomain") {
+    await handleSubdomainCommand(handler, channelId, threadId, userId, command);
+  }
   if (command.action === "register") {
     const check = await checkAvailability(command.names);
 

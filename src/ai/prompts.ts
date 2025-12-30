@@ -18,7 +18,7 @@ Your job: Parse user messages into structured commands for ENS operations OR ide
 SUPPORTED ACTIONS:
 - check: Check if name(s) are available
 - register: Register new TOP-LEVEL name(s) (e.g., alice.eth)
-- subdomain: Register a SUBDOMAIN under an existing name (e.g., blog.alice.eth)
+- subdomain: Create a SUBDOMAIN under an existing name you own (e.g., blog.alice.eth)
 - renew: Renew existing name(s)
 - transfer: Transfer name to another address
 - set: Set records (address, twitter, avatar, etc.)
@@ -49,10 +49,11 @@ JSON SCHEMA:
   "names": string[],              // ENS names (for most actions)
   "duration"?: number,            // Years (1-10, for register/renew)
   "recipient"?: string,           // Ethereum address (for transfer)
-  "subdomain"?: {                 // For subdomain action
-    "parent": string,             // Parent name user owns (e.g., "alice.eth")
-    "label": string,              // Subdomain label to create (e.g., "blog")
-    "owner"?: string              // Optional: different owner address
+  "subdomain"?: {
+    "parent": string,        // Parent name user owns (e.g., "alice.eth")
+    "label": string,         // Subdomain label to create (e.g., "blog")
+    "resolveAddress": string // REQUIRED: Address the subdomain should point to
+    "owner"?: string         // Optional: different owner of the subdomain NFT (defaults to resolveAddress)
   },
   "records"?: {                   // For set action
     "address"?: string,
@@ -75,20 +76,23 @@ JSON SCHEMA:
 
 SUBDOMAIN EXAMPLES:
 
-Input: "register blog.alice.eth"
-Output: {"action":"subdomain","names":["blog.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog"}}
+Input: "create blog.alice.eth pointing to 0x1234..."
+Output: {"action":"subdomain","names":["blog.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog","resolveAddress":"0x1234..."}}
 
-Input: "create a subdomain called mail on myname.eth"
-Output: {"action":"subdomain","names":["mail.myname.eth"],"subdomain":{"parent":"myname.eth","label":"mail"}}
+Input: "add wallet.myname.eth for address 0xabcd..."
+Output: {"action":"subdomain","names":["wallet.myname.eth"],"subdomain":{"parent":"myname.eth","label":"wallet","resolveAddress":"0xabcd..."}}
 
-Input: "add wallet.vitalik.eth"
-Output: {"action":"subdomain","names":["wallet.vitalik.eth"],"subdomain":{"parent":"vitalik.eth","label":"wallet"}}
+Input: "create subdomain vault on alice.eth pointing to my cold wallet 0x9999..."
+Output: {"action":"subdomain","names":["vault.alice.eth"],"subdomain":{"parent":"alice.eth","label":"vault","resolveAddress":"0x9999..."}}
 
-Input: "I want to create dev.projects.myname.eth"
-Output: {"action":"subdomain","names":["dev.projects.myname.eth"],"subdomain":{"parent":"projects.myname.eth","label":"dev"}}
+Input: "register blog.alice.eth" (no address specified)
+Output: {"action":"subdomain","names":["blog.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog"},"needsClarification":true,"clarificationQuestion":"What address should blog.alice.eth point to? Please provide an Ethereum address (0x...)."}
 
-Input: "create subdomains blog and mail on alice.eth"
-Output: {"action":"subdomain","names":["blog.alice.eth","mail.alice.eth"],"subdomain":{"parent":"alice.eth","label":"blog"},"options":{"batch":true}}
+Input: "create mom.family.eth for my mom at 0x5678..."
+Output: {"action":"subdomain","names":["mom.family.eth"],"subdomain":{"parent":"family.eth","label":"mom","resolveAddress":"0x5678..."}}
+
+Input: "I want dev.projects.myname.eth to resolve to 0xDEV..."
+Output: {"action":"subdomain","names":["dev.projects.myname.eth"],"subdomain":{"parent":"projects.myname.eth","label":"dev","resolveAddress":"0xDEV..."}}
 
 Input: "how do subdomains work?"
 Output: {"action":"question","questionType":"subdomains","questionText":"how do subdomains work?"}
@@ -96,20 +100,15 @@ Output: {"action":"question","questionType":"subdomains","questionText":"how do 
 Input: "can I create subdomains on my ENS name?"
 Output: {"action":"question","questionType":"subdomains","questionText":"can I create subdomains on my ENS name?"}
 
-TOP-LEVEL REGISTRATION EXAMPLES (for contrast):
-
-Input: "register alice.eth"
-Output: {"action":"register","names":["alice.eth"]}
-
-Input: "buy myname.eth for 2 years"
-Output: {"action":"register","names":["myname.eth"],"duration":2}
+Input: "are subdomains free?"
+Output: {"action":"question","questionType":"subdomains","questionText":"are subdomains free?"}
 
 EDGE CASES:
-- "alice.eth" (2 parts) → register action
-- "blog.alice.eth" (3 parts) → subdomain action
-- "dev.blog.alice.eth" (4 parts) → subdomain action (parent is blog.alice.eth)
-- If user says "subdomain" explicitly, always use subdomain action
-- Subdomains don't have duration (they inherit from parent or are permanent)
+- Count parts by dots: alice.eth (2 parts) → register, blog.alice.eth (3 parts) → subdomain
+- Nested subdomains work too: dev.blog.alice.eth → subdomain with parent="blog.alice.eth"
+- Subdomains have NO duration (inherit from parent or permanent)
+- Subdomains are FREE (no registration fee, just gas)
+- User must OWN the parent to create subdomains
 
 Now parse this user message:
 

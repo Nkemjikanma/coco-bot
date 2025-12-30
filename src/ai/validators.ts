@@ -7,6 +7,7 @@ import {
   type QuestionType,
   type ValidationResult,
 } from "../types";
+import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 
 export function validate_parse(
   parsed: unknown,
@@ -72,7 +73,7 @@ export function validate_parse(
       return validateWatchCommand(names);
 
     case "subdomain":
-      return validateSubdomainCommand(names);
+      return validateSubdomainCommand(names, fields.subdomain);
 
     case "question":
       return validateQuestionCommand(fields.questionType, fields.questionText);
@@ -450,19 +451,94 @@ function validateWatchCommand(names: string[]): ValidationResult {
   };
 }
 
-function validateSubdomainCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+function validateSubdomainCommand(
+  names: string[],
+  subdomain: unknown,
+): ValidationResult {
+  // Must have at least one subname
+  if (!names || names.length === 0) {
     return {
       valid: false,
       needsClarification: true,
-      question: "Which ENS name would you like to create a subdomain for? 🏷️",
-      partial: { action: "subdomain", names: [] },
+      question:
+        "Which subdomain would you like to create? For example: blog.yourname.eth",
+      partial: { action: "subdomain" },
+    };
+  }
+
+  if (!subdomain || typeof subdomain !== "object") {
+    // Try to parse from names
+    const parsed = parseSubname(names[0]);
+    if (!parsed) {
+      return {
+        valid: false,
+        needsClarification: true,
+        question:
+          "I couldn't parse the subdomain. Please specify like: blog.yourname.eth",
+        partial: { action: "subdomain", names },
+      };
+    }
+
+    // Parsed name but no subdomain object - need address
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `What address should ${names[0]} point to? Please provide an Ethereum address (0x...).`,
+      partial: {
+        action: "subdomain",
+        names,
+        subdomain: { parent: parsed.parent, label: parsed.label },
+      },
+    };
+  }
+
+  const sub = subdomain as {
+    parent: string;
+    label: string;
+    resolveAddress?: string;
+    owner?: string;
+  };
+
+  // CRITICAL: Must have resolveAddress
+  if (!sub.resolveAddress) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `What address should ${sub.label}.${sub.parent} point to? Please provide an Ethereum address (0x...).`,
+      partial: {
+        action: "subdomain",
+        names,
+        subdomain: { parent: sub.parent, label: sub.label },
+      },
+    };
+  }
+
+  // Validate the address format
+  if (!isAddress(sub.resolveAddress)) {
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `"${sub.resolveAddress}" doesn't look like a valid Ethereum address. Please provide a valid address starting with 0x.`,
+      partial: {
+        action: "subdomain",
+        names,
+        subdomain: { parent: sub.parent, label: sub.label },
+      },
     };
   }
 
   return {
     valid: true,
-    command: { action: "subdomain", names: names.map((n) => n.toLowerCase()) },
+    command: {
+      action: "subdomain",
+      names,
+      subdomain: {
+        parent: sub.parent,
+        label: sub.label,
+        resolveAddress: sub.resolveAddress,
+        owner: sub.owner || sub.resolveAddress, // Default owner to resolveAddress
+      },
+    },
   };
 }
 

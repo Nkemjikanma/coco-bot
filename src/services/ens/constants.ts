@@ -220,3 +220,46 @@ export const NAME_WRAPPER_ABI = [
     stateMutability: "view",
   },
 ] as const;
+
+// Public Resolver - for setting address records after subname creation
+const PUBLIC_RESOLVER_ABI = [
+  {
+    name: "setAddr",
+    type: "function",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "a", type: "address" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "setAddr",
+    type: "function",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "coinType", type: "uint256" },
+      { name: "a", type: "bytes" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+  {
+    name: "addr",
+    type: "function",
+    inputs: [{ name: "node", type: "bytes32" }],
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+  },
+] as const;
+
+// Multicall for batching setSubnodeRecord + setAddr in one transaction
+const MULTICALL_ABI = [
+  {
+    name: "multicall",
+    type: "function",
+    inputs: [{ name: "data", type: "bytes[]" }],
+    outputs: [{ name: "results", type: "bytes[]" }],
+    stateMutability: "nonpayable",
+  },
+] as const;

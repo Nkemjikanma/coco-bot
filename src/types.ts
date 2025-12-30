@@ -208,6 +208,12 @@ export interface PortfolioCommand extends BaseCommand {
 export interface SubdomainCommand extends BaseCommand {
   action: "subdomain";
   names: string[];
+  subdomain?: {
+    parent: string;
+    label: string;
+    resolveAddress: Address;
+    owner: Address;
+  };
 }
 
 export interface ExpiryCommand extends BaseCommand {

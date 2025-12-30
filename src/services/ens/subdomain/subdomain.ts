@@ -3,6 +3,7 @@ import {
   encodeFunctionData,
   http,
   namehash,
+  labelhash,
   PublicClient,
 } from "viem";
 import { mainnet } from "viem/chains";
@@ -28,9 +29,9 @@ export class SubdomainService {
   }
 
   /**
-   * Check if the caller owns the parent name
+   * Check if the caller owns the parent name (can create subnames)
    */
-  async conCreateSubname(
+  async canCreateSubname(
     parentName: string,
     callerAddress: `0x${string}`,
     contract: "registry" | "nameWrapper" = "nameWrapper",
@@ -39,7 +40,7 @@ export class SubdomainService {
 
     try {
       if (contract === "nameWrapper") {
-        // check name wrapper ownership
+        // Check NameWrapper ownership
         const tokenId = BigInt(parentNode);
         const owner = await this.publicClient.readContract({
           address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
@@ -55,7 +56,7 @@ export class SubdomainService {
           };
         }
 
-        // check if CANNOT_CREATE_SUBDOMAIN fuse is burned
+        // Check if CANNOT_CREATE_SUBDOMAIN fuse is burned
         const [, fuses] = await this.publicClient.readContract({
           address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
           abi: NAME_WRAPPER_ABI,
@@ -72,8 +73,7 @@ export class SubdomainService {
 
         return { canCreate: true };
       } else {
-        // check registry ownership
-
+        // Check Registry ownership
         const owner = await this.publicClient.readContract({
           address: ENS_CONTRACTS.ENS_REGISTRY,
           abi: ENS_REGISTRY_ABI,
@@ -97,6 +97,7 @@ export class SubdomainService {
       };
     }
   }
+
   /**
    * Check if a subname already exists
    */
@@ -104,6 +105,7 @@ export class SubdomainService {
     const node = namehash(fullSubname);
 
     try {
+      // Check registry first
       const owner = await this.publicClient.readContract({
         address: ENS_CONTRACTS.ENS_REGISTRY,
         abi: ENS_REGISTRY_ABI,
@@ -112,7 +114,7 @@ export class SubdomainService {
       });
 
       return owner !== "0x0000000000000000000000000000000000000000";
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -121,43 +123,74 @@ export class SubdomainService {
    * Build transaction data for creating a subname via NameWrapper
    * This is for WRAPPED parent names (most common case)
    */
-  buildCreateSubnameWrapped(params: {
-    parentNode: `0x${string}`;
-    label: string;
+  buildCreateSubnameWithAddress(params: {
+    fullSubname: string;
     owner: `0x${string}`;
+    resolveAddress: `0x${string}`;
     resolverAddress?: `0x${string}`;
     fuses?: number;
     expiry?: bigint;
-  }): SubnameTransactionData {
-    const {
-      parentNode,
-      label,
-      owner,
-      resolverAddress = ENS_CONTRACTS.PUBLIC_RESOLVER,
-      fuses = 0,
-      expiry = 0n,
-    } = params;
+  }): {
+    step1_createSubname: SubnameTransactionData;
+    step2_setAddress: SubnameTransactionData;
+    note: string;
+  } {
+    const parsed = parseSubname(params.fullSubname);
+    if (!parsed) {
+      throw new Error(`Invalid subname: ${params.fullSubname}`);
+    }
 
-    const data = encodeFunctionData({
+    const resolverAddress =
+      params.resolverAddress || ENS_CONTRACTS.publicResolver;
+    const subnameNode = namehash(params.fullSubname) as `0x${string}`;
+
+    // Step 1: Parent owner creates the subname
+    const createData = encodeFunctionData({
       abi: NAME_WRAPPER_ABI,
       functionName: "setSubnodeRecord",
       args: [
-        parentNode,
-        label,
-        owner,
+        parsed.parentNode,
+        parsed.label,
+        params.owner,
         resolverAddress,
-        0n, // TTL
-        fuses,
-        expiry,
+        0n,
+        params.fuses || 0,
+        params.expiry || 0n,
       ],
     });
 
+    // Step 2: New owner sets the address record
+    // NOTE: This must be called by the NEW OWNER of the subname
+    const setAddrData = encodeFunctionData({
+      abi: PUBLIC_RESOLVER_ABI,
+      functionName: "setAddr",
+      args: [subnameNode, params.resolveAddress],
+    });
+
     return {
-      to: ENS_CONTRACTS.ENS_NAMEWRAPPER,
-      data,
-      value: 0n,
-      chainId: this.chainId,
+      step1_createSubname: {
+        to: ENS_CONTRACTS.nameWrapper,
+        data: createData,
+        value: 0n,
+        chainId: this.chainId,
+      },
+      step2_setAddress: {
+        to: resolverAddress,
+        data: setAddrData,
+        value: 0n,
+        chainId: this.chainId,
+      },
+      note:
+        params.owner === params.resolveAddress
+          ? "Both transactions can be sent by the same address."
+          : `Step 1 must be sent by the parent owner. Step 2 must be sent by ${params.owner} (the new subname owner).`,
     };
+  }
+  // Helper to get name from node (would need reverse resolution in production)
+  private getNameFromNode(node: `0x${string}`): string {
+    // In production, you'd use reverse resolution
+    // For now, this is a placeholder - the actual name should be passed in
+    return "unknown.eth";
   }
 
   /**
@@ -196,44 +229,44 @@ export class SubdomainService {
       chainId: this.chainId,
     };
   }
+   /**
+    * High-level function: Build transaction for creating any subname
+    */
+   async buildCreateSubnameTransaction(
+     fullSubname: string,
+     owner: `0x${string}`,
+     options: {
+       contract?: "registry" | "nameWrapper";
+       resolverAddress?: `0x${string}`;
+       fuses?: number;
+       expiry?: bigint;
+     } = {}
+   ): Promise<SubnameTransactionData> {
+     const parsed = parseSubname(fullSubname);
 
-  /**
-   * High-level function: Build transaction for creating any subname
-   */
-  async buildCreateSubnameTransaction(
-    fullSubname: string,
-    owner: `0x${string}`,
-    options: {
-      contract?: "registry" | "nameWrapper";
-      resolverAddress?: `0x${string}`;
-      fuses?: number;
-      expiry?: bigint;
-    } = {},
-  ): Promise<SubnameTransactionData> {
-    const parsed = parseSubname(fullSubname);
+     if (!parsed) {
+       throw new Error(`Invalid subname format: ${fullSubname}`);
+     }
 
-    if (!parsed) {
-      throw new Error(`Invalid subname format: ${fullSubname}`);
-    }
+     const contract = options.contract || "nameWrapper";
 
-    const contract = options.contract || "nameWrapper";
-
-    if (contract === "nameWrapper") {
-      return this.buildCreateSubnameWrapped({
-        parentNode: parsed.parentNode,
-        label: parsed.label,
-        owner,
-        resolverAddress: options.resolverAddress,
-        fuses: options.fuses,
-        expiry: options.expiry,
-      });
-    } else {
-      return this.buildCreateSubnameUnwrapped({
-        parentNode: parsed.parentNode,
-        labelHash: parsed.labelHash,
-        owner,
-        resolverAddress: options.resolverAddress,
-      });
-    }
-  }
+     if (contract === "nameWrapper") {
+       return this.buildCreateSubnameWithAddress({
+         parentNode: parsed.parentNode,
+         label: parsed.label,
+         owner,
+         resolverAddress: options.resolverAddress,
+         fuses: options.fuses,
+         expiry: options.expiry,
+       });
+     } else {
+       return this.buildCreateSubnameUnwrapped({
+         parentNode: parsed.parentNode,
+         labelHash: parsed.labelHash,
+         owner,
+         resolverAddress: options.resolverAddress,
+       });
+     }
+   }
+ }
 }
