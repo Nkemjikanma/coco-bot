@@ -20,7 +20,6 @@ export async function continueAfterBridge(
   event: OnInteractionEventType,
   bridgeForm: FormCase,
   userState: UserState,
-  userTownWallet: `0x${string}` | null,
 ) {
   const { userId, channelId, threadId } = event;
   let registrationResult = await getPendingRegistration(userId);
