@@ -12,6 +12,9 @@ import {
   updateSubdomainState,
 } from "../db/subdomainStore";
 import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
+import { sendBotMessage } from "./handle_message_utils";
+import { namehash } from "viem";
+import { ENS_CONTRACTS, PUBLIC_RESOLVER_ABI } from "../services/ens/constants";
 
 export async function handleSubdomainCommand(
   handler: BotHandler,
@@ -21,105 +24,145 @@ export async function handleSubdomainCommand(
   command: SubdomainCommand,
 ): Promise<void> {
   const service = getSubdomainService();
-  const { action, names, subdomain } = command;
+  const { names, subdomain } = command;
 
-  if (!subdomain) {
+  // Validate subdomain info exists
+  if (!subdomain || !subdomain.parent || !subdomain.label) {
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `❌ **Missing subdomain information**\n\n` +
+        `Please specify the subdomain you want to create, like: treasury.cocobot.eth`,
+    );
     return;
   }
-  const { parent, label, resolveAddress: recipientInput, owner } = subdomain;
 
-  const messageOptions = threadId ? { threadId } : undefined;
-  const subdomainInput = `${label}.${parent}`;
+  const { parent, label, resolveAddress, owner } = subdomain;
+  const fullSubname = `${label}.${parent}`;
+
+  // Validate recipient address
+  if (!resolveAddress) {
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `❌ **Missing recipient address**\n\n` +
+        `What address should **${fullSubname}** point to?\n` +
+        `Please provide an Ethereum address (0x...) or ENS name.`,
+    );
+    return;
+  }
+
   try {
     // Get user's EOA wallets
     const userWallets = await filterEOAs(userId as `0x${string}`);
 
     if (userWallets.length === 0) {
-      await handler.sendMessage(
+      await sendBotMessage(
+        handler,
         channelId,
+        threadId,
+        userId,
         `❌ **No EOA wallets found**\n\n` +
           `You need an EOA wallet (like MetaMask) connected to create subdomains.\n` +
           `Please connect an external wallet and try again.`,
-        { threadId },
       );
       return;
     }
 
-    if (!recipientInput) {
-      await handler.sendMessage(
-        channelId,
-        `❌ **Haven't found any recipient addresses**\n\n` +
-          `Let's start again.\n` +
-          { threadId },
-      );
-      return;
-    }
+    console.log(`handleSubdomainCommand: Checking ownership of ${parent}`);
+    console.log(`handleSubdomainCommand: User wallets:`, userWallets);
 
-    // Prepare and validate the subdomain assignment
-    const prepareResult = await service.prepareSubdomainAssignment(
-      subdomainInput,
-      recipientInput,
+    // Verify parent domain ownership (auto-detects wrapped vs unwrapped)
+    const ownershipResult = await service.verifyParentOwnership(
+      parent,
       userWallets,
     );
 
-    if (!prepareResult.success) {
-      await handler.sendMessage(
+    console.log(`handleSubdomainCommand: Ownership result:`, ownershipResult);
+
+    if (!ownershipResult.owned) {
+      await sendBotMessage(
+        handler,
         channelId,
-        `❌ **Validation Failed**\n\n${prepareResult.reason}`,
-        { threadId },
+        threadId,
+        userId,
+        `❌ **Validation Failed**\n\n${ownershipResult.error}`,
       );
       return;
     }
 
-    const {
-      fullName,
-      subdomain,
-      domain,
-      parentNode,
-      subdomainNode,
-      labelHash,
-      recipient,
-      ownerWallet,
-      isWrapped,
-    } = prepareResult;
+    const ownerWallet = ownershipResult.ownerWallet!;
+    const isWrapped = ownershipResult.isWrapped;
+
+    // Check if subdomain already exists
+    const exists = await service.subnameExists(fullSubname);
+    if (exists) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ **Subdomain already exists**\n\n` +
+          `**${fullSubname}** is already registered.\n` +
+          `You can manage it in the ENS app.`,
+      );
+      return;
+    }
 
     // Display validation success
-    await handler.sendMessage(
+    await sendBotMessage(
+      handler,
       channelId,
+      threadId,
+      userId,
       `✅ **Validation Passed!**\n\n` +
-        `• **Subdomain:** ${fullName}\n` +
-        `• **Parent Domain:** ${domain}\n` +
-        `• **Your Wallet:** \`${formatAddress(ownerWallet!)}\`\n` +
-        `• **Recipient:** \`${formatAddress(recipient!)}\`\n` +
+        `• **Subdomain:** ${fullSubname}\n` +
+        `• **Parent Domain:** ${parent}\n` +
+        `• **Your Wallet:** \`${formatAddress(ownerWallet)}\`\n` +
+        `• **Recipient:** \`${formatAddress(resolveAddress)}\`\n` +
         `• **Parent Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped (Registry)"}\n\n` +
         `📝 **This will:**\n` +
         `1. Create the subdomain with recipient as owner\n` +
         `2. Set the address record to point to recipient\n\n` +
         `💰 **Cost:** Gas only (~$2-5 per transaction)\n\n` +
         `⚠️ **Note:** This requires 2 transactions.`,
-      { threadId },
     );
 
-    // Build transactions
-    const transactions = service.buildSubdomainAssignmentTransactions({
-      fullSubname: fullName!,
-      recipient: recipient!,
-      isWrapped: isWrapped!,
+    // Parse the subname to get nodes
+    const parsed = parseSubname(fullSubname);
+    if (!parsed) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ Failed to parse subdomain. Please try again.`,
+      );
+      return;
+    }
+
+    // Build the create subdomain transaction
+    const createSubnameTx = service.buildCreateSubnameTransaction({
+      fullSubname,
+      owner: resolveAddress, // The recipient becomes the owner
+      isWrapped,
     });
 
     // Store state for tracking the multi-step process
-    const assignmentId = `subdomain:${userId}:${threadId}`;
-
     await setSubdomainState(userId, threadId, {
       userId,
       channelId,
       threadId,
-      subdomain: subdomain!,
-      domain: domain!,
-      fullName: fullName!,
-      recipient: recipient!,
-      ownerWallet: ownerWallet!,
-      isWrapped: isWrapped!,
+      subdomain: label,
+      domain: parent,
+      fullName: fullSubname,
+      recipient: resolveAddress,
+      ownerWallet: ownerWallet,
+      isWrapped: isWrapped,
       timestamp: Date.now(),
       status: "pending",
     });
@@ -130,32 +173,36 @@ export async function handleSubdomainCommand(
       {
         type: "transaction",
         id: `subdomain_step1:${userId}:${threadId}`,
-        title: `Create Subdomain: ${fullName}`,
+        title: `Create Subdomain: ${fullSubname}`,
         tx: {
           chainId: "1",
-          to: transactions.step1_createSubname.to,
+          to: createSubnameTx.to,
           value: "0",
-          data: transactions.step1_createSubname.data,
-          signerWallet: ownerWallet,
+          data: createSubnameTx.data,
+          signerWallet: ownerWallet, // Parent owner signs this
         },
         recipient: userId as `0x${string}`,
       },
       { threadId },
     );
 
-    await handler.sendMessage(
+    await sendBotMessage(
+      handler,
       channelId,
+      threadId,
+      userId,
       `📤 **Step 1 of 2: Create Subdomain**\n\n` +
-        `Please approve the transaction to create **${fullName}**.\n\n` +
+        `Please approve the transaction to create **${fullSubname}**.\n\n` +
         `After this completes, you'll be prompted for Step 2.`,
-      { threadId },
     );
   } catch (error) {
     console.error("Error in subdomain command:", error);
-    await handler.sendMessage(
+    await sendBotMessage(
+      handler,
       channelId,
+      threadId,
+      userId,
       `❌ An unexpected error occurred. Please try again later.`,
-      { threadId },
     );
   }
 }
@@ -223,26 +270,21 @@ export async function handleSubdomainStep1Transaction(
     step1TxHash: tx.txHash,
   });
 
-  // Build step 2 transaction
-  const subdomainNode = parseSubname(state.fullName)?.parentNode;
-  if (!subdomainNode) {
-    await handler.sendMessage(
-      channelId,
-      `❌ Failed to parse subdomain. Please try again.`,
-      { threadId: validThreadId },
-    );
-    return;
-  }
+  // Build step 2 transaction - set the address record
+  const subdomainNode = namehash(state.fullName) as `0x${string}`;
 
-  const step2Tx = service.buildSetAddressRecord({
-    subdomainNode: subdomainNode,
-    address: state.recipient,
+  // Encode setAddr call
+  const { encodeFunctionData } = await import("viem");
+  const setAddrData = encodeFunctionData({
+    abi: PUBLIC_RESOLVER_ABI,
+    functionName: "setAddr",
+    args: [subdomainNode, state.recipient as `0x${string}`],
   });
 
   // Send second transaction request
   // NOTE: This transaction should be signed by the NEW OWNER (recipient)
-  // If recipient is different from ownerWallet, they need to sign
-  const signerWallet = state.recipient; // New owner signs this
+  // who now owns the subdomain after Step 1
+  const signerWallet = state.recipient;
 
   await handler.sendInteractionRequest(
     channelId,
@@ -252,9 +294,9 @@ export async function handleSubdomainStep1Transaction(
       title: `Set Address: ${state.fullName}`,
       tx: {
         chainId: "1",
-        to: step2Tx.to,
+        to: ENS_CONTRACTS.PUBLIC_RESOLVER,
         value: "0",
-        data: step2Tx.data,
+        data: setAddrData,
         signerWallet: signerWallet,
       },
       recipient: userId as `0x${string}`,

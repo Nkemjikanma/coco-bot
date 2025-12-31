@@ -483,7 +483,7 @@ export async function handlePendingCommandResponse(
         userId,
         `"${userMessage}" doesn't look like a valid address. Please provide an Ethereum address (0x...) or ENS name (.eth).`,
       );
-      return; // ✅ FIX: Return to avoid falling through
+      return;
     }
 
     // Valid address or ENS name provided
@@ -527,7 +527,7 @@ export async function handlePendingCommandResponse(
         userId,
         validation.command as SubdomainCommand,
       );
-      return; // ✅ FIX: Return here!
+      return;
     } else {
       // Validation still failed
       await sendBotMessage(
@@ -546,7 +546,7 @@ export async function handlePendingCommandResponse(
         validation.partial,
         determineWaitingFor(validation.partial),
       );
-      return; // ✅ FIX: Return here!
+      return;
     }
   }
 
@@ -680,9 +680,6 @@ export async function executeValidCommand(
       );
     }
 
-    // const historyResult: ApiResponse<HistoryData> = await getHistory(
-    //   command.names[0],
-    // );
     const historyResult: HistoryData = await getHistory(command.names[0]);
 
     const historyData = formatHistoryResponse(command.names[0], historyResult);
