@@ -56,4 +56,5 @@ export interface SubdomainAssignmentState {
   status: "pending" | "step1_complete" | "completed" | "failed";
   step1TxHash?: string;
   step2TxHash?: string;
+  canDoStep2: boolean;
 }

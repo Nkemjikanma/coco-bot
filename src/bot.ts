@@ -35,6 +35,7 @@ import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
 import { testBridge } from "./services/bridge/testBridge";
 import { SpaceAddressFromSpaceId } from "@towns-protocol/web3";
 import { CocoBotType } from "./types";
+import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -174,9 +175,6 @@ bot.onInteractionResponse(async (handler, event) => {
     JSON.stringify(userState?.pendingCommand, null, 2),
   );
 
-  // const userTownWallet = await getSmartAccountFromUserId(bot, {
-  //   userId: userId as `0x${string}`,
-  // });
   switch (response.payload.content.case) {
     case "transaction": {
       const tx = response.payload.content.value;
@@ -207,21 +205,72 @@ bot.onInteractionResponse(async (handler, event) => {
 
       // Check if this is a commit transaction
       if (tx.requestId.startsWith("commit:")) {
-        await commitTransaction(handler, event, tx, userState!);
+        if (!userState?.pendingCommand) {
+          console.log(
+            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
+          );
+          await handler.sendMessage(
+            channelId,
+            "Sorry, I lost track of what we were doing. Please start again.",
+            {
+              threadId,
+            },
+          );
+
+          return;
+        }
+        await commitTransaction(handler, event, tx, userState);
 
         return;
       }
 
       if (tx.requestId.startsWith("bridge:")) {
-        await bridgeTransaction(handler, event, tx, userState!);
+        if (!userState?.pendingCommand) {
+          console.log(
+            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
+          );
+          await handler.sendMessage(
+            channelId,
+            "Sorry, I lost track of what we were doing. Please start again.",
+            {
+              threadId,
+            },
+          );
+
+          return;
+        }
+        await bridgeTransaction(handler, event, tx, userState);
 
         return;
       }
 
       // Handle register transaction
       if (tx.requestId.startsWith("register:")) {
-        await registerTransaction(handler, event, tx, userState!);
+        if (!userState?.pendingCommand) {
+          console.log(
+            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
+          );
+          await handler.sendMessage(
+            channelId,
+            "Sorry, I lost track of what we were doing. Please start again.",
+            {
+              threadId,
+            },
+          );
 
+          return;
+        }
+        await registerTransaction(handler, event, tx, userState);
+
+        return;
+      }
+
+      if (
+        tx.requestId.startsWith("subdomain_step1:") ||
+        tx.requestId.startsWith("subdomain_step2:")
+      ) {
+        console.log("🔀 Routing to subdomain transaction handler");
+        await handleSubdomainTransaction(handler, event, tx);
         return;
       }
 

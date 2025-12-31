@@ -13,7 +13,7 @@ import {
 } from "../db/subdomainStore";
 import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 import { sendBotMessage } from "./handle_message_utils";
-import { namehash } from "viem";
+import { encodeFunctionData, namehash } from "viem";
 import { ENS_CONTRACTS, PUBLIC_RESOLVER_ABI } from "../services/ens/constants";
 
 export async function handleSubdomainCommand(
@@ -113,24 +113,56 @@ export async function handleSubdomainCommand(
       return;
     }
 
-    // Display validation success
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      `✅ **Validation Passed!**\n\n` +
-        `• **Subdomain:** ${fullSubname}\n` +
-        `• **Parent Domain:** ${parent}\n` +
-        `• **Your Wallet:** \`${formatAddress(ownerWallet)}\`\n` +
-        `• **Recipient:** \`${formatAddress(resolveAddress)}\`\n` +
-        `• **Parent Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped (Registry)"}\n\n` +
-        `📝 **This will:**\n` +
-        `1. Create the subdomain with recipient as owner\n` +
-        `2. Set the address record to point to recipient\n\n` +
-        `💰 **Cost:** Gas only (~$2-5 per transaction)\n\n` +
-        `⚠️ **Note:** This requires 2 transactions.`,
+    // ✅ CHECK: Is the recipient one of the user's wallets?
+    const isRecipientUser = userWallets.some(
+      (w) => w.toLowerCase() === resolveAddress.toLowerCase(),
     );
+
+    console.log(
+      `handleSubdomainCommand: Recipient is user's wallet: ${isRecipientUser}`,
+    );
+
+    // Determine if we can do Step 2
+    const canDoStep2 = isRecipientUser;
+
+    // Display validation success with appropriate message
+    if (canDoStep2) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `✅ **Validation Passed!**\n\n` +
+          `• **Subdomain:** ${fullSubname}\n` +
+          `• **Parent Domain:** ${parent}\n` +
+          `• **Your Wallet:** \`${formatAddress(ownerWallet)}\`\n` +
+          `• **Recipient:** \`${formatAddress(resolveAddress)}\`\n` +
+          `• **Parent Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped (Registry)"}\n\n` +
+          `📝 **This will:**\n` +
+          `1. Create the subdomain with you as owner\n` +
+          `2. Set the address record to point to your wallet\n\n` +
+          `💰 **Cost:** Gas only (~$2-5 per transaction)\n\n` +
+          `⚠️ **Note:** This requires 2 transactions.`,
+      );
+    } else {
+      // Recipient is NOT the user - only Step 1 possible
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `✅ **Validation Passed!**\n\n` +
+          `• **Subdomain:** ${fullSubname}\n` +
+          `• **Parent Domain:** ${parent}\n` +
+          `• **Your Wallet:** \`${formatAddress(ownerWallet)}\`\n` +
+          `• **Recipient:** \`${formatAddress(resolveAddress)}\`\n` +
+          `• **Parent Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped (Registry)"}\n\n` +
+          `📝 **This will:**\n` +
+          `• Create the subdomain with recipient as owner\n\n` +
+          `⚠️ **Note:** Since the recipient is not your wallet, they will need to set the address record themselves using the ENS app after the subdomain is created.\n\n` +
+          `💰 **Cost:** Gas only (~$2-5)`,
+      );
+    }
 
     // Parse the subname to get nodes
     const parsed = parseSubname(fullSubname);
@@ -152,7 +184,7 @@ export async function handleSubdomainCommand(
       isWrapped,
     });
 
-    // Store state for tracking the multi-step process
+    // Store state for tracking
     await setSubdomainState(userId, threadId, {
       userId,
       channelId,
@@ -165,6 +197,7 @@ export async function handleSubdomainCommand(
       isWrapped: isWrapped,
       timestamp: Date.now(),
       status: "pending",
+      canDoStep2: canDoStep2, // ✅ Store whether Step 2 is possible
     });
 
     // Send first transaction request (create subdomain)
@@ -186,15 +219,27 @@ export async function handleSubdomainCommand(
       { threadId },
     );
 
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      `📤 **Step 1 of 2: Create Subdomain**\n\n` +
-        `Please approve the transaction to create **${fullSubname}**.\n\n` +
-        `After this completes, you'll be prompted for Step 2.`,
-    );
+    if (canDoStep2) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `📤 **Step 1 of 2: Create Subdomain**\n\n` +
+          `Please approve the transaction to create **${fullSubname}**.\n\n` +
+          `After this completes, you'll be prompted for Step 2.`,
+      );
+    } else {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `📤 **Creating Subdomain**\n\n` +
+          `Please approve the transaction to create **${fullSubname}**.\n\n` +
+          `The recipient will own this subdomain and can configure it via the ENS app.`,
+      );
+    }
   } catch (error) {
     console.error("Error in subdomain command:", error);
     await sendBotMessage(
@@ -254,7 +299,31 @@ export async function handleSubdomainStep1Transaction(
     return;
   }
 
-  // Transaction submitted successfully
+  // Update state with tx hash
+  await updateSubdomainState(userId, originalThreadId, {
+    status: "step1_complete",
+    step1TxHash: tx.txHash,
+  });
+
+  // ✅ CHECK: Can we proceed to Step 2?
+  if (!state.canDoStep2) {
+    // Recipient is not the user - we're done!
+    await handler.sendMessage(
+      channelId,
+      `🎉 **Subdomain Created!**\n\n` +
+        `**${state.fullName}** has been created and is now owned by:\n` +
+        `\`${state.recipient}\`\n\n` +
+        `**Transaction:** \`${tx.txHash}\`\n\n` +
+        `ℹ️ The new owner can set the address record and other configurations using the ENS app at [app.ens.domains](https://app.ens.domains).`,
+      { threadId: validThreadId },
+    );
+
+    // Clean up state
+    await clearSubdomainState(userId, originalThreadId);
+    return;
+  }
+
+  // Proceed to Step 2 - user can sign because they're the recipient
   await handler.sendMessage(
     channelId,
     `✅ **Step 1 Complete!**\n\n` +
@@ -264,17 +333,9 @@ export async function handleSubdomainStep1Transaction(
     { threadId: validThreadId },
   );
 
-  // Update state
-  await updateSubdomainState(userId, originalThreadId, {
-    status: "step1_complete",
-    step1TxHash: tx.txHash,
-  });
-
   // Build step 2 transaction - set the address record
   const subdomainNode = namehash(state.fullName) as `0x${string}`;
 
-  // Encode setAddr call
-  const { encodeFunctionData } = await import("viem");
   const setAddrData = encodeFunctionData({
     abi: PUBLIC_RESOLVER_ABI,
     functionName: "setAddr",
@@ -282,10 +343,7 @@ export async function handleSubdomainStep1Transaction(
   });
 
   // Send second transaction request
-  // NOTE: This transaction should be signed by the NEW OWNER (recipient)
-  // who now owns the subdomain after Step 1
-  const signerWallet = state.recipient;
-
+  // The recipient (who is now the subdomain owner) signs this
   await handler.sendInteractionRequest(
     channelId,
     {
@@ -297,7 +355,7 @@ export async function handleSubdomainStep1Transaction(
         to: ENS_CONTRACTS.PUBLIC_RESOLVER,
         value: "0",
         data: setAddrData,
-        signerWallet: signerWallet,
+        signerWallet: state.recipient, // Recipient signs (they own the subdomain now)
       },
       recipient: userId as `0x${string}`,
     },
@@ -392,6 +450,8 @@ export async function handleSubdomainTransaction(
     txHash: string;
   },
 ): Promise<void> {
+  console.log(`handleSubdomainTransaction: Routing ${tx.requestId}`);
+
   if (tx.requestId.startsWith("subdomain_step1:")) {
     await handleSubdomainStep1Transaction(handler, event, tx);
   } else if (tx.requestId.startsWith("subdomain_step2:")) {

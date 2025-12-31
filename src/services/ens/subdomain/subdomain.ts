@@ -23,8 +23,7 @@ import {
 import { formatAddress } from "../../../utils";
 
 // NameWrapper contract address
-const NAME_WRAPPER_ADDRESS =
-  "0xD4416b13d2b3a9aBae7AcdBB3092D31d512a2C71" as const;
+const NAME_WRAPPER_ADDRESS = "0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401";
 
 export class SubdomainService {
   private publicClient: PublicClient;
@@ -39,33 +38,31 @@ export class SubdomainService {
   }
 
   /**
-   * Check if a name is wrapped in NameWrapper
+   * Check if a name is wrapped by checking if Registry owner is NameWrapper
    */
   async isNameWrapped(name: string): Promise<boolean> {
     const node = namehash(name);
 
     try {
-      // Check who owns the name in the Registry
-      const registryOwner = await this.publicClient.readContract({
+      const registryOwner = (await this.publicClient.readContract({
         address: ENS_CONTRACTS.ENS_REGISTRY,
         abi: ENS_REGISTRY_ABI,
         functionName: "owner",
         args: [node as `0x${string}`],
-      });
+      })) as string;
 
-      // If the Registry owner is the NameWrapper, the name is wrapped
-      return (
-        (registryOwner as string).toLowerCase() ===
-        NAME_WRAPPER_ADDRESS.toLowerCase()
-      );
+      // Compare lowercase to handle checksum differences
+      return registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
     } catch (error) {
-      console.error("Error checking if name is wrapped:", error);
+      console.error(`isNameWrapped error for ${name}:`, error);
       return false;
     }
   }
 
   /**
-   * Get the actual owner of a name (handles both wrapped and unwrapped)
+   * Get the ACTUAL owner of a name
+   * - For wrapped names: queries NameWrapper.ownerOf(tokenId)
+   * - For unwrapped names: returns Registry owner
    */
   async getNameOwner(name: string): Promise<{
     owner: `0x${string}` | null;
@@ -75,7 +72,7 @@ export class SubdomainService {
     const node = namehash(name);
 
     try {
-      // First check Registry owner
+      // Step 1: Check Registry owner
       const registryOwner = (await this.publicClient.readContract({
         address: ENS_CONTRACTS.ENS_REGISTRY,
         abi: ENS_REGISTRY_ABI,
@@ -83,117 +80,76 @@ export class SubdomainService {
         args: [node as `0x${string}`],
       })) as string;
 
-      // If owner is zero address, name doesn't exist
+      console.log(`[getNameOwner] ${name} Registry owner: ${registryOwner}`);
+
+      // If zero address, name doesn't exist
       if (registryOwner === "0x0000000000000000000000000000000000000000") {
         return {
           owner: null,
           isWrapped: false,
-          error: `Name ${name} is not registered`,
+          error: `${name} is not registered`,
         };
       }
 
-      // If Registry owner is NameWrapper, get the actual owner from NameWrapper
-      if (registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
+      // Step 2: Check if wrapped (Registry owner == NameWrapper)
+      const isWrapped =
+        registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
+      console.log(`[getNameOwner] ${name} isWrapped: ${isWrapped}`);
+
+      if (isWrapped) {
+        // Step 3: For wrapped names, get owner from NameWrapper
         const tokenId = BigInt(node);
+        console.log(
+          `[getNameOwner] Querying NameWrapper.ownerOf(${tokenId})...`,
+        );
 
         try {
           const wrapperOwner = (await this.publicClient.readContract({
-            address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+            address: NAME_WRAPPER_ADDRESS as `0x${string}`,
             abi: NAME_WRAPPER_ABI,
             functionName: "ownerOf",
             args: [tokenId],
           })) as string;
 
+          console.log(
+            `[getNameOwner] ${name} NameWrapper owner: ${wrapperOwner}`,
+          );
+
           return {
             owner: wrapperOwner as `0x${string}`,
             isWrapped: true,
           };
-        } catch (err) {
-          // Token might not exist in wrapper
+        } catch (wrapperError) {
+          console.error(
+            `[getNameOwner] NameWrapper.ownerOf failed:`,
+            wrapperError,
+          );
           return {
             owner: null,
             isWrapped: true,
-            error: "Failed to get owner from NameWrapper",
+            error: `Failed to get owner from NameWrapper: ${wrapperError}`,
           };
         }
       }
 
-      // Name is not wrapped, Registry owner is the actual owner
+      // Not wrapped - Registry owner is the actual owner
       return {
         owner: registryOwner as `0x${string}`,
         isWrapped: false,
       };
     } catch (error) {
-      console.error("Error getting name owner:", error);
-      return { owner: null, isWrapped: false, error: "Failed to get owner" };
-    }
-  }
-
-  /**
-   * Check if the caller owns the parent name (can create subnames)
-   * ✅ FIXED: Automatically detects wrapped vs unwrapped names
-   */
-  async canCreateSubname(
-    parentName: string,
-    callerAddress: `0x${string}`,
-  ): Promise<{ canCreate: boolean; isWrapped: boolean; reason?: string }> {
-    const parentNode = namehash(parentName);
-
-    try {
-      // Get the actual owner (handles wrapped vs unwrapped automatically)
-      const ownerResult = await this.getNameOwner(parentName);
-
-      if (!ownerResult.owner) {
-        return {
-          canCreate: false,
-          isWrapped: false,
-          reason: ownerResult.error || `${parentName} is not registered`,
-        };
-      }
-
-      // Check if caller is the owner
-      if (ownerResult.owner.toLowerCase() !== callerAddress.toLowerCase()) {
-        return {
-          canCreate: false,
-          isWrapped: ownerResult.isWrapped,
-          reason: `You don't own ${parentName}. The owner is ${ownerResult.owner}`,
-        };
-      }
-
-      // If wrapped, also check fuses
-      if (ownerResult.isWrapped) {
-        const tokenId = BigInt(parentNode);
-
-        const [, fuses] = await this.publicClient.readContract({
-          address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
-          abi: NAME_WRAPPER_ABI,
-          functionName: "getData",
-          args: [tokenId],
-        });
-
-        if (((fuses as number) & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
-          return {
-            canCreate: false,
-            isWrapped: true,
-            reason: `The CANNOT_CREATE_SUBDOMAIN fuse is burned on ${parentName}`,
-          };
-        }
-      }
-
-      return { canCreate: true, isWrapped: ownerResult.isWrapped };
-    } catch (error) {
-      console.error("Error checking canCreateSubname:", error);
+      console.error(`[getNameOwner] Error for ${name}:`, error);
       return {
-        canCreate: false,
+        owner: null,
         isWrapped: false,
-        reason: `Error checking ownership: ${error instanceof Error ? error.message : "Unknown error"}`,
+        error: `Failed to get owner: ${error}`,
       };
     }
   }
 
   /**
-   * Verify parent domain ownership against user's wallets
-   * ✅ FIXED: Checks all wallets and handles wrapped names
+   * ✅ NEW METHOD: Verify that one of the user's wallets owns the parent name
+   * This is what handleSubdomainCommand calls
    */
   async verifyParentOwnership(
     parentName: string,
@@ -205,13 +161,14 @@ export class SubdomainService {
     actualOwner?: `0x${string}`;
     error?: string;
   }> {
-    console.log(`verifyParentOwnership: Checking ${parentName}`);
-    console.log(`verifyParentOwnership: User wallets:`, userWallets);
+    console.log(`\n========== verifyParentOwnership ==========`);
+    console.log(`Parent name: ${parentName}`);
+    console.log(`User wallets: ${userWallets.join(", ")}`);
+    console.log(`NameWrapper address: ${NAME_WRAPPER_ADDRESS}`);
+    console.log(`============================================\n`);
 
-    // First, get the actual owner of the name
+    // Get the actual owner
     const ownerResult = await this.getNameOwner(parentName);
-
-    console.log(`verifyParentOwnership: Owner result:`, ownerResult);
 
     if (!ownerResult.owner) {
       return {
@@ -221,40 +178,46 @@ export class SubdomainService {
       };
     }
 
-    // Check if any of the user's wallets is the owner
+    console.log(`[verifyParentOwnership] Actual owner: ${ownerResult.owner}`);
+    console.log(`[verifyParentOwnership] Is wrapped: ${ownerResult.isWrapped}`);
+
+    // Check if any user wallet matches the actual owner
+    const ownerLower = ownerResult.owner.toLowerCase();
     const matchingWallet = userWallets.find(
-      (wallet) => wallet.toLowerCase() === ownerResult.owner!.toLowerCase(),
+      (wallet) => wallet.toLowerCase() === ownerLower,
     );
 
     if (matchingWallet) {
-      console.log(
-        `verifyParentOwnership: Found matching wallet: ${matchingWallet}`,
-      );
+      console.log(`[verifyParentOwnership] ✅ Match found: ${matchingWallet}`);
 
-      // If wrapped, check fuses
+      // For wrapped names, check fuses
       if (ownerResult.isWrapped) {
-        const parentNode = namehash(parentName);
-        const tokenId = BigInt(parentNode);
+        const node = namehash(parentName);
+        const tokenId = BigInt(node);
 
         try {
-          const [, fuses] = await this.publicClient.readContract({
-            address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+          const [, fuses] = (await this.publicClient.readContract({
+            address: NAME_WRAPPER_ADDRESS as `0x${string}`,
             abi: NAME_WRAPPER_ABI,
             functionName: "getData",
             args: [tokenId],
-          });
+          })) as [string, number, bigint];
 
-          if (((fuses as number) & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
+          if ((fuses & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
             return {
               owned: false,
               ownerWallet: matchingWallet,
               isWrapped: true,
               actualOwner: ownerResult.owner,
-              error: `The CANNOT_CREATE_SUBDOMAIN fuse is burned on ${parentName}`,
+              error: `CANNOT_CREATE_SUBDOMAIN fuse is burned on ${parentName}`,
             };
           }
-        } catch (err) {
-          console.error("Error checking fuses:", err);
+        } catch (fuseError) {
+          console.error(
+            `[verifyParentOwnership] Error checking fuses:`,
+            fuseError,
+          );
+          // Continue anyway - fuse check is optional
         }
       }
 
@@ -266,17 +229,81 @@ export class SubdomainService {
       };
     }
 
-    // No matching wallet found
-    console.log(
-      `verifyParentOwnership: No matching wallet. Actual owner: ${ownerResult.owner}`,
-    );
-
+    // No match found
+    console.log(`[verifyParentOwnership] ❌ No matching wallet`);
     return {
       owned: false,
       isWrapped: ownerResult.isWrapped,
       actualOwner: ownerResult.owner,
       error: `None of your wallets own ${parentName}. The owner is ${ownerResult.owner}`,
     };
+  }
+
+  /**
+   * Check if the caller owns the parent name (original method for single wallet check)
+   */
+  async canCreateSubname(
+    parentName: string,
+    callerAddress: `0x${string}`,
+    contract: "registry" | "nameWrapper" = "nameWrapper",
+  ): Promise<{ canCreate: boolean; reason?: string }> {
+    const parentNode = namehash(parentName);
+
+    try {
+      if (contract === "nameWrapper") {
+        const tokenId = BigInt(parentNode);
+        const owner = await this.publicClient.readContract({
+          address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+          abi: NAME_WRAPPER_ABI,
+          functionName: "ownerOf",
+          args: [tokenId],
+        });
+
+        if ((owner as string).toLowerCase() !== callerAddress.toLowerCase()) {
+          return {
+            canCreate: false,
+            reason: `You don't own ${parentName}. The owner is ${owner}`,
+          };
+        }
+
+        const [, fuses] = await this.publicClient.readContract({
+          address: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+          abi: NAME_WRAPPER_ABI,
+          functionName: "getData",
+          args: [tokenId],
+        });
+
+        if (((fuses as number) & FUSES.CANNOT_CREATE_SUBDOMAIN) !== 0) {
+          return {
+            canCreate: false,
+            reason: `CANNOT_CREATE_SUBDOMAIN fuse is burned on ${parentName}`,
+          };
+        }
+
+        return { canCreate: true };
+      } else {
+        const owner = await this.publicClient.readContract({
+          address: ENS_CONTRACTS.ENS_REGISTRY,
+          abi: ENS_REGISTRY_ABI,
+          functionName: "owner",
+          args: [parentNode as `0x${string}`],
+        });
+
+        if ((owner as string).toLowerCase() !== callerAddress.toLowerCase()) {
+          return {
+            canCreate: false,
+            reason: `You don't own ${parentName}. The owner is ${owner}`,
+          };
+        }
+
+        return { canCreate: true };
+      }
+    } catch (error) {
+      return {
+        canCreate: false,
+        reason: `Error checking ownership: ${error instanceof Error ? error.message : "Unknown error"}`,
+      };
+    }
   }
 
   /**
@@ -300,7 +327,7 @@ export class SubdomainService {
   }
 
   /**
-   * Build transaction for creating a subname via NameWrapper (for wrapped parents)
+   * Build transaction for wrapped names (via NameWrapper)
    */
   buildCreateSubnameWrapped(params: {
     parentNode: `0x${string}`;
@@ -321,14 +348,14 @@ export class SubdomainService {
         params.label,
         params.owner,
         resolverAddress,
-        0n, // TTL
+        0n,
         params.fuses || 0,
         params.expiry || 0n,
       ],
     });
 
     return {
-      to: ENS_CONTRACTS.ENS_NAMEWRAPPER,
+      to: NAME_WRAPPER_ADDRESS as `0x${string}`,
       data,
       value: 0n,
       chainId: this.chainId,
@@ -336,7 +363,7 @@ export class SubdomainService {
   }
 
   /**
-   * Build transaction for creating a subname via Registry (for unwrapped parents)
+   * Build transaction for unwrapped names (via Registry)
    */
   buildCreateSubnameUnwrapped(params: {
     parentNode: `0x${string}`;
@@ -355,7 +382,7 @@ export class SubdomainService {
         params.labelHash,
         params.owner,
         resolverAddress,
-        0n, // TTL
+        0n,
       ],
     });
 
@@ -368,7 +395,7 @@ export class SubdomainService {
   }
 
   /**
-   * Build transaction based on whether parent is wrapped or not
+   * Build transaction based on whether parent is wrapped
    */
   buildCreateSubnameTransaction(params: {
     fullSubname: string;
@@ -383,7 +410,18 @@ export class SubdomainService {
       throw new Error(`Invalid subname: ${params.fullSubname}`);
     }
 
+    console.log(
+      `[buildCreateSubnameTransaction] Building for ${params.fullSubname}`,
+    );
+    console.log(
+      `[buildCreateSubnameTransaction] isWrapped: ${params.isWrapped}`,
+    );
+    console.log(`[buildCreateSubnameTransaction] owner: ${params.owner}`);
+
     if (params.isWrapped) {
+      console.log(
+        `[buildCreateSubnameTransaction] Using NameWrapper at ${NAME_WRAPPER_ADDRESS}`,
+      );
       return this.buildCreateSubnameWrapped({
         parentNode: parsed.parentNode,
         label: parsed.label,
@@ -393,6 +431,9 @@ export class SubdomainService {
         expiry: params.expiry,
       });
     } else {
+      console.log(
+        `[buildCreateSubnameTransaction] Using Registry at ${ENS_CONTRACTS.ENS_REGISTRY}`,
+      );
       return this.buildCreateSubnameUnwrapped({
         parentNode: parsed.parentNode,
         labelHash: parsed.labelHash,
