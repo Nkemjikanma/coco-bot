@@ -183,7 +183,6 @@ export async function handleSubdomainCommand(
       isWrapped,
     });
 
-    // ✅ Create and store flow using the new flowStore
     const flow = createSubdomainFlow({
       userId,
       threadId,
@@ -274,7 +273,7 @@ export async function handleSubdomainStep1Transaction(
   const originalThreadId = parts[2];
   const validThreadId = event.threadId || originalThreadId || eventId;
 
-  // ✅ Get flow from the unified flow store
+  // Get flow from the unified flow store
   const flowResult = await getActiveFlow(userId, originalThreadId);
 
   if (!flowResult.success || !isSubdomainFlow(flowResult.data)) {
@@ -301,7 +300,7 @@ export async function handleSubdomainStep1Transaction(
     return;
   }
 
-  // ✅ Update flow with step 1 tx hash
+  //  Update flow with step 1 tx hash
   await updateFlowData(userId, originalThreadId, {
     step1TxHash: tx.txHash,
   });
@@ -397,7 +396,7 @@ export async function handleSubdomainStep2Transaction(
   const originalThreadId = parts[2];
   const validThreadId = event.threadId || originalThreadId || eventId;
 
-  // ✅ Get flow from the unified flow store
+  // Get flow from the unified flow store
   const flowResult = await getActiveFlow(userId, originalThreadId);
 
   if (!flowResult.success || !isSubdomainFlow(flowResult.data)) {
@@ -424,7 +423,7 @@ export async function handleSubdomainStep2Transaction(
     return;
   }
 
-  // ✅ Update flow and mark complete
+  //  Update flow and mark complete
   await updateFlowData(userId, originalThreadId, {
     step2TxHash: tx.txHash,
   });

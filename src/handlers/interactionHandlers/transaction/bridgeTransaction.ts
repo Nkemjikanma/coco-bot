@@ -6,8 +6,7 @@ import {
   getPendingRegistration,
   UserState,
 } from "../../../db/userStateStore";
-import { getBridgeState, updateBridgeState, clearBridge } from "../../../db";
-import { PendingRegistration, RegisterCommand } from "../../../types";
+import { PendingRegistration } from "../../../types";
 import { formatEther, hexToBytes } from "viem";
 import { CHAIN_IDS } from "../../../services/bridge";
 import { checkBalance } from "../../../utils";
@@ -15,6 +14,16 @@ import {
   extractDepositId,
   pollBridgeStatus,
 } from "../../../services/bridge/bridge";
+import {
+  BridgeFlowData,
+  clearActiveFlow,
+  getActiveFlow,
+  isBridgeFlow,
+  isRegistrationFlow,
+  RegistrationFlowData,
+  updateFlowData,
+  updateFlowStatus,
+} from "../../../db";
 
 export async function bridgeTransaction(
   handler: BotHandler,
@@ -25,39 +34,53 @@ export async function bridgeTransaction(
   },
   userState: UserState,
 ) {
-  const { userId, channelId, threadId, eventId } = event;
-  const validThreadId = userState?.activeThreadId ?? threadId;
+  const { userId, channelId } = event;
+  const threadId = event.threadId || event.eventId;
 
   // Debug logging
   console.log("=== BRIDGE TRANSACTION RESPONSE ===");
   console.log("tx:", JSON.stringify(tx, null, 2));
-  console.log("validThreadId:", validThreadId);
+  console.log("validThreadId:", threadId);
   console.log("===================================");
 
   // Validate request ID
-  if (tx.requestId !== `bridge:${userId}:${validThreadId}`) {
+  if (tx.requestId !== `bridge:${userId}:${threadId}`) {
     console.error("RequestId mismatch:", {
-      expected: `bridge:${userId}:${validThreadId}`,
+      expected: `bridge:${userId}:${threadId}`,
       received: tx.requestId,
     });
     await handler.sendMessage(
       channelId,
       "⚠️ Received unexpected bridge response. Please try again.",
-      validThreadId ? { threadId: validThreadId } : undefined,
+      { threadId },
     );
     return;
   }
 
-  // Get bridge state
-  const bridgeState = await getBridgeState(userId, validThreadId!);
-  if (!bridgeState.success || !bridgeState.data) {
+  // Get flow state
+  const flowResult = await getActiveFlow(userId, threadId);
+
+  if (!flowResult.success) {
     await handler.sendMessage(
       channelId,
       "❌ Bridge state not found. Please start again.",
-      validThreadId ? { threadId: validThreadId } : undefined,
+      { threadId },
     );
     return;
   }
+
+  if (!isBridgeFlow(flowResult.data)) {
+    await handler.sendMessage(
+      channelId,
+      `Invalid flow type. Expected bridge flow. Please start again.`,
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
+
+  const flow = flowResult.data;
+  const bridgeData = flow.data;
 
   // Handle transaction rejection/failure
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
@@ -65,9 +88,9 @@ export async function bridgeTransaction(
     await handleBridgeFailure(
       handler,
       channelId,
-      validThreadId,
+      threadId,
       userId,
-      bridgeState.data,
+      bridgeData,
       "Bridge transaction was rejected or failed.",
     );
     return;
@@ -82,15 +105,15 @@ export async function bridgeTransaction(
     `✅ **Bridge Transaction Submitted!**\n\n` +
       `**Tx Hash:** \`${txHash}\`\n\n` +
       `⏳ Waiting for bridge completion (usually 1-2 minutes)...`,
-    validThreadId ? { threadId: validThreadId } : undefined,
+    { threadId },
   );
 
-  // Update state to bridging
-  await updateBridgeState(userId, validThreadId!, {
-    ...bridgeState.data,
-    status: "bridging",
-    depositTxHash: txHash,
+  // Update flow with tx hash and status
+  await updateFlowData(userId, threadId, {
+    bridgeTxHash: txHash,
+    bridgeTimestamp: Date.now(),
   });
+  await updateFlowStatus(userId, threadId, "step1_pending");
 
   // Extract deposit ID from transaction receipt
   const depositId = await extractDepositId(txHash, CHAIN_IDS.BASE);
@@ -102,53 +125,44 @@ export async function bridgeTransaction(
     await handler.sendMessage(
       channelId,
       `⚠️ Couldn't track bridge directly. Monitoring your Mainnet balance instead...`,
-      validThreadId ? { threadId: validThreadId } : undefined,
+      { threadId },
     );
 
     // Fallback to balance polling
     await pollForBalanceIncrease(
       handler,
       channelId,
-      validThreadId!,
+      threadId,
       userId,
-      bridgeState.data.recipient,
-      bridgeState.data.amount,
-      userState,
+      bridgeData.userWallet,
+      bridgeData.amountWei,
+      bridgeData,
     );
     return;
   }
 
-  // Update with deposit ID
-  await updateBridgeState(userId, validThreadId!, {
-    ...bridgeState.data,
-    status: "bridging",
-    depositTxHash: txHash,
-    depositId,
-  });
-
   // Poll Across API for bridge completion
   pollBridgeStatus(
-    txHash, // Use txHash as depositTxnRef
+    txHash,
     async (status) => {
       if (status.status === "filled") {
         await handleBridgeSuccess(
           handler,
           channelId,
-          validThreadId!,
+          threadId,
           userId,
-          bridgeState.data,
+          bridgeData,
           txHash,
           depositId,
           status.fillTx,
-          userState,
         );
       } else if (status.status === "expired") {
         await handleBridgeFailure(
           handler,
           channelId,
-          validThreadId,
+          threadId,
           userId,
-          bridgeState.data,
+          bridgeData,
           "Bridge request expired. Your funds should still be on Base.",
         );
       } else {
@@ -159,11 +173,11 @@ export async function bridgeTransaction(
             `The bridge is taking longer than expected.\n` +
             `Please check your Mainnet balance in a few minutes.\n\n` +
             `Once you have funds, click "Continue Registration" below.`,
-          validThreadId ? { threadId: validThreadId } : undefined,
+          { threadId },
         );
 
         // Show continue button for manual continuation
-        await sendContinueButton(handler, channelId, validThreadId!, userId);
+        await sendContinueButton(handler, channelId, threadId, userId);
       }
     },
     5 * 60 * 1000, // 5 minute max wait
@@ -178,20 +192,13 @@ async function handleBridgeSuccess(
   channelId: string,
   threadId: string,
   userId: string,
-  bridgeData: any,
-  txHash: string,
+  bridgeData: BridgeFlowData,
+  txHash: `0x${string}`,
   depositId: string,
   fillTxHash?: string,
-  userState?: UserState,
 ) {
-  // Update state to completed
-  await updateBridgeState(userId, threadId, {
-    ...bridgeData,
-    status: "completed",
-    depositTxHash: txHash,
-    depositId,
-    fillTxHash,
-  });
+  // Update flow status to complete
+  await updateFlowStatus(userId, threadId, "step1_complete");
 
   await handler.sendMessage(
     channelId,
@@ -202,13 +209,23 @@ async function handleBridgeSuccess(
     { threadId },
   );
 
-  // Check pending registration
-  const pendingRegistration = await getPendingRegistration(userId);
-
-  if (!pendingRegistration.success || !pendingRegistration.data) {
-    // No registration pending - just show balance
+  // Check if this bridge was for a registration
+  if (
+    bridgeData.nextAction === "continue_registration" &&
+    bridgeData.registrationData
+  ) {
+    // Continue with registration
+    await handlePostBridgeRegistration(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      bridgeData.registrationData,
+    );
+  } else {
+    // Just a standalone bridge - show balance and complete
     const newBalance = await checkBalance(
-      bridgeData.recipient,
+      bridgeData.userWallet,
       CHAIN_IDS.MAINNET,
     );
 
@@ -219,18 +236,8 @@ async function handleBridgeSuccess(
       { threadId },
     );
 
-    await clearBridge(userId, threadId);
-    return;
+    await clearActiveFlow(userId, threadId);
   }
-
-  // Continue with registration
-  await handlePostBridgeRegistration(
-    handler,
-    channelId,
-    threadId,
-    userId,
-    pendingRegistration.data,
-  );
 }
 
 /**
@@ -239,43 +246,43 @@ async function handleBridgeSuccess(
 async function handleBridgeFailure(
   handler: BotHandler,
   channelId: string,
-  threadId: string | undefined,
+  threadId: string,
   userId: string,
-  bridgeData: any,
+  bridgeData: BridgeFlowData,
   errorMessage: string,
 ) {
-  await updateBridgeState(userId, threadId!, {
-    ...bridgeData,
-    status: "failed",
-  });
+  // Update flow status to failed
+  await updateFlowStatus(userId, threadId, "failed");
 
   await handler.sendMessage(
     channelId,
     `❌ **Bridge Failed**\n\n${errorMessage}\n\nPlease try again.`,
-    threadId ? { threadId } : undefined,
+    { threadId },
   );
 
   // Clean up all state
-  await clearBridge(userId, threadId!);
-  await clearPendingRegistration(userId);
+  await clearActiveFlow(userId, threadId);
   await clearUserPendingCommand(userId);
 }
 
 /**
  * Handle registration after bridge completes
  */
-async function handlePostBridgeRegistration(
+export async function handlePostBridgeRegistration(
   handler: BotHandler,
   channelId: string,
   threadId: string,
   userId: string,
-  registration: PendingRegistration,
+  registrationData: RegistrationFlowData,
 ) {
+  const selectedWallet =
+    registrationData.selectedWallet || registrationData.names[0].owner;
+
   // Verify balance on Mainnet
   const mainnetBalance = await checkBalance(
-    registration.selectedWallet || registration.names[0].owner,
+    selectedWallet,
     CHAIN_IDS.MAINNET,
-    registration.grandTotalWei,
+    registrationData.grandTotalWei,
   );
 
   if (!mainnetBalance.sufficient) {
@@ -283,7 +290,7 @@ async function handlePostBridgeRegistration(
       channelId,
       `⚠️ **Balance Check**\n\n` +
         `Your Mainnet balance: ${mainnetBalance.balanceEth} ETH\n` +
-        `Required: ${registration.grandTotalEth} ETH\n\n` +
+        `Required: ${registrationData.grandTotalEth} ETH\n\n` +
         `The bridged funds may still be arriving. Please wait and try again.`,
       { threadId },
     );
@@ -297,12 +304,12 @@ async function handlePostBridgeRegistration(
     channelId,
     `✅ **Balance Confirmed!**\n\n` +
       `Mainnet Balance: ${mainnetBalance.balanceEth} ETH\n\n` +
-      `Ready to register **${registration.names.map((n) => n.name).join(", ")}**!`,
+      `Ready to register **${registrationData.names.map((n) => n.name).join(", ")}**!`,
     { threadId },
   );
 
-  // Clear bridge state since we're done with bridging
-  await clearBridge(userId, threadId);
+  // Clear bridge flow - we'll create a registration flow when they confirm
+  await clearActiveFlow(userId, threadId);
 
   // Send commit confirmation
   await handler.sendInteractionRequest(
@@ -325,9 +332,7 @@ async function handlePostBridgeRegistration(
       ],
       recipient: userId as `0x${string}`,
     },
-    {
-      threadId,
-    },
+    { threadId },
   );
 }
 
@@ -360,9 +365,7 @@ async function sendContinueButton(
       ],
       recipient: userId as `0x${string}`,
     },
-    {
-      threadId,
-    },
+    { threadId },
   );
 }
 
@@ -376,7 +379,7 @@ async function pollForBalanceIncrease(
   userId: string,
   address: `0x${string}`,
   expectedIncrease: bigint,
-  userState?: UserState,
+  bridgeData: BridgeFlowData,
 ) {
   const initialBalance = await checkBalance(address, CHAIN_IDS.MAINNET);
 
@@ -401,22 +404,23 @@ async function pollForBalanceIncrease(
           { threadId },
         );
 
-        // Continue with registration if applicable
-        const pendingRegistration = await getPendingRegistration(userId);
-
-        if (pendingRegistration.success && pendingRegistration.data) {
+        // Check if we should continue with registration
+        if (
+          bridgeData.nextAction === "continue_registration" &&
+          bridgeData.registrationData
+        ) {
           await handlePostBridgeRegistration(
             handler,
             channelId,
             threadId,
             userId,
-            pendingRegistration.data,
+            bridgeData.registrationData,
           );
         } else {
           await handler.sendMessage(channelId, `Bridge complete! ✅`, {
             threadId,
           });
-          await clearBridge(userId, threadId);
+          await clearActiveFlow(userId, threadId);
         }
         return;
       }
@@ -429,7 +433,7 @@ async function pollForBalanceIncrease(
         await handler.sendMessage(
           channelId,
           `⏳ **Bridge Timeout**\n\n` +
-            `Couldn't detect bridged funds within 5 minutes.\n` +
+            `Couldn't detect bridged funds within 2 minutes.\n` +
             `Current Mainnet balance: ${currentBalance.balanceEth} ETH\n\n` +
             `The bridge may still be processing. Click below when ready.`,
           { threadId },

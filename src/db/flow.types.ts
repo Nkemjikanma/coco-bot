@@ -84,7 +84,7 @@ export interface BridgeFlowData {
   bridgeTimestamp?: number;
 
   // What to do after bridge completes
-  nextAction?: "continue_registration" | "none";
+  nextAction?: "continue_registration" | "wait_for_bridge_completion" | "none";
   registrationData?: RegistrationFlowData;
 }
 
