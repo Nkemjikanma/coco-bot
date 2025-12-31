@@ -1,16 +1,17 @@
 import { BotHandler } from "@towns-protocol/bot";
-import { EventType, ParsedCommand, SubdomainCommand } from "../types";
-import {
-  getSubdomainService,
-  SubdomainService,
-} from "../services/ens/subdomain/subdomain";
+import { SubdomainCommand } from "../types";
+import { getSubdomainService } from "../services/ens/subdomain/subdomain";
 import { filterEOAs, formatAddress } from "../utils";
 import {
-  clearSubdomainState,
-  getSubdomainState,
-  setSubdomainState,
-  updateSubdomainState,
-} from "../db/subdomainStore";
+  getActiveFlow,
+  setActiveFlow,
+  updateFlowStatus,
+  updateFlowData,
+  clearActiveFlow,
+  createSubdomainFlow,
+  isSubdomainFlow,
+  type SubdomainFlow,
+} from "../db";
 import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 import { sendBotMessage } from "./handle_message_utils";
 import { encodeFunctionData, namehash } from "viem";
@@ -113,7 +114,7 @@ export async function handleSubdomainCommand(
       return;
     }
 
-    // ✅ CHECK: Is the recipient one of the user's wallets?
+    // Check if recipient is one of the user's wallets
     const isRecipientUser = userWallets.some(
       (w) => w.toLowerCase() === resolveAddress.toLowerCase(),
     );
@@ -122,7 +123,6 @@ export async function handleSubdomainCommand(
       `handleSubdomainCommand: Recipient is user's wallet: ${isRecipientUser}`,
     );
 
-    // Determine if we can do Step 2
     const canDoStep2 = isRecipientUser;
 
     // Display validation success with appropriate message
@@ -145,7 +145,6 @@ export async function handleSubdomainCommand(
           `⚠️ **Note:** This requires 2 transactions.`,
       );
     } else {
-      // Recipient is NOT the user - only Step 1 possible
       await sendBotMessage(
         handler,
         channelId,
@@ -180,25 +179,28 @@ export async function handleSubdomainCommand(
     // Build the create subdomain transaction
     const createSubnameTx = service.buildCreateSubnameTransaction({
       fullSubname,
-      owner: resolveAddress, // The recipient becomes the owner
+      owner: resolveAddress,
       isWrapped,
     });
 
-    // Store state for tracking
-    await setSubdomainState(userId, threadId, {
+    // ✅ Create and store flow using the new flowStore
+    const flow = createSubdomainFlow({
       userId,
-      channelId,
       threadId,
-      subdomain: label,
-      domain: parent,
-      fullName: fullSubname,
-      recipient: resolveAddress,
-      ownerWallet: ownerWallet,
-      isWrapped: isWrapped,
-      timestamp: Date.now(),
-      status: "pending",
-      canDoStep2: canDoStep2, // ✅ Store whether Step 2 is possible
+      channelId,
+      status: "step1_pending",
+      data: {
+        subdomain: label,
+        domain: parent,
+        fullName: fullSubname,
+        recipient: resolveAddress,
+        ownerWallet: ownerWallet,
+        isWrapped: isWrapped,
+        canDoStep2: canDoStep2,
+      },
     });
+
+    await setActiveFlow(flow);
 
     // Send first transaction request (create subdomain)
     await handler.sendInteractionRequest(
@@ -212,7 +214,7 @@ export async function handleSubdomainCommand(
           to: createSubnameTx.to,
           value: "0",
           data: createSubnameTx.data,
-          signerWallet: ownerWallet, // Parent owner signs this
+          signerWallet: ownerWallet,
         },
         recipient: userId as `0x${string}`,
       },
@@ -266,26 +268,26 @@ export async function handleSubdomainStep1Transaction(
   },
 ): Promise<void> {
   const { userId, channelId, eventId } = event;
-  const service = getSubdomainService();
 
   // Extract threadId from requestId
   const parts = tx.requestId.split(":");
   const originalThreadId = parts[2];
   const validThreadId = event.threadId || originalThreadId || eventId;
 
-  // Get stored state
-  const stateResult = await getSubdomainState(userId, originalThreadId);
+  // ✅ Get flow from the unified flow store
+  const flowResult = await getActiveFlow(userId, originalThreadId);
 
-  if (!stateResult.success || !stateResult.data) {
+  if (!flowResult.success || !isSubdomainFlow(flowResult.data)) {
     await handler.sendMessage(
       channelId,
-      `❌ Subdomain assignment state not found. Please start again.`,
+      `❌ Subdomain flow not found. Please start again.`,
       { threadId: validThreadId },
     );
     return;
   }
 
-  const state = stateResult.data;
+  const flow = flowResult.data;
+  const flowData = flow.data;
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
@@ -295,67 +297,72 @@ export async function handleSubdomainStep1Transaction(
         `The subdomain creation was cancelled.`,
       { threadId: validThreadId },
     );
-    await clearSubdomainState(userId, originalThreadId);
+    await clearActiveFlow(userId, originalThreadId);
     return;
   }
 
-  // Update state with tx hash
-  await updateSubdomainState(userId, originalThreadId, {
-    status: "step1_complete",
+  // ✅ Update flow with step 1 tx hash
+  await updateFlowData(userId, originalThreadId, {
     step1TxHash: tx.txHash,
   });
 
-  // ✅ CHECK: Can we proceed to Step 2?
-  if (!state.canDoStep2) {
+  // Check if we can proceed to Step 2
+  if (!flowData.canDoStep2) {
     // Recipient is not the user - we're done!
+    await updateFlowStatus(userId, originalThreadId, "complete");
+
     await handler.sendMessage(
       channelId,
       `🎉 **Subdomain Created!**\n\n` +
-        `**${state.fullName}** has been created and is now owned by:\n` +
-        `\`${state.recipient}\`\n\n` +
+        `**${flowData.fullName}** has been created and is now owned by:\n` +
+        `\`${flowData.recipient}\`\n\n` +
         `**Transaction:** \`${tx.txHash}\`\n\n` +
         `ℹ️ The new owner can set the address record and other configurations using the ENS app at [app.ens.domains](https://app.ens.domains).`,
       { threadId: validThreadId },
     );
 
-    // Clean up state
-    await clearSubdomainState(userId, originalThreadId);
+    // Clean up flow
+    await clearActiveFlow(userId, originalThreadId);
     return;
   }
 
-  // Proceed to Step 2 - user can sign because they're the recipient
+  // Proceed to Step 2
+  await updateFlowStatus(userId, originalThreadId, "step1_complete");
+
   await handler.sendMessage(
     channelId,
     `✅ **Step 1 Complete!**\n\n` +
-      `Subdomain created: **${state.fullName}**\n` +
+      `Subdomain created: **${flowData.fullName}**\n` +
       `Tx: \`${tx.txHash}\`\n\n` +
       `Now proceeding to Step 2: Set address record...`,
     { threadId: validThreadId },
   );
 
   // Build step 2 transaction - set the address record
-  const subdomainNode = namehash(state.fullName) as `0x${string}`;
+  const subdomainNode = namehash(flowData.fullName) as `0x${string}`;
 
   const setAddrData = encodeFunctionData({
     abi: PUBLIC_RESOLVER_ABI,
     functionName: "setAddr",
-    args: [subdomainNode, state.recipient as `0x${string}`],
+    args: [subdomainNode, flowData.recipient as `0x${string}`],
   });
 
+  // Update flow status
+  await updateFlowStatus(userId, originalThreadId, "step2_pending");
+
   // Send second transaction request
-  // The recipient (who is now the subdomain owner) signs this
   await handler.sendInteractionRequest(
     channelId,
     {
       type: "transaction",
       id: `subdomain_step2:${userId}:${originalThreadId}`,
-      title: `Set Address: ${state.fullName}`,
+      title: `Set Address: ${flowData.fullName}`,
       tx: {
         chainId: "1",
         to: ENS_CONTRACTS.PUBLIC_RESOLVER,
         value: "0",
         data: setAddrData,
-        signerWallet: state.recipient, // Recipient signs (they own the subdomain now)
+        signerWallet: flowData.recipient,
       },
       recipient: userId as `0x${string}`,
     },
@@ -365,7 +372,7 @@ export async function handleSubdomainStep1Transaction(
   await handler.sendMessage(
     channelId,
     `📤 **Step 2 of 2: Set Address Record**\n\n` +
-      `Please approve the transaction to point **${state.fullName}** to \`${formatAddress(state.recipient)}\`.`,
+      `Please approve the transaction to point **${flowData.fullName}** to \`${formatAddress(flowData.recipient)}\`.`,
     { threadId: validThreadId },
   );
 }
@@ -390,19 +397,18 @@ export async function handleSubdomainStep2Transaction(
   const originalThreadId = parts[2];
   const validThreadId = event.threadId || originalThreadId || eventId;
 
-  // Get stored state
-  const stateResult = await getSubdomainState(userId, originalThreadId);
+  // ✅ Get flow from the unified flow store
+  const flowResult = await getActiveFlow(userId, originalThreadId);
 
-  if (!stateResult.success || !stateResult.data) {
-    await handler.sendMessage(
-      channelId,
-      `❌ Subdomain assignment state not found.`,
-      { threadId: validThreadId },
-    );
+  if (!flowResult.success || !isSubdomainFlow(flowResult.data)) {
+    await handler.sendMessage(channelId, `❌ Subdomain flow not found.`, {
+      threadId: validThreadId,
+    });
     return;
   }
 
-  const state = stateResult.data;
+  const flow = flowResult.data;
+  const flowData = flow.data;
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
@@ -410,29 +416,35 @@ export async function handleSubdomainStep2Transaction(
       channelId,
       `❌ **Transaction Rejected**\n\n` +
         `The address record was not set.\n\n` +
-        `Note: The subdomain **${state.fullName}** was created in Step 1.\n` +
+        `Note: The subdomain **${flowData.fullName}** was created in Step 1.\n` +
         `You can set the address record later using the ENS app.`,
       { threadId: validThreadId },
     );
-    await clearSubdomainState(userId, originalThreadId);
+    await clearActiveFlow(userId, originalThreadId);
     return;
   }
+
+  // ✅ Update flow and mark complete
+  await updateFlowData(userId, originalThreadId, {
+    step2TxHash: tx.txHash,
+  });
+  await updateFlowStatus(userId, originalThreadId, "complete");
 
   // Success!
   await handler.sendMessage(
     channelId,
     `🎉 **Subdomain Assignment Complete!**\n\n` +
-      `**${state.fullName}** now points to:\n` +
-      `\`${state.recipient}\`\n\n` +
+      `**${flowData.fullName}** now points to:\n` +
+      `\`${flowData.recipient}\`\n\n` +
       `**Transaction Details:**\n` +
-      `• Step 1 (Create): \`${state.step1TxHash}\`\n` +
+      `• Step 1 (Create): \`${flowData.step1TxHash}\`\n` +
       `• Step 2 (Set Address): \`${tx.txHash}\`\n\n` +
       `The subdomain is now active and ready to use! 🚀`,
     { threadId: validThreadId },
   );
 
-  // Clean up state
-  await clearSubdomainState(userId, originalThreadId);
+  // Clean up flow
+  await clearActiveFlow(userId, originalThreadId);
 }
 
 // ============ Main router for subdomain transactions ============

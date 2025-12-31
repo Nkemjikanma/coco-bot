@@ -1,17 +1,14 @@
+import { BotHandler } from "@towns-protocol/bot";
 import {
-  BotHandler,
-  DecryptedInteractionResponse,
-  BasePayload,
-} from "@towns-protocol/bot";
-import { getPendingRegistration, getUserState } from "../../../db";
-import {
-  clearPendingRegistration,
+  clearActiveFlow,
   clearUserPendingCommand,
-  updatePendingRegistration,
+  getActiveFlow,
+  isRegistrationFlow,
+  updateFlowStatus,
+  updateFlowData,
 } from "../../../db";
 import { encodeCommitData } from "../../../services/ens";
 import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
-import { hexToBytes } from "viem";
 import { FormCase, OnInteractionEventType } from "../types";
 import { UserState } from "../../../db/userStateStore";
 
@@ -21,40 +18,42 @@ export async function confirmCommit(
   confirmForm: FormCase,
   userState: UserState,
 ) {
-  const { userId, channelId, threadId } = event;
-  const registration = await getPendingRegistration(userId);
+  const { userId, channelId } = event;
 
-  const validThreadId = userState.activeThreadId ?? threadId ?? channelId;
+  const threadId = event.threadId || event.eventId;
 
-  if (!registration.success) {
+  const flowResult = await getActiveFlow(userId, threadId);
+
+  // Check if flow exists
+  if (!flowResult.success) {
     await handler.sendMessage(
       channelId,
-      `Something went wrong: ${registration.error}. Please start again.`,
-      { threadId: validThreadId || undefined },
+      `Something went wrong: ${flowResult.error}. Please start again.`,
+      { threadId },
     );
-    await clearUserPendingCommand(userId);
     return;
   }
 
-  if (!registration.data) {
+  if (!isRegistrationFlow(flowResult.data)) {
+    await handler.sendMessage(
+      channelId,
+      `Invalid flow type. Expected registration flow. Please start again.`,
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
+
+  const flow = flowResult.data;
+  const regData = flow.data;
+
+  if (!regData || !regData.names || regData.names.length === 0) {
     await handler.sendMessage(
       channelId,
       "Registration expired. Please start again.",
-      { threadId: validThreadId || undefined },
+      { threadId },
     );
-    return;
-  }
-
-  const updateResult = await updatePendingRegistration(userId, {
-    phase: "commit_pending",
-  });
-
-  if (!updateResult.success) {
-    await handler.sendMessage(
-      channelId,
-      "Failed to update registration. Please try again.",
-      { threadId: validThreadId || undefined },
-    );
+    await clearActiveFlow(userId, threadId);
     return;
   }
 
@@ -65,7 +64,8 @@ export async function confirmCommit(
   for (const component of confirmForm.components) {
     // Handle cancel
     if (component.component.case === "button" && component.id === "cancel") {
-      await clearPendingRegistration(userId);
+      // ✅ Use new API for cleanup
+      await clearActiveFlow(userId, threadId);
       await clearUserPendingCommand(userId);
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
         threadId,
@@ -74,24 +74,19 @@ export async function confirmCommit(
     }
 
     if (component.id === "confirm") {
-      // Update phase
-      await updatePendingRegistration(userId, {
-        phase: "commit_pending",
-      });
+      // ✅ Update status using new API
+      await updateFlowStatus(userId, threadId, "step1_pending");
 
-      // Update phase
       await handler.sendMessage(
         channelId,
         "🚀 Starting registration process...\n\nExecuting commit transaction...",
         { threadId },
       );
 
-      const regData = registration.data;
-
-      // TODO!: for now, let's handle only one name
+      // TODO: Handle multiple names
       const firstCommitment = regData.names[0];
 
-      // validate owner matches signer - safety
+      // Validate owner matches signer
       if (firstCommitment.owner !== regData.selectedWallet) {
         console.error("Owner/signer mismatch detected", {
           owner: firstCommitment.owner,
@@ -100,13 +95,13 @@ export async function confirmCommit(
 
         await handler.sendMessage(
           channelId,
-          "Internal error: Wallet mismatch detected. Please start registratioin again",
-          { threadId: validThreadId },
+          "Internal error: Wallet mismatch detected. Please start registration again",
+          { threadId },
         );
 
-        await clearPendingRegistration(userId);
+        // ✅ Use new API for cleanup
+        await clearActiveFlow(userId, threadId);
         await clearUserPendingCommand(userId);
-
         return;
       }
 
@@ -123,17 +118,15 @@ export async function confirmCommit(
           id: commitmentId,
           title: `Commit ENS Registration: ${firstCommitment.name}`,
           tx: {
-            chainId: REGISTRATION.CHAIN_ID.toString(), // Mainnet
+            chainId: REGISTRATION.CHAIN_ID.toString(),
             to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
             value: "0",
             data: commitData,
-            signerWallet: registration.data.selectedWallet || undefined,
+            signerWallet: regData.selectedWallet || undefined,
           },
           recipient: userId as `0x${string}`,
         },
-        {
-          threadId: validThreadId,
-        },
+        { threadId },
       );
 
       return;
