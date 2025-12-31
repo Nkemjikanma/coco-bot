@@ -1,12 +1,12 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { OnInteractionEventType } from "../types";
+import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
 import {
-  clearPendingRegistration,
-  clearUserPendingCommand,
-  getPendingRegistration,
-  UserState,
-} from "../../../db/userStateStore";
-import { clearBridge } from "../../../db/bridgeStore";
+  clearActiveFlow,
+  getActiveFlow,
+  isRegistrationFlow,
+  updateFlowStatus,
+} from "../../../db";
 
 export async function registerTransaction(
   handler: BotHandler,
@@ -17,24 +17,39 @@ export async function registerTransaction(
   },
   userState: UserState,
 ) {
-  const { userId, eventId, channelId, threadId } = event;
-  const registration = await getPendingRegistration(userId);
-  const validThreadId = userState?.activeThreadId ?? threadId;
+  const { userId, channelId } = event;
+  const threadId = event.threadId || event.eventId;
 
-  if (!registration.success || !registration.data) {
+  const flowResult = await getActiveFlow(userId, threadId);
+
+  if (!flowResult.success) {
     await handler.sendMessage(
       channelId,
-      "Something went wrong retrieving your registration data.",
-      { threadId: validThreadId || undefined },
+      `Something went wrong: ${flowResult.error}. Please start again.`,
+      { threadId },
     );
     return;
   }
 
+  if (!isRegistrationFlow(flowResult.data)) {
+    await handler.sendMessage(
+      channelId,
+      `Invalid flow type. Expected registration flow. Please start again.`,
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
+
+  const flow = flowResult.data;
+  const regData = flow.data;
   // TODO: Multiple names fix?
-  const regData = registration.data;
   const registeredName = regData.names[0].name;
 
   if (tx.txHash) {
+    // ✅ Update status to complete
+    await updateFlowStatus(userId, threadId, "complete");
+
     // Registration complete!
     await handler.sendMessage(
       channelId,
@@ -42,7 +57,7 @@ export async function registerTransaction(
 
 **${registeredName}** is now yours!
 
-📝 **Transaction Details**
+🔗 **Transaction Details**
 └─ Tx: ${tx.txHash}
 
 **What's Next?**
@@ -55,12 +70,12 @@ Welcome to ENS! 🚀`,
     );
 
     // Clean up
-    await clearPendingRegistration(userId);
+    await clearActiveFlow(userId, threadId);
     await clearUserPendingCommand(userId);
-    if (validThreadId) {
-      await clearBridge(userId, validThreadId);
-    }
   } else {
+    // ✅ Update status to failed
+    await updateFlowStatus(userId, threadId, "failed");
+
     await handler.sendMessage(
       channelId,
       `❌ **Registration Failed**
@@ -76,12 +91,8 @@ Would you like to try again? Use \`/register ${registeredName}\``,
       { threadId },
     );
 
-    await clearPendingRegistration(userId);
+    await clearActiveFlow(userId, threadId);
     await clearUserPendingCommand(userId);
-
-    if (validThreadId) {
-      await clearBridge(userId, validThreadId);
-    }
   }
 
   return;

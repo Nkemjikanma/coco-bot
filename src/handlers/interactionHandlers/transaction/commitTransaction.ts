@@ -10,6 +10,13 @@ import {
 import { estimateRegisterGas } from "../../../services/ens/ens";
 import { formatEther, hexToBytes } from "viem";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
+import {
+  clearActiveFlow,
+  getActiveFlow,
+  isRegistrationFlow,
+  updateFlowData,
+  updateFlowStatus,
+} from "../../../db";
 
 export async function commitTransaction(
   handler: BotHandler,
@@ -20,16 +27,38 @@ export async function commitTransaction(
   },
   userState: UserState,
 ) {
-  const { userId, eventId, channelId, threadId } = event;
-  const validThreadId = userState?.activeThreadId ?? threadId;
+  const { userId, channelId } = event;
+  const threadId = event.threadId || event.eventId;
+
+  const flowResult = await getActiveFlow(userId, threadId);
+
+  if (!flowResult.success) {
+    await handler.sendMessage(
+      channelId,
+      `Something went wrong: ${flowResult.error}. Please start again.`,
+      { threadId },
+    );
+    return;
+  }
+
+  if (!isRegistrationFlow(flowResult.data)) {
+    await handler.sendMessage(
+      channelId,
+      `Invalid flow type. Expected registration flow. Please start again.`,
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
 
   if (tx.txHash) {
     // Update registration with tx hash and timestamp
-    await updatePendingRegistration(event.userId, {
-      phase: "awaiting_register_confirmation",
+    await updateFlowData(userId, threadId, {
       commitTxHash: tx.txHash as `0x${string}`,
       commitTimestamp: Date.now(),
     });
+
+    await updateFlowStatus(userId, threadId, "step1_complete");
 
     await handler.sendMessage(
       channelId,
@@ -38,14 +67,14 @@ export async function commitTransaction(
     );
 
     // Start the wait timer
-    startCommitWaitTimer(handler, channelId, userId, validThreadId);
-  } else if (!tx.txHash) {
+    startCommitWaitTimer(handler, channelId, userId, threadId);
+  } else {
     await handler.sendMessage(
       channelId,
       "❌ Commit transaction failed. Please try again.",
       { threadId },
     );
-    await clearPendingRegistration(userId);
+    await clearActiveFlow(userId, threadId);
     await clearUserPendingCommand(userId);
   }
   return;
@@ -55,31 +84,41 @@ function startCommitWaitTimer(
   handler: BotHandler,
   channelId: string,
   userId: string,
-  threadId?: string,
+  threadId: string,
 ) {
   // Wait 65 seconds to be safe (ENS requires 60 seconds)
   const waitTime = 65 * 1000;
 
   setTimeout(async () => {
     try {
-      const registration = await getPendingRegistration(userId);
+      const flowResult = await getActiveFlow(userId, threadId);
 
-      if (!registration.success || !registration.data) {
+      if (!flowResult.success) {
         // Registration was cancelled or expired
         return;
       }
 
-      if (registration.data.phase !== "awaiting_register_confirmation") {
-        // Not in the right phase
+      if (!isRegistrationFlow(flowResult.data)) {
+        // Not a registration flow
         return;
       }
 
-      const commitment = registration.data.names[0];
+      const flow = flowResult.data;
+      const regData = flow.data;
+
+      // ✅ Check status instead of phase
+      if (flow.status !== "step1_complete") {
+        // Not in the right status
+        return;
+      }
+
+      // ✅ Access names from regData (flow.data)
+      const commitment = regData.names[0];
 
       // Estimate register gas with actual values from stored commitment
       const gasEstimate = await estimateRegisterGas({
         account: commitment.owner,
-        label: commitment.name.replace(/\.eth$/, ""), // Removing .eth suffix
+        label: commitment.name.replace(/\.eth$/, ""),
         owner: commitment.owner,
         durationSec: commitment.durationSec,
         secret: commitment.secret,
@@ -90,15 +129,18 @@ function startCommitWaitTimer(
         value: commitment.domainPriceWei,
       });
 
-      // update registration
-      await updatePendingRegistration(userId, {
+      // ✅ Use new API to update flow data
+      await updateFlowData(userId, threadId, {
         costs: {
-          ...registration.data.costs,
+          ...regData.costs,
           registerGasWei: gasEstimate.gasWei,
           registerGasEth: gasEstimate.gasEth,
-          isRegisterEstimate: false, // Now it's accurate
+          isRegisterEstimate: false,
         },
       });
+
+      // ✅ Update status to awaiting register confirmation
+      await updateFlowStatus(userId, threadId, "step2_pending");
 
       // Calculate total remaining cost
       const remainingCost = commitment.domainPriceWei + gasEstimate.gasWei;

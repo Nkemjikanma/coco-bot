@@ -1,21 +1,6 @@
-import {
-  getSmartAccountFromUserId,
-  makeTownsBot,
-  type BotHandler,
-  Bot,
-  BotCommand,
-} from "@towns-protocol/bot";
+import { getSmartAccountFromUserId, makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
-import {
-  clearUserPendingCommand,
-  getUserState,
-  sessionExists,
-  getPendingRegistration,
-  clearPendingRegistration,
-  updatePendingRegistration,
-  getBridgeState,
-  updateBridgeState,
-} from "./db";
+import { getUserState, getActiveFlow } from "./db";
 import { handleOnMessage, handleSlashCommand } from "./handlers";
 
 import {
@@ -29,11 +14,8 @@ import {
   bridgeTransaction,
   commitTransaction,
   registerTransaction,
-  testBridgeTransaction,
 } from "./handlers/interactionHandlers/transaction";
 import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
-import { testBridge } from "./services/bridge/testBridge";
-import { SpaceAddressFromSpaceId } from "@towns-protocol/web3";
 import { CocoBotType } from "./types";
 import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 
@@ -61,57 +43,15 @@ const cocoCommands = [
   "history",
   "remind",
   "watch",
-  "test_bridge",
 ] as const;
 
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {
-    if (command === "test_bridge") {
-      return;
-      // const { channelId, userId, args } = event;
-      // const threadId = event.threadId ?? event.eventId;
-      // // Get amount from args, default to 0.001 ETH
-      // const amountEth = args[0] || "0.001";
-      // // Validate amount
-      // const amount = parseFloat(amountEth);
-      // if (isNaN(amount) || amount <= 0) {
-      //   await handler.sendMessage(
-      //     channelId,
-      //     `❌ Invalid amount. Usage: /test_bridge 0.01`,
-      //     { threadId },
-      //   );
-      //   return;
-      // }
-      // // Get user's wallet
-      // const userWallet = await getSmartAccountFromUserId(bot, { userId });
-      // if (!userWallet) {
-      //   await handler.sendMessage(
-      //     channelId,
-      //     `❌ Couldn't get your wallet address.`,
-      //     { threadId },
-      //   );
-      //   return;
-      // }
-      // await handler.sendMessage(
-      //   channelId,
-      //   `🌉 Starting bridge test for ${amountEth} ETH...\n\nWallet: ${userWallet}`,
-      //   { threadId },
-      // );
-      // await testBridge(
-      //   handler,
-      //   channelId,
-      //   threadId,
-      //   userId,
-      //   userWallet,
-      //   amountEth,
-      // );
-    }
     await handleSlashCommand(handler, event);
   });
 }
 
 bot.onMessage(async (handler, event) => {
-  // if message is from bot, ignore
   if (event.userId === bot.botId) return;
 
   const shouldRespond = await shouldRespondToMessage(event);
@@ -125,7 +65,7 @@ bot.onMessage(async (handler, event) => {
     ) {
       await handler.sendMessage(
         event.channelId,
-        "You sent an empty messsage ser",
+        "You sent an empty message ser",
         {
           threadId: event.threadId || event.eventId,
         },
@@ -138,8 +78,8 @@ bot.onMessage(async (handler, event) => {
 
 bot.onInteractionResponse(async (handler, event) => {
   const { userId, response, channelId, threadId, eventId } = event;
+  const validThreadId = threadId || eventId;
 
-  // TOP-LEVEL LOGGING: Log ALL interaction responses
   console.log("========================================");
   console.log("🔔 INTERACTION RESPONSE RECEIVED");
   console.log("========================================");
@@ -148,192 +88,119 @@ bot.onInteractionResponse(async (handler, event) => {
   console.log("Channel ID:", channelId);
   console.log("Thread ID:", threadId);
   console.log("Event ID:", eventId);
+
   if (response.payload.content.case === "transaction") {
     const tx = response.payload.content.value;
     console.log("📝 TRANSACTION RESPONSE:");
-    console.log(" Request ID:", tx.requestId);
-    console.log(" TX Hash:", tx.txHash);
-    console.log(" TX Hash exists:", !!tx.txHash);
-    console.log(" TX Hash length:", tx.txHash?.length);
+    console.log("  Request ID:", tx.requestId);
+    console.log("  TX Hash:", tx.txHash);
   }
   console.log("========================================\n");
-
-  const userState = await getUserState(userId);
-
-  // if (response.payload.content.case === "transaction") {
-  //   const tx = response.payload.content.value;
-  //   if (tx.requestId.startsWith("test_bridge:")) {
-  //     await testBridgeTransaction(handler, event, tx);
-  //   }
-  // }
-
-  console.log("🔍 USER STATE CHECK:");
-  console.log("  userState exists:", !!userState);
-  console.log("  pendingCommand exists:", !!userState?.pendingCommand);
-  console.log(
-    "  pendingCommand:",
-    JSON.stringify(userState?.pendingCommand, null, 2),
-  );
 
   switch (response.payload.content.case) {
     case "transaction": {
       const tx = response.payload.content.value;
 
-      // ENHANCED LOGGING: Transaction response details
       console.log("=== TRANSACTION RESPONSE IN BOT.TS ===");
-      console.log(
-        "Response payload content case:",
-        response.payload.content.case,
-      );
-      console.log("Extracted tx object:", JSON.stringify(tx, null, 2));
-      console.log("Transaction fields:", {
-        requestId: tx.requestId,
-        txHash: tx.txHash,
-        txHashExists: "txHash" in tx,
-        txHashType: typeof tx.txHash,
-        txHashValue: tx.txHash,
-      });
-      console.log("Full response structure:", {
-        payload: {
-          content: {
-            case: response.payload.content.case,
-            value: response.payload.content.value,
-          },
-        },
-      });
+      console.log("Request ID:", tx.requestId);
+      console.log("TX Hash:", tx.txHash);
       console.log("======================================");
-
-      // Check if this is a commit transaction
-      if (tx.requestId.startsWith("commit:")) {
-        if (!userState?.pendingCommand) {
-          console.log(
-            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
-          );
-          await handler.sendMessage(
-            channelId,
-            "Sorry, I lost track of what we were doing. Please start again.",
-            {
-              threadId,
-            },
-          );
-
-          return;
-        }
-        await commitTransaction(handler, event, tx, userState);
-
-        return;
-      }
-
-      if (tx.requestId.startsWith("bridge:")) {
-        if (!userState?.pendingCommand) {
-          console.log(
-            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
-          );
-          await handler.sendMessage(
-            channelId,
-            "Sorry, I lost track of what we were doing. Please start again.",
-            {
-              threadId,
-            },
-          );
-
-          return;
-        }
-        await bridgeTransaction(handler, event, tx, userState);
-
-        return;
-      }
-
-      // Handle register transaction
-      if (tx.requestId.startsWith("register:")) {
-        if (!userState?.pendingCommand) {
-          console.log(
-            "❌ EARLY EXIT: No pending command, returning before transaction handling!",
-          );
-          await handler.sendMessage(
-            channelId,
-            "Sorry, I lost track of what we were doing. Please start again.",
-            {
-              threadId,
-            },
-          );
-
-          return;
-        }
-        await registerTransaction(handler, event, tx, userState);
-
-        return;
-      }
 
       if (
         tx.requestId.startsWith("subdomain_step1:") ||
         tx.requestId.startsWith("subdomain_step2:")
       ) {
-        console.log("🔀 Routing to subdomain transaction handler");
+        console.log("📤 Routing to subdomain transaction handler");
         await handleSubdomainTransaction(handler, event, tx);
         return;
       }
 
+      //  check for state (either pendingCommand or activeFlow)
+      const userState = await getUserState(userId);
+      const flowResult = await getActiveFlow(userId, validThreadId);
+
+      const hasState = userState?.pendingCommand || flowResult.success;
+
+      if (!hasState) {
+        console.log("❌ EARLY EXIT: No pending command or active flow!");
+        await handler.sendMessage(
+          channelId,
+          "Sorry, I lost track of what we were doing. Please start again.",
+          { threadId: validThreadId },
+        );
+        return;
+      }
+
+      // Handle commit transaction
+      if (tx.requestId.startsWith("commit:")) {
+        await commitTransaction(handler, event, tx, userState!);
+        return;
+      }
+
+      // Handle bridge transaction
+      if (tx.requestId.startsWith("bridge:")) {
+        await bridgeTransaction(handler, event, tx, userState!);
+        return;
+      }
+
+      // Handle register transaction
+      if (tx.requestId.startsWith("register:")) {
+        await registerTransaction(handler, event, tx, userState!);
+        return;
+      }
+
+      console.log("⚠️ Unknown transaction type:", tx.requestId);
       break;
     }
 
     case "form": {
+      const userState = await getUserState(userId);
+
       if (!userState?.pendingCommand) {
-        console.log(
-          "❌ EARLY EXIT: No pending command, returning before transaction handling!",
-        );
+        console.log("❌ EARLY EXIT: No pending command for form response!");
         await handler.sendMessage(
           channelId,
           "Sorry, I lost track of what we were doing. Please start again.",
-          {
-            threadId,
-          },
+          { threadId: validThreadId },
         );
-
         return;
       }
 
       const form = response.payload.content.value;
 
       if (form.requestId.startsWith("confirm_commit")) {
-        const confirmForm = form.requestId.startsWith("confirm_commit") && form;
-        await confirmCommit(handler, event, confirmForm, userState!);
-
+        await confirmCommit(handler, event, form, userState);
         return;
       }
 
       if (form.requestId.startsWith("duration_form")) {
-        const durationForForm =
-          form.requestId.startsWith("duration_form") && form;
-        await durationForm(handler, event, durationForForm, userState!);
+        await durationForm(handler, event, form, userState);
         return;
       }
 
       if (form.requestId.startsWith("confirm_register")) {
-        const confirmForRegister =
-          form.requestId.startsWith("confirm_register") && form;
-
-        await confirmRegister(handler, event, confirmForRegister, userState!);
+        await confirmRegister(handler, event, form, userState);
         return;
       }
 
       if (form.requestId.startsWith("continue_after_bridge")) {
-        const bridgeForm =
-          form.requestId.startsWith("continue_after_bridge") && form;
-
-        await continueAfterBridge(handler, event, bridgeForm, userState!);
+        await continueAfterBridge(handler, event, form, userState);
         return;
       }
 
       if (form.requestId.startsWith("wallet_select:")) {
-        const walletSelectForm =
-          form.requestId.startsWith("wallet_select") && form;
-
-        await walletSelection(handler, event, walletSelectForm, userState!);
-
+        await walletSelection(handler, event, form, userState);
         console.log("Bot.ts: ‼️ We have passed to wallet select");
         return;
       }
+
+      if (form.requestId.startsWith("bridge:")) {
+        // Bridge confirmation form - route to wallet selection or bridge handler
+        await walletSelection(handler, event, form, userState);
+        return;
+      }
+
+      console.log("⚠️ Unknown form type:", form.requestId);
       break;
     }
 

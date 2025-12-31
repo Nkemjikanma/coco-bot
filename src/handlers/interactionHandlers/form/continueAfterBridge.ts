@@ -14,6 +14,13 @@ import { encodeCommitData, prepareRegistration } from "../../../services/ens";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
 import { clearBridge } from "../../../db/bridgeStore";
 import { RegisterCommand } from "../../../types";
+import {
+  clearActiveFlow,
+  getActiveFlow,
+  isRegistrationFlow,
+  updateFlowData,
+  updateFlowStatus,
+} from "../../../db";
 
 export async function continueAfterBridge(
   handler: BotHandler,
@@ -21,10 +28,34 @@ export async function continueAfterBridge(
   bridgeForm: FormCase,
   userState: UserState,
 ) {
-  const { userId, channelId, threadId } = event;
-  let registrationResult = await getPendingRegistration(userId);
+  const { userId, channelId } = event;
 
-  const validThreadId = userState.activeThreadId ?? event.threadId ?? channelId;
+  const threadId = event.threadId || event.eventId;
+
+  const flowResult = await getActiveFlow(userId, threadId);
+
+  // Check if flow exists
+  if (!flowResult.success) {
+    await handler.sendMessage(
+      channelId,
+      `Something went wrong: ${flowResult.error}. Please start again.`,
+      { threadId },
+    );
+    return;
+  }
+
+  if (!isRegistrationFlow(flowResult.data)) {
+    await handler.sendMessage(
+      channelId,
+      `Invalid flow type. Expected registration flow. Please start again.`,
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
+
+  const flow = flowResult.data;
+  let regData = flow.data;
 
   if (!bridgeForm) {
     return;
@@ -32,14 +63,11 @@ export async function continueAfterBridge(
 
   for (const component of bridgeForm.components) {
     if (component.component.case === "button" && component.id === "cancel") {
-      await clearPendingRegistration(userId);
+      await clearActiveFlow(userId, threadId);
       await clearUserPendingCommand(userId);
-      if (validThreadId) {
-        await clearBridge(userId, validThreadId);
-      }
 
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-        threadId: validThreadId || undefined,
+        threadId,
       });
       return;
     }
@@ -52,21 +80,10 @@ export async function continueAfterBridge(
         await handler.sendMessage(
           channelId,
           "Lost track of your registration. Please start again.",
-          { threadId: validThreadId || undefined },
+          { threadId },
         );
         return;
       }
-
-      if (!registrationResult.success || !registrationResult.data) {
-        await handler.sendMessage(
-          channelId,
-          "Registration data expired. Please start again.",
-          { threadId: validThreadId || undefined },
-        );
-        return;
-      }
-
-      let regData = registrationResult.data;
 
       // Re-check L1 balance
       const selectedWallet = regData.selectedWallet!;
@@ -80,7 +97,7 @@ export async function continueAfterBridge(
             `**Current L1 Balance:** ${formatEther(l1Balance.balance)} ETH\n` +
             `**Required:** ~${formatEther(requiredAmount)} ETH\n\n` +
             `Bridging can take 10-20 minutes. Please wait and try again.`,
-          { threadId: validThreadId || undefined },
+          { threadId },
         );
 
         // Send another continue button
@@ -88,7 +105,7 @@ export async function continueAfterBridge(
           channelId,
           {
             type: "form",
-            id: `continue_after_bridge:${validThreadId}`,
+            id: `continue_after_bridge:${threadId}`,
             title: "Check Balance & Continue",
             components: [
               {
@@ -104,7 +121,7 @@ export async function continueAfterBridge(
             ],
             recipient: userId as `0x${string}`,
           },
-          { threadId: validThreadId },
+          { threadId },
         );
         return;
       }
@@ -115,10 +132,9 @@ export async function continueAfterBridge(
         `✅ **Balance Confirmed!**\n\n` +
           `L1 Balance: ${formatEther(l1Balance.balance)} ETH\n\n` +
           `Proceeding with registration...`,
-        { threadId: validThreadId || undefined },
+        { threadId },
       );
 
-      // ✅ FIX: Validate that commitment exists AND owner matches selected wallet
       const command = partialCommand as RegisterCommand;
       const needsNewCommitment =
         !regData.names ||
@@ -142,15 +158,15 @@ export async function continueAfterBridge(
         try {
           const freshReg = await prepareRegistration({
             names: command.names,
-            owner: selectedWallet, // ✅ Use the selected wallet!
+            owner: selectedWallet,
             durationYears: command.duration || 1,
           });
 
-          await updatePendingRegistration(userId, {
+          await updateFlowData(userId, threadId, {
             ...freshReg,
             selectedWallet,
-            phase: "commit_pending",
           });
+          await updateFlowStatus(userId, threadId, "step1_pending");
 
           // Update local reference
           regData = { ...regData, ...freshReg, selectedWallet };
@@ -170,7 +186,7 @@ export async function continueAfterBridge(
           await handler.sendMessage(
             channelId,
             "❌ Failed to prepare registration. Please try again.",
-            { threadId: validThreadId || undefined },
+            { threadId },
           );
           return;
         }
@@ -192,7 +208,7 @@ export async function continueAfterBridge(
         await handler.sendMessage(
           channelId,
           "❌ Failed to generate commitment. Please start again.",
-          { threadId: validThreadId || undefined },
+          { threadId },
         );
         return;
       }
@@ -209,7 +225,7 @@ export async function continueAfterBridge(
         await handler.sendMessage(
           channelId,
           "❌ Registration error: wallet mismatch. Please start again.",
-          { threadId: validThreadId || undefined },
+          { threadId },
         );
         return;
       }
@@ -217,9 +233,7 @@ export async function continueAfterBridge(
       const commitData = encodeCommitData(firstCommitment.commitment);
       const commitmentId = `commit:${userId}:${Date.now()}`;
 
-      await updatePendingRegistration(userId, {
-        phase: "commit_pending",
-      });
+      await updateFlowStatus(userId, threadId, "step1_pending");
 
       console.log("continueAfterBridge: Sending commit transaction");
       console.log(`  Domain: ${firstCommitment.name}`);
@@ -237,12 +251,12 @@ export async function continueAfterBridge(
             to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
             value: "0",
             data: commitData,
-            signerWallet: selectedWallet, // ✅ Use selected wallet
+            signerWallet: selectedWallet,
           },
           recipient: userId as `0x${string}`,
         },
         {
-          threadId: validThreadId,
+          threadId,
         },
       );
       return;

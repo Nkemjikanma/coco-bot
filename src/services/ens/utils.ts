@@ -20,7 +20,11 @@ import type {
   PortfolioData,
 } from "../../api";
 import { ENS_VALIDATION } from "./constants";
-import { clearPendingRegistration, clearUserPendingCommand } from "../../db";
+import {
+  clearActiveFlow,
+  clearAllUserFlows,
+  clearUserPendingCommand,
+} from "../../db";
 import { clearBridge } from "../../db/bridgeStore";
 /**
  * Normalizes and validates an ENS domain name
@@ -255,8 +259,7 @@ export async function clearAllUserState(
   threadId: string,
 ): Promise<void> {
   await Promise.all([
-    clearBridge(userId, threadId),
-    clearPendingRegistration(userId),
+    clearAllUserFlows(userId),
     clearUserPendingCommand(userId),
   ]);
 }

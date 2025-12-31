@@ -15,6 +15,13 @@ import { proceedWithRegistration } from "../../handle_message";
 import { formatEther } from "viem";
 import { handleBridging } from "../../../services/bridge/bridgeUtils";
 import { prepareRegistration } from "../../../services/ens"; // ✅ ADD THIS IMPORT
+import {
+  clearActiveFlow,
+  getActiveFlow,
+  isRegistrationFlow,
+  updateActiveFlow,
+  updateFlowData,
+} from "../../../db";
 
 export async function walletSelection(
   handler: BotHandler,
@@ -22,9 +29,8 @@ export async function walletSelection(
   walletForm: FormCase,
   userState: UserState,
 ) {
-  const { userId, channelId, threadId, eventId } = event;
-
-  const validThreadId = threadId ?? userState.activeThreadId ?? eventId;
+  const { userId, channelId } = event;
+  const threadId = event.threadId || event.eventId;
 
   if (!walletForm) {
     return;
@@ -33,10 +39,10 @@ export async function walletSelection(
   for (const component of walletForm.components) {
     if (component.component.case === "button") {
       if (component.id === "cancel") {
-        await clearPendingRegistration(userId);
+        await clearActiveFlow(userId, threadId);
         await clearUserPendingCommand(userId);
         await handler.sendMessage(channelId, "Registration cancelled. 👋", {
-          threadId: validThreadId,
+          threadId,
         });
         return;
       }
@@ -44,31 +50,44 @@ export async function walletSelection(
       if (component.id.startsWith("wallet_")) {
         const walletAddress = component.id.split(":")[1] as `0x${string}`;
 
-        const registration = await getPendingRegistration(userId);
-        const userState = await getUserState(userId);
+        const flowResult = await getActiveFlow(userId, threadId);
+        const currentUserState = await getUserState(userId); // ✅ Renamed to avoid shadowing
 
-        if (!registration.success || !registration.data) {
+        if (!flowResult.success) {
           await handler.sendMessage(
             channelId,
             "Registration data expired. Please start again.",
-            { threadId: validThreadId },
+            { threadId },
           );
           return;
         }
 
-        if (!userState?.pendingCommand?.partialCommand) {
+        if (!currentUserState?.pendingCommand?.partialCommand) {
           await handler.sendMessage(
             channelId,
             "Session expired. Please start again.",
-            { threadId: validThreadId },
+            { threadId },
           );
           return;
         }
 
-        const command = userState.pendingCommand
+        if (!isRegistrationFlow(flowResult.data)) {
+          await handler.sendMessage(
+            channelId,
+            `Invalid flow type. Expected registration flow. Please start again.`,
+            { threadId },
+          );
+          await clearActiveFlow(userId, threadId);
+          return;
+        }
+
+        const flow = flowResult.data;
+        const regData = flow.data;
+
+        const command = currentUserState.pendingCommand
           .partialCommand as RegisterCommand;
-        const walletCheck = registration.data.walletCheckResult;
-        const requiredAmount = registration.data.grandTotalWei;
+        const walletCheck = regData.walletCheckResult;
+        const requiredAmount = regData.grandTotalWei;
 
         // Find the selected wallet's info
         const selectedWalletInfo = walletCheck?.wallets.find(
@@ -79,24 +98,23 @@ export async function walletSelection(
           await handler.sendMessage(
             channelId,
             "Wallet not found. Please try again.",
-            { threadId: validThreadId },
+            { threadId },
           );
           return;
         }
 
         // Check if L1 has enough
         if (selectedWalletInfo.l1Balance >= requiredAmount) {
-          // Proceed with registration
           await handler.sendMessage(
             channelId,
             `✅ Selected wallet: ${formatAddress(walletAddress)}`,
-            { threadId: validThreadId },
+            { threadId },
           );
 
           await proceedWithRegistration(
             handler,
             channelId,
-            validThreadId,
+            threadId,
             userId,
             command,
             walletAddress,
@@ -112,10 +130,9 @@ export async function walletSelection(
             channelId,
             `🌉 Selected wallet: ${formatAddress(walletAddress)}\n\n` +
               `This wallet needs to bridge ETH from Base to Mainnet.`,
-            { threadId: validThreadId },
+            { threadId },
           );
 
-          // ✅ FIX: Prepare fresh registration with the CORRECT owner (selected wallet)
           console.log(
             "walletSelection: Preparing registration with correct owner:",
             walletAddress,
@@ -124,12 +141,12 @@ export async function walletSelection(
           try {
             const freshRegistration = await prepareRegistration({
               names: command.names,
-              owner: walletAddress, // ✅ Use the selected wallet!
+              owner: walletAddress,
               durationYears: command.duration,
             });
 
-            // Update registration with FULL prepared data including commitment
-            await updatePendingRegistration(userId, {
+            // ✅ Use updateFlowData to update the data inside the flow
+            await updateFlowData(userId, threadId, {
               ...freshRegistration,
               selectedWallet: walletAddress,
             });
@@ -139,24 +156,22 @@ export async function walletSelection(
               freshRegistration.names[0]?.owner,
             );
 
-            // Update pending command state
             await setUserPendingCommand(
               userId,
-              validThreadId,
+              threadId,
               channelId,
               command,
               "bridge_confirmation",
             );
 
-            // Pass the fresh registration to handleBridging
             await handleBridging(
               handler,
               selectedWalletInfo.address,
               channelId,
-              validThreadId,
+              threadId,
               userId,
               {
-                ...registration.data,
+                ...regData,
                 ...freshRegistration,
                 selectedWallet: walletAddress,
               },
@@ -173,7 +188,7 @@ export async function walletSelection(
             await handler.sendMessage(
               channelId,
               "❌ Failed to prepare registration. Please try again.",
-              { threadId: validThreadId },
+              { threadId },
             );
             return;
           }
@@ -188,7 +203,7 @@ export async function walletSelection(
             `• Base: ${Number(selectedWalletInfo.l2BalanceEth).toFixed(4)} ETH\n\n` +
             `**Required:** ~${formatEther(requiredAmount)} ETH\n\n` +
             `Please select a different wallet or fund this one.`,
-          { threadId: validThreadId },
+          { threadId },
         );
 
         return;
