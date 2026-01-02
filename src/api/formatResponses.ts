@@ -300,20 +300,20 @@ Get started with \` /register <name> <years>\`
   const displayNames = names
     .map((name) => {
       if (name.isExpired) {
-        return `❌ ${name.name} - IS EXPIRED`;
+        return `❌ ${name.name} - IS EXPIRED \n\n`;
       }
 
       if (daysFromNow(name.expiryDate) < 60) {
-        return `⚠️ ${name.name} — expires ${formatDate(name.expiryDate)} (${daysFromNow(name.expiryDate)} days!)`;
+        return `⚠️ ${name.name} — expires ${formatDate(name.expiryDate)} (${daysFromNow(name.expiryDate)} days!) \n\n`;
       }
 
       if (name.isPrimary) {
-        return ` ✅ ${name.name} — expires ${formatDate(name.expiryDate)} ⭐ Primary`;
+        return ` ✅ ${name.name} — expires ${formatDate(name.expiryDate)} ⭐ Primary \n\n`;
       }
 
-      return ` ✅ ${name.name} — expires ${formatDate(name.expiryDate)}`;
+      return ` ✅ ${name.name} — expires ${formatDate(name.expiryDate)} \n\n`;
     })
-    .join("\n");
+    .join("\n\n");
   return `
 📂 **Portfolio for ${formatAddress(address)}**
 
@@ -323,7 +323,7 @@ Get started with \` /register <name> <years>\`
 
 ${displayNames}
 
-⚠️ ${expiringSoon < 1 ? "" : `${expiringSoon} name expiring soon!`}
+⚠️ ${expiringSoon < 1 ? "" : `${expiringSoon} name expiring soon! \n\n`}
 
 `;
 }

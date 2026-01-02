@@ -58,7 +58,12 @@ export function validate_parse(
       return validateSetCommand(names, fields.records);
 
     case "portfolio":
-      return validatePortfolioCommand(address, fields.options, names);
+      return validatePortfolioCommand(
+        address,
+        fields.options,
+        names,
+        fields.recipient,
+      );
 
     case "expiry":
       return validateExpiryCommand(names);
@@ -361,31 +366,32 @@ function validateSetCommand(
 }
 
 function validatePortfolioCommand(
-  address: string,
+  address: unknown,
   options: unknown,
-  names: string[],
+  names?: string[],
+  recipient?: unknown,
 ): ValidationResult {
   const opts = typeof options === "object" && options !== null ? options : {};
 
-  let resolvedAddress = address;
-  if (
-    (!resolvedAddress || typeof resolvedAddress !== "string") &&
-    names &&
-    names.length > 0
-  ) {
-    // Check if names[0] is actually an address
-    if (isAddress(names[0])) {
-      resolvedAddress = names[0];
-    }
+  // Try to find address from multiple possible fields
+  let resolvedAddress: string | undefined;
+
+  // Check address field first
+  if (typeof address === "string" && isAddress(address)) {
+    resolvedAddress = address;
+  }
+  // Check recipient field (parser sometimes puts it here)
+  else if (typeof recipient === "string" && isAddress(recipient)) {
+    resolvedAddress = recipient;
+  }
+  // Check names array (parser sometimes puts it here)
+  else if (names && names.length > 0 && isAddress(names[0])) {
+    resolvedAddress = names[0];
   }
 
   console.log("Validate portfolio command", resolvedAddress);
 
-  if (
-    !resolvedAddress ||
-    typeof resolvedAddress !== "string" ||
-    !isAddress(resolvedAddress)
-  ) {
+  if (!resolvedAddress) {
     return {
       valid: false,
       needsClarification: true,
@@ -399,7 +405,7 @@ function validatePortfolioCommand(
     valid: true,
     command: {
       action: "portfolio",
-      address: resolvedAddress,
+      address: resolvedAddress as `0x${string}`,
 
       // options: opts as { batch?: boolean; filter?: "expiring" | "all" },
     },

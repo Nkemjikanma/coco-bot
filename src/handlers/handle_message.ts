@@ -192,7 +192,6 @@ export async function handleMessage(
           const pendingAction = pending.partialCommand?.action;
 
           if (pendingAction === "register") {
-            // ✅ Use new API
             const flowResult = await getActiveFlow(
               userId,
               elsewhereCheck.pendingThreadId!,
@@ -244,7 +243,28 @@ export async function handleMessage(
 
             return;
           }
+
+          // For other actions waiting for confirmation, just execute them
+          if (pending.partialCommand) {
+            await sendBotMessage(
+              handler,
+              channelId,
+              threadId,
+              userId,
+              "Great! Continuing here...",
+            );
+            await clearUserPendingCommand(userId);
+            await executeValidCommand(
+              handler,
+              channelId,
+              threadId,
+              userId,
+              pending.partialCommand as ParsedCommand,
+            );
+            return;
+          }
         }
+
         await sendBotMessage(
           handler,
           channelId,
@@ -757,14 +777,15 @@ export async function executeValidCommand(
   }
 
   if (command.action === "portfolio") {
-    if (command.address === null || !isAddress(command.address)) {
+    if (!command.address || !isAddress(command.address)) {
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        "Something went wrong and we can't figure out that address. Let's start again.",
+        "I need a valid wallet address to show the portfolio. Please provide an Ethereum address (0x...)",
       );
+      return;
     }
 
     const portfolioResult: PortfolioData | null = await getUserPorfolio(
