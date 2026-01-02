@@ -21,7 +21,7 @@ import {
   validateSubdomainParts,
 } from "./subdomain.utils";
 import { formatAddress } from "../../../utils";
-import { getActualOwner, verifyOwnership, verifyOwnership } from "../utils";
+import { getActualOwner, verifyOwnership } from "../utils";
 
 export class SubdomainService {
   private publicClient: PublicClient;
