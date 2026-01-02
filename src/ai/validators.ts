@@ -58,7 +58,7 @@ export function validate_parse(
       return validateSetCommand(names, fields.records);
 
     case "portfolio":
-      return validatePortfolioCommand(address, fields.options);
+      return validatePortfolioCommand(address, fields.options, names);
 
     case "expiry":
       return validateExpiryCommand(names);
@@ -363,15 +363,34 @@ function validateSetCommand(
 function validatePortfolioCommand(
   address: string,
   options: unknown,
+  names: string[],
 ): ValidationResult {
   const opts = typeof options === "object" && options !== null ? options : {};
 
-  if (!isAddress(address)) {
+  let resolvedAddress = address;
+  if (
+    (!resolvedAddress || typeof resolvedAddress !== "string") &&
+    names &&
+    names.length > 0
+  ) {
+    // Check if names[0] is actually an address
+    if (isAddress(names[0])) {
+      resolvedAddress = names[0];
+    }
+  }
+
+  console.log("Validate portfolio command", resolvedAddress);
+
+  if (
+    !resolvedAddress ||
+    typeof resolvedAddress !== "string" ||
+    !isAddress(resolvedAddress)
+  ) {
     return {
       valid: false,
       needsClarification: true,
       question:
-        "The address provided is not a valid wallet address. Let's try again",
+        "Which wallet address would you like to see the portfolio for? Please provide an Ethereum address (0x...)",
       partial: { action: "portfolio" },
     };
   }
@@ -380,7 +399,8 @@ function validatePortfolioCommand(
     valid: true,
     command: {
       action: "portfolio",
-      address: address,
+      address: resolvedAddress,
+
       // options: opts as { batch?: boolean; filter?: "expiring" | "all" },
     },
   };

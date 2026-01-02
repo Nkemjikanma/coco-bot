@@ -23,6 +23,10 @@ export const SEPOLIA_ENS_CONFIG = {
   } as const,
 };
 
+// NameWrapper contract address
+export const NAME_WRAPPER_ADDRESS =
+  "0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401";
+
 export const SUBGRAPH_API_KEY = process.env.SUBGRAPH;
 export const MAINNET_RPC_URL = process.env.MAINNET_RPC_URL;
 

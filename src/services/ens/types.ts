@@ -74,3 +74,9 @@ export interface ENSHistoryResult {
   totalRenewals: number;
   totalResolverChanges: number;
 }
+
+export interface OwnerInfo {
+  owner: `0x${string}` | null;
+  isWrapped: boolean;
+  error?: string;
+}

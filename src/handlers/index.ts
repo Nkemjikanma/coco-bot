@@ -7,6 +7,8 @@ import {
 } from "./handle_message";
 
 import { sendBotMessage } from "./handle_message_utils";
+import { handleRegisterCommand } from "./handleRegisterCommand";
+import { handleSubdomainCommand } from "./handleSubdomainCommand";
 export {
   executeValidCommand,
   handleSlashCommand,
@@ -14,4 +16,6 @@ export {
   handlePendingCommandResponse,
   sendBotMessage,
   proceedWithRegistration,
+  handleRegisterCommand,
+  handleSubdomainCommand,
 };

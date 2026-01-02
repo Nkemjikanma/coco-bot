@@ -76,6 +76,7 @@ import { CHAIN_IDS } from "../services/bridge";
 import { handleBridging } from "../services/bridge/bridgeUtils";
 import { handleSubdomainCommand } from "./handleSubdomainCommand";
 import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
+import { handleRegisterCommand } from "./handleRegisterCommand";
 
 type UnifiedEvent = {
   channelId: string;
@@ -188,59 +189,62 @@ export async function handleMessage(
         const pending = elsewhereCheck.pendingCommand;
 
         if (pending.waitingFor === "confirmation") {
-          // ✅ Use new API
-          const flowResult = await getActiveFlow(
-            userId,
-            elsewhereCheck.pendingThreadId!,
-          );
+          const pendingAction = pending.partialCommand?.action;
 
-          if (!flowResult.success || !isRegistrationFlow(flowResult.data)) {
+          if (pendingAction === "register") {
+            // ✅ Use new API
+            const flowResult = await getActiveFlow(
+              userId,
+              elsewhereCheck.pendingThreadId!,
+            );
+
+            if (!flowResult.success || !isRegistrationFlow(flowResult.data)) {
+              await sendBotMessage(
+                handler,
+                channelId,
+                threadId,
+                userId,
+                "Your registration data expired. Please start again with `/register`.",
+              );
+              await clearUserPendingCommand(userId);
+              return;
+            }
+
+            const message = getWaitingForMessage(pending);
             await sendBotMessage(
               handler,
               channelId,
               threadId,
               userId,
-              "Your registration data expired. Please start again with `/register`.",
+              `Great! Continuing here.\n\n${message}`,
             );
-            await clearUserPendingCommand(userId);
+
+            await handler.sendInteractionRequest(
+              channelId,
+              {
+                type: "form",
+                id: `confirm_commit:${threadId}`,
+                title: "Confirm Registration: Step 1 of 2",
+                components: [
+                  {
+                    id: "confirm",
+                    type: "button",
+                    label: "✅ Start Registration",
+                  },
+                  {
+                    id: "cancel",
+                    type: "button",
+                    label: "❌ Cancel",
+                  },
+                ],
+                recipient: userId as `0x${string}`,
+              },
+              { threadId },
+            );
+
             return;
           }
-
-          const message = getWaitingForMessage(pending);
-          await sendBotMessage(
-            handler,
-            channelId,
-            threadId,
-            userId,
-            `Great! Continuing here.\n\n${message}`,
-          );
-
-          await handler.sendInteractionRequest(
-            channelId,
-            {
-              type: "form",
-              id: `confirm_commit:${threadId}`,
-              title: "Confirm Registration: Step 1 of 2",
-              components: [
-                {
-                  id: "confirm",
-                  type: "button",
-                  label: "✅ Start Registration",
-                },
-                {
-                  id: "cancel",
-                  type: "button",
-                  label: "❌ Cancel",
-                },
-              ],
-              recipient: userId as `0x${string}`,
-            },
-            { threadId },
-          );
-
-          return;
         }
-
         await sendBotMessage(
           handler,
           channelId,
@@ -249,6 +253,18 @@ export async function handleMessage(
           "Great! Continuing here. " +
             getWaitingForMessage(elsewhereCheck.pendingCommand),
         );
+
+        if (pending.partialCommand) {
+          await clearUserPendingCommand(userId);
+          await executeValidCommand(
+            handler,
+            channelId,
+            threadId,
+            userId,
+            pending.partialCommand as ParsedCommand,
+          );
+          return;
+        }
         return;
       } else if (
         lowerContent.includes("start fresh") ||
@@ -334,6 +350,8 @@ export async function handleMessage(
       );
       return;
     }
+
+    console.log(parserResult.parsed);
 
     // Validate the parsed command
     const validation = validate_parse(parserResult.parsed, {
@@ -464,65 +482,84 @@ export async function handlePendingCommandResponse(
   }
 
   if (pending.waitingFor === "confirmation") {
-    if (lowerContent.includes("confirm") || lowerContent.includes("yes")) {
-      // ✅ Use new API
-      const flowResult = await getActiveFlow(userId, threadId);
+    const pendingAction = pending.partialCommand?.action;
 
-      if (!flowResult.success || !isRegistrationFlow(flowResult.data)) {
+    // Only handle registration confirmations specially
+    if (pendingAction === "register") {
+      if (lowerContent.includes("confirm") || lowerContent.includes("yes")) {
+        // ✅ Use new API
+        const flowResult = await getActiveFlow(userId, threadId);
+
+        if (!flowResult.success || !isRegistrationFlow(flowResult.data)) {
+          await sendBotMessage(
+            handler,
+            channelId,
+            threadId,
+            userId,
+            "Your registration data expired. Please start again.",
+          );
+          await clearUserPendingCommand(userId);
+          return;
+        }
+
+        const flow = flowResult.data;
+        const regData = flow.data;
+        const firstCommitment = regData.names[0];
+        const commitData = encodeCommitData(firstCommitment.commitment);
+        const commitmentId = `commit:${userId}:${Date.now()}`;
+
+        // ✅ Update flow status
+        await updateFlowStatus(userId, threadId, "step1_pending");
+
         await sendBotMessage(
           handler,
           channelId,
           threadId,
           userId,
-          "Your registration data expired. Please start again.",
+          "🚀 Starting registration...\n\nPlease approve the commit transaction.",
         );
-        await clearUserPendingCommand(userId);
+
+        await handler.sendInteractionRequest(
+          channelId,
+          {
+            type: "transaction",
+            id: commitmentId,
+            title: `Commit ENS Registration: ${firstCommitment.name}`,
+            tx: {
+              chainId: "1",
+              to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+              value: "0",
+              data: commitData,
+              signerWallet: regData.selectedWallet || undefined,
+            },
+            recipient: userId as `0x${string}`,
+          },
+          { threadId },
+        );
+
+        return;
+      } else {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "Please say **confirm** to proceed with the registration, or **cancel** to stop.",
+        );
         return;
       }
+    }
 
-      const flow = flowResult.data;
-      const regData = flow.data;
-      const firstCommitment = regData.names[0];
-      const commitData = encodeCommitData(firstCommitment.commitment);
-      const commitmentId = `commit:${userId}:${Date.now()}`;
-
-      // ✅ Update flow status
-      await updateFlowStatus(userId, threadId, "step1_pending");
-
-      await sendBotMessage(
+    // For non-registration actions waiting for confirmation,
+    // re-execute the command (it should be complete at this point)
+    if (pending.partialCommand) {
+      await clearUserPendingCommand(userId);
+      await executeValidCommand(
         handler,
         channelId,
         threadId,
         userId,
-        "🚀 Starting registration...\n\nPlease approve the commit transaction.",
-      );
-
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          type: "transaction",
-          id: commitmentId,
-          title: `Commit ENS Registration: ${firstCommitment.name}`,
-          tx: {
-            chainId: "1",
-            to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-            value: "0",
-            data: commitData,
-            signerWallet: regData.selectedWallet || undefined,
-          },
-          recipient: userId as `0x${string}`,
-        },
-        { threadId },
-      );
-
-      return;
-    } else {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "Please say **confirm** to proceed with the registration, or **cancel** to stop.",
+        pending.partialCommand as ParsedCommand,
       );
       return;
     }
@@ -828,340 +865,7 @@ async function handleExecution(
   }
 
   if (command.action === "register") {
-    const check = await checkAvailability(command.names);
-
-    // ✅ CLEANUP: Clear any stale state using new API
-    const existingState = await getUserState(userId);
-    const existingFlow = await hasAnyActiveFlow(userId);
-
-    if (existingState?.pendingCommand || existingFlow.hasFlow) {
-      console.log("Found existing state, clearing:", {
-        hasPendingCommand: !!existingState?.pendingCommand,
-        hasActiveFlow: existingFlow.hasFlow,
-        flowThreadId: existingFlow.threadId,
-      });
-
-      await clearUserPendingCommand(userId);
-      if (existingFlow.hasFlow && existingFlow.threadId) {
-        await clearActiveFlow(userId, existingFlow.threadId);
-      }
-      console.log("✅ State cleanup complete, starting fresh registration");
-    } else {
-      console.log(
-        "No existing state found, proceeding with fresh registration",
-      );
-    }
-
-    if (!check.success) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "Sorry, I couldn't check that name right now.",
-      );
-      return;
-    }
-
-    const takenNames = check.data.values.filter((n) => !n.isAvailable);
-    const availableNames = check.data.values.filter((n) => n.isAvailable);
-
-    if (takenNames.length > 0 && availableNames.length > 0) {
-      const taken = takenNames
-        .map((n) => {
-          return `**${n.name}** is registered to ${formatAddress(n.owner as string)}`;
-        })
-        .join("\n");
-
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        `**These names are already taken:**\n\n${taken}\n\nProceeding with available names...`,
-      );
-      command.names = availableNames.map((n) => n.name);
-    }
-
-    if (takenNames.length > 0 && availableNames.length === 0) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "❌ Sorry, all provided names are already registered.",
-      );
-      return;
-    }
-
-    if (!command.duration) {
-      const pendingCommandWithAvailableNames: RegisterCommand = {
-        ...command,
-        names: availableNames.map((n) => n.name),
-      };
-      await setUserPendingCommand(
-        userId,
-        threadId,
-        channelId,
-        pendingCommandWithAvailableNames,
-        determineWaitingFor(pendingCommandWithAvailableNames),
-      );
-
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "Duration hasn't been set for the names. ",
-      );
-
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          type: "form",
-          id: `duration_form:${threadId}`,
-          title: "Registration Duration",
-          components: [
-            {
-              id: "duration_text_field",
-              type: "textInput",
-              placeholder: "Enter years (1-10)...",
-            },
-            {
-              id: "confirm",
-              type: "button",
-              label: "Submit",
-            },
-            {
-              id: "cancel",
-              type: "button",
-              label: "Cancel",
-            },
-          ],
-          recipient: userId as `0x${string}`,
-        },
-        { threadId },
-      );
-      return;
-    }
-
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      "🔍 Checking your connected wallets...",
-    );
-
-    const filteredEOAs = await filterEOAs(userId as `0x${string}`);
-
-    if (filteredEOAs.length === 0) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "❌ **No EOA wallets found**\n\n" +
-          "ENS registration requires an Ethereum wallet (EOA) to sign transactions on Mainnet.\n\n" +
-          "Please connect an external wallet (like MetaMask) to your Towns account and try again.",
-      );
-      return;
-    }
-
-    const costEstimate = await estimateRegistrationCost({
-      names: command.names,
-      durationYears: command.duration,
-    });
-
-    const requiredAmount = costEstimate.grandTotalWei;
-
-    const walletCheck = await checkAllEOABalances(
-      userId as `0x${string}`,
-      requiredAmount,
-    );
-
-    await setUserPendingCommand(
-      userId,
-      threadId,
-      channelId,
-      command,
-      "wallet_selection",
-    );
-
-    // ---- Only one EOA ----
-    if (filteredEOAs.length === 1) {
-      const wallet = walletCheck.wallets[0];
-
-      if (wallet.l1Balance >= requiredAmount) {
-        await proceedWithRegistration(
-          handler,
-          channelId,
-          threadId,
-          userId,
-          command,
-          wallet.address,
-          walletCheck,
-        );
-        return;
-      }
-
-      const bridgeBuffer = (requiredAmount * 105n) / 100n;
-      if (wallet.l2Balance >= bridgeBuffer) {
-        await sendBotMessage(
-          handler,
-          channelId,
-          threadId,
-          userId,
-          `💰 **Wallet Balance Check**\n\n` +
-            `**${formatAddress(wallet.address)}**\n` +
-            `• Mainnet: ${Number(wallet.l1BalanceEth).toFixed(4)} ETH\n` +
-            `• Base: ${Number(wallet.l2BalanceEth).toFixed(4)} ETH\n\n` +
-            `**Required:** ~${formatEther(requiredAmount)} ETH on Mainnet\n\n` +
-            `Your Mainnet balance is insufficient, but you have enough ETH on Base to bridge.\n\n` +
-            `Would you like to bridge ETH from Base to Mainnet?`,
-        );
-
-        await setUserPendingCommand(
-          userId,
-          threadId,
-          channelId,
-          command,
-          "bridge_confirmation",
-        );
-
-        // ✅ Create registration flow with new API
-        const registrationFlow = createRegistrationFlow({
-          userId,
-          threadId,
-          channelId,
-          status: "awaiting_wallet",
-          data: {
-            names: [],
-            costs: costEstimate.costs,
-            totalDomainCostWei: costEstimate.totalDomainCostWei,
-            totalDomainCostEth: costEstimate.totalDomainCostEth,
-            grandTotalWei: costEstimate.grandTotalWei,
-            grandTotalEth: costEstimate.grandTotalEth,
-            selectedWallet: wallet.address,
-            walletCheckResult: walletCheck,
-          },
-        });
-        await setActiveFlow(registrationFlow);
-
-        await handler.sendInteractionRequest(
-          channelId,
-          {
-            type: "form",
-            id: `bridge:${userId}:${threadId}`,
-            title: "Bridge ETH?",
-            components: [
-              {
-                id: "bridge",
-                type: "button",
-                label: "🌉 Bridge from Base",
-              },
-              {
-                id: "cancel",
-                type: "button",
-                label: "❌ Cancel",
-              },
-            ],
-            recipient: userId as `0x${string}`,
-          },
-          { threadId },
-        );
-        return;
-      }
-
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        `❌ **Insufficient Balance**\n\n` +
-          `**${formatAddress(wallet.address)}**\n` +
-          `• Mainnet: ${Number(wallet.l1BalanceEth).toFixed(4)} ETH\n` +
-          `• Base: ${Number(wallet.l2BalanceEth).toFixed(4)} ETH\n\n` +
-          `**Required:** ~${formatEther(requiredAmount)} ETH\n\n` +
-          `Please fund your wallet with more ETH on either:\n\n` +
-          `• Ethereum Mainnet (to register directly)\n\n` +
-          `• Base (to bridge and then register)`,
-      );
-      await clearUserPendingCommand(userId);
-      return;
-    }
-
-    // ---- Multiple EOAs ----
-    const balanceSummary = formatAllWalletBalances(
-      walletCheck.wallets,
-      requiredAmount,
-    );
-
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      `💰 **Select a Wallet for Registration**\n\n` +
-        `**Required:** ~${formatEther(requiredAmount)} ETH for ${command.names.join(", ")}\n\n` +
-        balanceSummary +
-        "\n\n" +
-        `Please select which wallet to use:`,
-    );
-
-    const walletButtons: FlattenedFormComponent[] = walletCheck.wallets
-      .filter((wallet) => {
-        const l1Sufficient = wallet.l1Balance >= requiredAmount;
-        const l2Sufficient = wallet.l2Balance >= (requiredAmount * 105n) / 100n;
-        return l1Sufficient || l2Sufficient;
-      })
-      .map((wallet, index) => {
-        const l1Sufficient = wallet.l1Balance >= requiredAmount;
-        const statusEmoji = l1Sufficient ? "✅" : "🌉";
-
-        return {
-          id: `wallet_${index}:${wallet.address}`,
-          type: "button",
-          label: `${statusEmoji} ${formatAddress(wallet.address)} (L1: ${Number(wallet.l1BalanceEth).toFixed(3)})`,
-        };
-      });
-
-    walletButtons.push({
-      id: "cancel",
-      type: "button",
-      label: "❌ Cancel",
-    });
-
-    // ✅ Create registration flow with new API
-    const registrationFlow = createRegistrationFlow({
-      userId,
-      threadId,
-      channelId,
-      status: "awaiting_wallet",
-      data: {
-        names: [],
-        costs: costEstimate.costs,
-        totalDomainCostWei: costEstimate.totalDomainCostWei,
-        totalDomainCostEth: costEstimate.totalDomainCostEth,
-        grandTotalWei: costEstimate.grandTotalWei,
-        grandTotalEth: costEstimate.grandTotalEth,
-        walletCheckResult: walletCheck,
-      },
-    });
-    await setActiveFlow(registrationFlow);
-
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        type: "form",
-        id: `wallet_select:${threadId}`,
-        title: "Select Wallet",
-        components: walletButtons,
-        recipient: userId as `0x${string}`,
-      },
-      { threadId },
-    );
-    return;
+    await handleRegisterCommand(handler, channelId, threadId, userId, command);
   }
 }
 

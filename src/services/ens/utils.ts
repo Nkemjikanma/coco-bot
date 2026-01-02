@@ -4,14 +4,16 @@ import type {
   NameWithRelation,
 } from "@ensdomains/ensjs/subgraph";
 import {
-  parseEther,
-  formatEther,
   concat,
   keccak256,
   toBytes,
   toHex,
-  Address,
+  createPublicClient,
+  http,
+  PublicClient,
+  zeroAddress,
 } from "viem";
+import { mainnet } from "viem/chains";
 import { normalize } from "viem/ens";
 import type {
   ENSHistoryEvent,
@@ -19,13 +21,38 @@ import type {
   HistoryData,
   PortfolioData,
 } from "../../api";
-import { ENS_VALIDATION } from "./constants";
+import {
+  BASE_REGISTRAR_ABI,
+  ENS_CONTRACTS,
+  ENS_REGISTRY_ABI,
+  ENS_VALIDATION,
+  MAINNET_RPC_URL,
+  NAME_WRAPPER_ABI,
+  NAME_WRAPPER_ADDRESS,
+} from "./constants";
 import {
   clearActiveFlow,
   clearAllUserFlows,
   clearUserPendingCommand,
 } from "../../db";
 import { clearBridge } from "../../db/bridgeStore";
+import { OwnerInfo } from "./types";
+
+// Lazy-initialized client
+let _client: PublicClient | null = null;
+
+function getClient(): PublicClient {
+  if (!_client) {
+    if (!MAINNET_RPC_URL) {
+      throw new Error("MAINNET_RPC_URL is required");
+    }
+    _client = createPublicClient({
+      chain: mainnet,
+      transport: http(MAINNET_RPC_URL),
+    });
+  }
+  return _client;
+}
 /**
  * Normalizes and validates an ENS domain name
  */
@@ -262,4 +289,389 @@ export async function clearAllUserState(
     clearAllUserFlows(userId),
     clearUserPendingCommand(userId),
   ]);
+}
+
+// ===================== Name check =========================
+/**
+ * Check if a name is wrapped by checking if Registry owner is NameWrapper
+ */
+export async function isNameWrapped(name: string): Promise<boolean> {
+  const client = getClient();
+  const node = namehash(name);
+
+  try {
+    const registryOwner = (await client.readContract({
+      address: ENS_CONTRACTS.ENS_REGISTRY,
+      abi: ENS_REGISTRY_ABI,
+      functionName: "owner",
+      args: [node as `0x${string}`],
+    })) as string;
+
+    return registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
+  } catch (error) {
+    console.error(`isNameWrapped error for ${name}:`, error);
+    return false;
+  }
+}
+
+/**
+ * Get the ACTUAL owner of a .eth name
+ *
+ * For second-level .eth names (like alice.eth), we need to check:
+ * 1. BaseRegistrar.ownerOf(tokenId) - this gives the "registrant"
+ * 2. If registrant is NameWrapper, query NameWrapper.ownerOf(tokenId)
+ *
+ * For subdomains or wrapped names:
+ * 1. Check ENS Registry owner
+ * 2. If owner is NameWrapper, query NameWrapper.ownerOf(node)
+ */
+export async function getActualOwner(name: string): Promise<OwnerInfo> {
+  const client = getClient();
+  const isSecondLevel = name.split(".").length === 2 && name.endsWith(".eth");
+
+  try {
+    if (isSecondLevel) {
+      // For second-level .eth names, use BaseRegistrar
+      return await getSecondLevelOwner(client, name);
+    } else {
+      // For subdomains or other names, use Registry/NameWrapper
+      return await getSubdomainOwner(client, name);
+    }
+  } catch (error) {
+    console.error(`[getActualOwner] Error for ${name}:`, error);
+    return {
+      owner: null,
+      isWrapped: false,
+      error: `Failed to get owner: ${error}`,
+    };
+  }
+}
+
+/**
+ * Get owner for second-level .eth names (e.g., alice.eth)
+ */
+async function getSecondLevelOwner(
+  client: PublicClient,
+  name: string,
+): Promise<OwnerInfo> {
+  const label = name.replace(/\.eth$/, "");
+  const tokenId = getTokenId(label);
+
+  try {
+    // Get registrant from BaseRegistrar
+    const registrant = (await client.readContract({
+      address: ENS_CONTRACTS.BASE_REGISTRAR,
+      abi: BASE_REGISTRAR_ABI,
+      functionName: "ownerOf",
+      args: [tokenId],
+    })) as string;
+
+    console.log(
+      `[getSecondLevelOwner] ${name} BaseRegistrar owner: ${registrant}`,
+    );
+
+    if (registrant === zeroAddress) {
+      return {
+        owner: null,
+        isWrapped: false,
+        error: `${name} is not registered`,
+      };
+    }
+
+    // Check if wrapped (registrant is NameWrapper)
+    const isWrapped =
+      registrant.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
+    console.log(`[getSecondLevelOwner] ${name} isWrapped: ${isWrapped}`);
+
+    if (isWrapped) {
+      // Get actual owner from NameWrapper using the namehash as tokenId
+      const node = namehash(name);
+      const wrapperTokenId = BigInt(node);
+
+      try {
+        const wrapperOwner = (await client.readContract({
+          address: NAME_WRAPPER_ADDRESS,
+          abi: NAME_WRAPPER_ABI,
+          functionName: "ownerOf",
+          args: [wrapperTokenId],
+        })) as string;
+
+        console.log(
+          `[getSecondLevelOwner] ${name} NameWrapper owner: ${wrapperOwner}`,
+        );
+
+        return {
+          owner: wrapperOwner as `0x${string}`,
+          isWrapped: true,
+        };
+      } catch (wrapperError) {
+        console.error(
+          `[getSecondLevelOwner] NameWrapper.ownerOf failed:`,
+          wrapperError,
+        );
+        return {
+          owner: null,
+          isWrapped: true,
+          error: `Failed to get owner from NameWrapper: ${wrapperError}`,
+        };
+      }
+    }
+
+    // Not wrapped - registrant is the actual owner
+    return {
+      owner: registrant as `0x${string}`,
+      isWrapped: false,
+    };
+  } catch (error: any) {
+    // ownerOf reverts for non-existent tokens
+    if (
+      error?.message?.includes("ERC721") ||
+      error?.message?.includes("nonexistent")
+    ) {
+      return {
+        owner: null,
+        isWrapped: false,
+        error: `${name} is not registered`,
+      };
+    }
+    throw error;
+  }
+}
+
+/**
+ * Get owner for subdomains (e.g., blog.alice.eth)
+ */
+async function getSubdomainOwner(
+  client: PublicClient,
+  name: string,
+): Promise<OwnerInfo> {
+  const node = namehash(name);
+
+  // Check Registry owner
+  const registryOwner = (await client.readContract({
+    address: ENS_CONTRACTS.ENS_REGISTRY,
+    abi: ENS_REGISTRY_ABI,
+    functionName: "owner",
+    args: [node as `0x${string}`],
+  })) as string;
+
+  console.log(`[getSubdomainOwner] ${name} Registry owner: ${registryOwner}`);
+
+  if (registryOwner === zeroAddress) {
+    return {
+      owner: null,
+      isWrapped: false,
+      error: `${name} is not registered`,
+    };
+  }
+
+  // Check if wrapped
+  const isWrapped =
+    registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
+  console.log(`[getSubdomainOwner] ${name} isWrapped: ${isWrapped}`);
+
+  if (isWrapped) {
+    const wrapperTokenId = BigInt(node);
+
+    try {
+      const wrapperOwner = (await client.readContract({
+        address: NAME_WRAPPER_ADDRESS,
+        abi: NAME_WRAPPER_ABI,
+        functionName: "ownerOf",
+        args: [wrapperTokenId],
+      })) as string;
+
+      console.log(
+        `[getSubdomainOwner] ${name} NameWrapper owner: ${wrapperOwner}`,
+      );
+
+      return {
+        owner: wrapperOwner as `0x${string}`,
+        isWrapped: true,
+      };
+    } catch (wrapperError) {
+      console.error(
+        `[getSubdomainOwner] NameWrapper.ownerOf failed:`,
+        wrapperError,
+      );
+      return {
+        owner: null,
+        isWrapped: true,
+        error: `Failed to get owner from NameWrapper: ${wrapperError}`,
+      };
+    }
+  }
+
+  return {
+    owner: registryOwner as `0x${string}`,
+    isWrapped: false,
+  };
+}
+
+/**
+ * Batch get actual owners for multiple names
+ * More efficient than calling getActualOwner individually
+ */
+export async function getActualOwnersBatch(
+  names: string[],
+): Promise<Map<string, OwnerInfo>> {
+  const client = getClient();
+  const results = new Map<string, OwnerInfo>();
+
+  // Separate second-level and subdomains
+  const secondLevelNames: string[] = [];
+  const subdomainNames: string[] = [];
+
+  for (const name of names) {
+    const isSecondLevel = name.split(".").length === 2 && name.endsWith(".eth");
+    if (isSecondLevel) {
+      secondLevelNames.push(name);
+    } else {
+      subdomainNames.push(name);
+    }
+  }
+
+  // Process second-level names
+  if (secondLevelNames.length > 0) {
+    // Batch call BaseRegistrar.ownerOf for all
+    const tokenIds = secondLevelNames.map((name) =>
+      getTokenId(name.replace(/\.eth$/, "")),
+    );
+
+    const ownerCalls = tokenIds.map((tokenId) => ({
+      address: ENS_CONTRACTS.BASE_REGISTRAR,
+      abi: BASE_REGISTRAR_ABI,
+      functionName: "ownerOf" as const,
+      args: [tokenId] as const,
+    }));
+
+    const ownersResp = await client.multicall({
+      contracts: ownerCalls,
+      allowFailure: true,
+    });
+
+    // Find which ones are wrapped (owner is NameWrapper)
+    const wrappedIndexes: number[] = [];
+
+    ownersResp.forEach((r, i) => {
+      const name = secondLevelNames[i];
+
+      if (r.status !== "success") {
+        results.set(name, {
+          owner: null,
+          isWrapped: false,
+          error: `${name} is not registered`,
+        });
+        return;
+      }
+
+      const owner = r.result as string;
+      if (owner === zeroAddress) {
+        results.set(name, {
+          owner: null,
+          isWrapped: false,
+          error: `${name} is not registered`,
+        });
+        return;
+      }
+
+      if (owner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase()) {
+        wrappedIndexes.push(i);
+      } else {
+        results.set(name, {
+          owner: owner as `0x${string}`,
+          isWrapped: false,
+        });
+      }
+    });
+
+    // Batch call NameWrapper.ownerOf for wrapped names
+    if (wrappedIndexes.length > 0) {
+      const wrapperCalls = wrappedIndexes.map((i) => {
+        const name = secondLevelNames[i];
+        const node = namehash(name);
+        return {
+          address: NAME_WRAPPER_ADDRESS as `0x${string}`,
+          abi: NAME_WRAPPER_ABI,
+          functionName: "ownerOf" as const,
+          args: [BigInt(node)] as const,
+        };
+      });
+
+      const wrapperResp = await client.multicall({
+        contracts: wrapperCalls,
+        allowFailure: true,
+      });
+
+      wrapperResp.forEach((r, j) => {
+        const originalIdx = wrappedIndexes[j];
+        const name = secondLevelNames[originalIdx];
+
+        if (r.status !== "success") {
+          results.set(name, {
+            owner: null,
+            isWrapped: true,
+            error: `Failed to get owner from NameWrapper`,
+          });
+          return;
+        }
+
+        results.set(name, {
+          owner: r.result as `0x${string}`,
+          isWrapped: true,
+        });
+      });
+    }
+  }
+
+  // Process subdomains (less common, do individually for now)
+  for (const name of subdomainNames) {
+    const ownerInfo = await getSubdomainOwner(client, name);
+    results.set(name, ownerInfo);
+  }
+
+  return results;
+}
+
+/**
+ * Verify that one of the provided wallets owns the name
+ */
+export async function verifyOwnership(
+  name: string,
+  wallets: `0x${string}`[],
+): Promise<{
+  owned: boolean;
+  ownerWallet?: `0x${string}`;
+  isWrapped: boolean;
+  actualOwner?: `0x${string}`;
+  error?: string;
+}> {
+  const ownerInfo = await getActualOwner(name);
+
+  if (!ownerInfo.owner) {
+    return {
+      owned: false,
+      isWrapped: ownerInfo.isWrapped,
+      error: ownerInfo.error || `${name} is not registered`,
+    };
+  }
+
+  const ownerLower = ownerInfo.owner.toLowerCase();
+  const matchingWallet = wallets.find((w) => w.toLowerCase() === ownerLower);
+
+  if (matchingWallet) {
+    return {
+      owned: true,
+      ownerWallet: matchingWallet,
+      isWrapped: ownerInfo.isWrapped,
+      actualOwner: ownerInfo.owner,
+    };
+  }
+
+  return {
+    owned: false,
+    isWrapped: ownerInfo.isWrapped,
+    actualOwner: ownerInfo.owner,
+    error: `None of your wallets own ${name}. The owner is ${ownerInfo.owner}`,
+  };
 }

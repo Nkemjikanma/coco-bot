@@ -42,6 +42,7 @@ import {
   namehash,
   normalizeENSName,
   generateSecret,
+  getActualOwnersBatch,
 } from "./utils";
 
 import { PendingRegistration, RegistrationCommitment } from "../../types";
@@ -168,13 +169,7 @@ export async function checkAvailability(
         getTokenId(normalisationList[i].normalized),
       );
 
-      const ownerCalls = tokenIds.map((tokenId) => ({
-        address: ENS_CONTRACTS.BASE_REGISTRAR,
-        abi: BASE_REGISTRAR_ABI,
-        functionName: "ownerOf" as const,
-        args: [tokenId] as const,
-      }));
-
+      // Get expiry from BaseRegistrar (this is always correct regardless of wrapping)
       const expiryCalls = tokenIds.map((tokenId) => ({
         address: ENS_CONTRACTS.BASE_REGISTRAR,
         abi: BASE_REGISTRAR_ABI,
@@ -182,28 +177,34 @@ export async function checkAvailability(
         args: [tokenId] as const,
       }));
 
-      const [ownersResp, expiriesResp] = await Promise.all([
-        ethereumClient.multicall({ contracts: ownerCalls, allowFailure: true }),
-        ethereumClient.multicall({
-          contracts: expiryCalls,
-          allowFailure: true,
-        }),
-      ]);
+      const expiriesResp = await ethereumClient.multicall({
+        contracts: expiryCalls,
+        allowFailure: true,
+      });
 
+      // Set expiry for all unavailable names
       unavailableIndexes.forEach((originalIdx, j) => {
-        const ownerR = ownersResp[j];
         const expiryR = expiriesResp[j];
-
-        if (ownerR.status === "success") {
-          const ownerAddress = ownerR.result as Address;
-          results[originalIdx].owner =
-            ownerAddress === zeroAddress ? undefined : ownerAddress;
-        }
-
         if (expiryR.status === "success") {
           const expiryTimestamp = expiryR.result as bigint;
           results[originalIdx].expiration =
             expiryTimestamp === 0n ? undefined : (expiryTimestamp as any);
+        }
+      });
+
+      // ✅ Get ACTUAL owners using the utility that handles wrapped names
+      const unavailableNames = unavailableIndexes.map(
+        (i) => `${normalisationList[i].normalized}.eth`,
+      );
+
+      const ownerInfoMap = await getActualOwnersBatch(unavailableNames);
+
+      unavailableIndexes.forEach((originalIdx) => {
+        const fullName = `${normalisationList[originalIdx].normalized}.eth`;
+        const ownerInfo = ownerInfoMap.get(fullName);
+
+        if (ownerInfo?.owner && ownerInfo.owner !== zeroAddress) {
+          results[originalIdx].owner = ownerInfo.owner;
         }
       });
     }
