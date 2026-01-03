@@ -1,14 +1,8 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { OnInteractionEventType } from "../types";
-import {
-  clearPendingRegistration,
-  clearUserPendingCommand,
-  getPendingRegistration,
-  updatePendingRegistration,
-  UserState,
-} from "../../../db/userStateStore";
+import { clearUserPendingCommand } from "../../../db/userStateStore";
 import { estimateRegisterGas } from "../../../services/ens/ens";
-import { formatEther, hexToBytes } from "viem";
+import { formatEther } from "viem";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
 import {
   clearActiveFlow,
@@ -25,7 +19,6 @@ export async function commitTransaction(
     requestId: string;
     txHash: string;
   },
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
   const threadId = event.threadId || event.eventId;
@@ -50,6 +43,9 @@ export async function commitTransaction(
     await clearActiveFlow(userId, threadId);
     return;
   }
+
+  const flow = flowResult.data;
+  const regData = flow.data;
 
   if (tx.txHash) {
     // Update registration with tx hash and timestamp
@@ -106,19 +102,24 @@ function startCommitWaitTimer(
       const flow = flowResult.data;
       const regData = flow.data;
 
-      // ✅ Check status instead of phase
+      // Check status
       if (flow.status !== "step1_complete") {
         // Not in the right status
         return;
       }
 
-      // ✅ Access names from regData (flow.data)
-      const commitment = regData.names[0];
+      // Validate we have commitment data
+      if (!regData.commitment) {
+        console.error("No commitment data found in flow");
+        return;
+      }
+
+      const { commitment, name, costs } = regData;
 
       // Estimate register gas with actual values from stored commitment
       const gasEstimate = await estimateRegisterGas({
         account: commitment.owner,
-        label: commitment.name.replace(/\.eth$/, ""),
+        label: name.replace(/\.eth$/, ""),
         owner: commitment.owner,
         durationSec: commitment.durationSec,
         secret: commitment.secret,
@@ -129,17 +130,17 @@ function startCommitWaitTimer(
         value: commitment.domainPriceWei,
       });
 
-      // ✅ Use new API to update flow data
+      // Update flow data with actual gas estimate
       await updateFlowData(userId, threadId, {
         costs: {
-          ...regData.costs,
+          ...costs,
           registerGasWei: gasEstimate.gasWei,
           registerGasEth: gasEstimate.gasEth,
           isRegisterEstimate: false,
         },
       });
 
-      // ✅ Update status to awaiting register confirmation
+      // Update status to awaiting register confirmation
       await updateFlowStatus(userId, threadId, "step2_pending");
 
       // Calculate total remaining cost
@@ -150,7 +151,7 @@ function startCommitWaitTimer(
         channelId,
         `⏰ **Ready to complete registration!**
 
-The waiting period is over. Let's finish registering **${commitment.name}**.
+The waiting period is over. Let's finish registering **${name}**.
 
 💰 **Final Cost**
 ├─ Domain price: ${formatEther(commitment.domainPriceWei)} ETH

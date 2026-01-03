@@ -18,6 +18,8 @@ import {
 import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
 import { CocoBotType } from "./types";
 import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
+import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
+import { handleTransferTransaction } from "./handlers/interactionHandlers/transaction/transferTransaction";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -133,20 +135,24 @@ bot.onInteractionResponse(async (handler, event) => {
 
       // Handle commit transaction
       if (tx.requestId.startsWith("commit:")) {
-        await commitTransaction(handler, event, tx, userState!);
+        await commitTransaction(handler, event, tx);
         return;
       }
 
       // Handle bridge transaction
       if (tx.requestId.startsWith("bridge:")) {
-        await bridgeTransaction(handler, event, tx, userState!);
+        await bridgeTransaction(handler, event, tx);
         return;
       }
 
       // Handle register transaction
       if (tx.requestId.startsWith("register:")) {
-        await registerTransaction(handler, event, tx, userState!);
+        await registerTransaction(handler, event, tx);
         return;
+      }
+
+      if (tx.requestId.startsWith("transfer")) {
+        await handleTransferTransaction(handler, event, tx);
       }
 
       console.log("⚠️ Unknown transaction type:", tx.requestId);
@@ -169,7 +175,7 @@ bot.onInteractionResponse(async (handler, event) => {
       const form = response.payload.content.value;
 
       if (form.requestId.startsWith("confirm_commit")) {
-        await confirmCommit(handler, event, form, userState);
+        await confirmCommit(handler, event, form);
         return;
       }
 
@@ -179,7 +185,7 @@ bot.onInteractionResponse(async (handler, event) => {
       }
 
       if (form.requestId.startsWith("confirm_register")) {
-        await confirmRegister(handler, event, form, userState);
+        await confirmRegister(handler, event, form);
         return;
       }
 
@@ -189,14 +195,20 @@ bot.onInteractionResponse(async (handler, event) => {
       }
 
       if (form.requestId.startsWith("wallet_select:")) {
-        await walletSelection(handler, event, form, userState);
+        await walletSelection(handler, event, form);
         console.log("Bot.ts: ‼️ We have passed to wallet select");
         return;
       }
 
       if (form.requestId.startsWith("bridge:")) {
         // Bridge confirmation form - route to wallet selection or bridge handler
-        await walletSelection(handler, event, form, userState);
+        await walletSelection(handler, event, form);
+        return;
+      }
+
+      if (form.requestId.startsWith("transfer_confirm:")) {
+        console.log("here now");
+        await handleTransferConfirmation(handler, event, form);
         return;
       }
 

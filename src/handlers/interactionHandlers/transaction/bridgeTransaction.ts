@@ -1,13 +1,7 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { OnInteractionEventType } from "../types";
-import {
-  clearPendingRegistration,
-  clearUserPendingCommand,
-  getPendingRegistration,
-  UserState,
-} from "../../../db/userStateStore";
-import { PendingRegistration } from "../../../types";
-import { formatEther, hexToBytes } from "viem";
+import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
+import { formatEther } from "viem";
 import { CHAIN_IDS } from "../../../services/bridge";
 import { checkBalance } from "../../../utils";
 import {
@@ -19,7 +13,6 @@ import {
   clearActiveFlow,
   getActiveFlow,
   isBridgeFlow,
-  isRegistrationFlow,
   RegistrationFlowData,
   updateFlowData,
   updateFlowStatus,
@@ -32,7 +25,6 @@ export async function bridgeTransaction(
     requestId: string;
     txHash: string;
   },
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
   const threadId = event.threadId || event.eventId;
@@ -276,7 +268,16 @@ export async function handlePostBridgeRegistration(
   registrationData: RegistrationFlowData,
 ) {
   const selectedWallet =
-    registrationData.selectedWallet || registrationData.names[0].owner;
+    registrationData.selectedWallet || registrationData.commitment?.owner;
+
+  if (!selectedWallet) {
+    await handler.sendMessage(
+      channelId,
+      "❌ No wallet selected. Please start again.",
+      { threadId },
+    );
+    return;
+  }
 
   // Verify balance on Mainnet
   const mainnetBalance = await checkBalance(
@@ -304,7 +305,7 @@ export async function handlePostBridgeRegistration(
     channelId,
     `✅ **Balance Confirmed!**\n\n` +
       `Mainnet Balance: ${mainnetBalance.balanceEth} ETH\n\n` +
-      `Ready to register **${registrationData.names.map((n) => n.name).join(", ")}**!`,
+      `Ready to register **${registrationData.name}**!`,
     { threadId },
   );
 

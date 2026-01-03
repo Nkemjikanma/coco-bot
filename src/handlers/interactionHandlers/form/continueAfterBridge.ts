@@ -1,18 +1,11 @@
 import { BotHandler } from "@towns-protocol/bot";
-import {
-  clearPendingRegistration,
-  clearUserPendingCommand,
-  getPendingRegistration,
-  updatePendingRegistration,
-  UserState,
-} from "../../../db/userStateStore";
+import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
 import { OnInteractionEventType, FormCase } from "../types";
 import { checkBalance } from "../../../utils";
 import { CHAIN_IDS } from "../../../services/bridge";
-import { formatEther, hexToBytes } from "viem";
+import { formatEther } from "viem";
 import { encodeCommitData, prepareRegistration } from "../../../services/ens";
 import { ENS_CONTRACTS } from "../../../services/ens/constants";
-import { clearBridge } from "../../../db/bridgeStore";
 import { RegisterCommand } from "../../../types";
 import {
   clearActiveFlow,
@@ -29,7 +22,6 @@ export async function continueAfterBridge(
   userState: UserState,
 ) {
   const { userId, channelId } = event;
-
   const threadId = event.threadId || event.eventId;
 
   const flowResult = await getActiveFlow(userId, threadId);
@@ -136,48 +128,62 @@ export async function continueAfterBridge(
       );
 
       const command = partialCommand as RegisterCommand;
+
+      // Check if we need a new commitment
       const needsNewCommitment =
-        !regData.names ||
-        regData.names.length === 0 ||
-        !regData.names[0]?.commitment ||
-        regData.names[0]?.owner?.toLowerCase() !== selectedWallet.toLowerCase();
+        !regData.name ||
+        !regData.commitment ||
+        regData.commitment.owner?.toLowerCase() !==
+          selectedWallet.toLowerCase();
 
       if (needsNewCommitment) {
-        const reason = !regData.names?.length
-          ? "no names"
-          : !regData.names[0]?.commitment
+        const reason = !regData.name
+          ? "no name"
+          : !regData.commitment
             ? "no commitment"
             : "owner mismatch";
 
         console.log(
           `continueAfterBridge: Need new commitment - reason: ${reason}`,
         );
-        console.log(`  Current owner: ${regData.names?.[0]?.owner}`);
+        console.log(`  Current owner: ${regData.commitment?.owner}`);
         console.log(`  Selected wallet: ${selectedWallet}`);
 
         try {
           const freshReg = await prepareRegistration({
-            names: command.names,
+            name: command.name,
             owner: selectedWallet,
             durationYears: command.duration || 1,
           });
 
+          // Update flow with fresh registration data
           await updateFlowData(userId, threadId, {
-            ...freshReg,
+            name: freshReg.name,
+            commitment: freshReg.commitment,
+            costs: freshReg.costs,
+            totalDomainCostWei: freshReg.totalDomainCostWei,
+            totalDomainCostEth: freshReg.totalDomainCostEth,
+            grandTotalWei: freshReg.grandTotalWei,
+            grandTotalEth: freshReg.grandTotalEth,
             selectedWallet,
           });
           await updateFlowStatus(userId, threadId, "step1_pending");
 
           // Update local reference
-          regData = { ...regData, ...freshReg, selectedWallet };
+          regData = {
+            ...regData,
+            name: freshReg.name,
+            commitment: freshReg.commitment,
+            selectedWallet,
+          };
 
           console.log(
             "continueAfterBridge: Registration prepared with correct owner:",
           );
           console.log(
-            `  Commitment exists: ${regData.names[0]?.commitment ? "✅" : "❌"}`,
+            `  Commitment exists: ${regData.commitment ? "✅" : "❌"}`,
           );
-          console.log(`  Owner: ${regData.names[0]?.owner}`);
+          console.log(`  Owner: ${regData.commitment?.owner}`);
         } catch (error) {
           console.error(
             "continueAfterBridge: Error preparing registration:",
@@ -198,9 +204,9 @@ export async function continueAfterBridge(
       }
 
       // Now we should have valid commitment with correct owner
-      const firstCommitment = regData.names[0];
+      const { commitment, name } = regData;
 
-      if (!firstCommitment || !firstCommitment.commitment) {
+      if (!commitment || !commitment.commitment) {
         console.error(
           "continueAfterBridge: Still no commitment after preparation:",
           regData,
@@ -214,13 +220,11 @@ export async function continueAfterBridge(
       }
 
       // Final validation: ensure commitment owner matches selected wallet
-      if (
-        firstCommitment.owner?.toLowerCase() !== selectedWallet.toLowerCase()
-      ) {
+      if (commitment.owner?.toLowerCase() !== selectedWallet.toLowerCase()) {
         console.error(
           "continueAfterBridge: Owner still mismatched after preparation!",
         );
-        console.error(`  Commitment owner: ${firstCommitment.owner}`);
+        console.error(`  Commitment owner: ${commitment.owner}`);
         console.error(`  Selected wallet: ${selectedWallet}`);
         await handler.sendMessage(
           channelId,
@@ -230,14 +234,14 @@ export async function continueAfterBridge(
         return;
       }
 
-      const commitData = encodeCommitData(firstCommitment.commitment);
+      const commitData = encodeCommitData(commitment.commitment);
       const commitmentId = `commit:${userId}:${Date.now()}`;
 
       await updateFlowStatus(userId, threadId, "step1_pending");
 
       console.log("continueAfterBridge: Sending commit transaction");
-      console.log(`  Domain: ${firstCommitment.name}`);
-      console.log(`  Owner: ${firstCommitment.owner}`);
+      console.log(`  Domain: ${name}`);
+      console.log(`  Owner: ${commitment.owner}`);
       console.log(`  Signer wallet: ${selectedWallet}`);
 
       await handler.sendInteractionRequest(
@@ -245,7 +249,7 @@ export async function continueAfterBridge(
         {
           type: "transaction",
           id: commitmentId,
-          title: `Commit ENS Registration: ${firstCommitment.name}`,
+          title: `Commit ENS Registration: ${name}`,
           tx: {
             chainId: "1",
             to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
@@ -255,9 +259,7 @@ export async function continueAfterBridge(
           },
           recipient: userId as `0x${string}`,
         },
-        {
-          threadId,
-        },
+        { threadId },
       );
       return;
     }

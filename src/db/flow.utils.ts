@@ -8,6 +8,8 @@ import {
   SubdomainFlowData,
   SubdomainFlow,
   ActiveFlow,
+  TransferFlowData,
+  TransferFlow,
 } from "./flow.types";
 
 /**
@@ -76,6 +78,25 @@ export function createSubdomainFlow(params: {
   };
 }
 
+export function createTransferFlow(params: {
+  userId: string;
+  threadId: string;
+  channelId: string;
+  status: FlowStatus;
+  data: TransferFlowData;
+}): TransferFlow {
+  return {
+    userId: params.userId,
+    threadId: params.threadId,
+    channelId: params.channelId,
+    type: "transfer",
+    status: params.status,
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+    data: params.data,
+  };
+}
+
 // ============ Utility Functions ============
 /**
  * Get human-readable description of a flow
@@ -84,8 +105,8 @@ export function describeFlow(flow: ActiveFlow): string {
   switch (flow.type) {
     case "registration":
       const regData = flow.data as RegistrationFlowData;
-      const names = regData.names.map((n) => n.name).join(", ");
-      return `Registering ${names}`;
+      const name = regData.name;
+      return `Registering ${name}`;
 
     case "bridge":
       const bridgeData = flow.data as BridgeFlowData;

@@ -1,25 +1,20 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { FormCase, OnInteractionEventType } from "../types";
 import {
-  clearPendingRegistration,
   clearUserPendingCommand,
-  getPendingRegistration,
   getUserState,
   setUserPendingCommand,
-  updatePendingRegistration,
-  UserState,
 } from "../../../db/userStateStore";
 import { RegisterCommand } from "../../../types";
 import { formatAddress } from "../../../utils";
 import { proceedWithRegistration } from "../../handle_message";
 import { formatEther } from "viem";
 import { handleBridging } from "../../../services/bridge/bridgeUtils";
-import { prepareRegistration } from "../../../services/ens"; // ✅ ADD THIS IMPORT
+import { prepareRegistration } from "../../../services/ens";
 import {
   clearActiveFlow,
   getActiveFlow,
   isRegistrationFlow,
-  updateActiveFlow,
   updateFlowData,
 } from "../../../db";
 
@@ -27,7 +22,6 @@ export async function walletSelection(
   handler: BotHandler,
   event: OnInteractionEventType,
   walletForm: FormCase,
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
   const threadId = event.threadId || event.eventId;
@@ -51,7 +45,7 @@ export async function walletSelection(
         const walletAddress = component.id.split(":")[1] as `0x${string}`;
 
         const flowResult = await getActiveFlow(userId, threadId);
-        const currentUserState = await getUserState(userId); // ✅ Renamed to avoid shadowing
+        const currentUserState = await getUserState(userId);
 
         if (!flowResult.success) {
           await handler.sendMessage(
@@ -140,20 +134,26 @@ export async function walletSelection(
 
           try {
             const freshRegistration = await prepareRegistration({
-              names: command.names,
+              name: command.name,
               owner: walletAddress,
               durationYears: command.duration,
             });
 
-            // ✅ Use updateFlowData to update the data inside the flow
+            // Update flow with fresh registration data
             await updateFlowData(userId, threadId, {
-              ...freshRegistration,
+              name: freshRegistration.name,
+              commitment: freshRegistration.commitment,
+              costs: freshRegistration.costs,
+              totalDomainCostWei: freshRegistration.totalDomainCostWei,
+              totalDomainCostEth: freshRegistration.totalDomainCostEth,
+              grandTotalWei: freshRegistration.grandTotalWei,
+              grandTotalEth: freshRegistration.grandTotalEth,
               selectedWallet: walletAddress,
             });
 
             console.log(
               "walletSelection: Registration prepared with owner:",
-              freshRegistration.names[0]?.owner,
+              freshRegistration.commitment?.owner,
             );
 
             await setUserPendingCommand(
@@ -172,7 +172,8 @@ export async function walletSelection(
               userId,
               {
                 ...regData,
-                ...freshRegistration,
+                name: regData.name,
+                commitment: freshRegistration.commitment,
                 selectedWallet: walletAddress,
               },
               command,

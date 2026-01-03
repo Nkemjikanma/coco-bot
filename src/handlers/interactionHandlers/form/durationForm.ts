@@ -71,11 +71,11 @@ export async function durationForm(
 
       const updatedCommand: RegisterCommand = {
         action: "register",
-        names: partialCommand.names ?? [],
+        name: partialCommand.name ?? "",
         duration,
       };
 
-      if (updatedCommand.names.length === 0) {
+      if (!updatedCommand.name) {
         await handler.sendMessage(
           channelId,
           "Something went wrong. Please start again.",

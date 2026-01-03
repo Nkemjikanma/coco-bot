@@ -252,13 +252,13 @@ export function describePendingCommand(pending: PendingCommand): string {
 
   let description = `You were ${action}ing`;
 
-  if ("names" in partialCommand && partialCommand.names?.length) {
-    description += ` **${partialCommand.names.join(", ")}**`;
+  if ("names" in partialCommand && partialCommand.names) {
+    description += ` **${partialCommand.names}**`;
   }
 
   if (waitingFor === "duration") {
     description += " (waiting for duration)";
-  } else if (waitingFor === "names") {
+  } else if (waitingFor === "name") {
     description += " (waiting for name)";
   } else if (waitingFor === "recipient") {
     description += " (waiting for recipient address)";

@@ -68,9 +68,9 @@ const ethereumClient = createPublicClient({
  */
 
 export async function checkAvailability(
-  domainNames: string[],
+  domainNames: string,
 ): Promise<ApiResponse<NameCheckData>> {
-  const normalisationList = domainNames.map((name) => {
+  const normalisationList = [domainNames].map((name) => {
     const { normalized, valid, reason } = normalizeENSName(name);
     return { name, normalized, valid, reason };
   });
@@ -223,10 +223,10 @@ export async function checkAvailability(
  * Checks ENS domain expiration information
  */
 export async function checkExpiry(
-  domainNames: string[],
+  domainNames: string,
 ): Promise<ApiResponse<ExpiryData>> {
   try {
-    const normalisationList = domainNames.map((name) => {
+    const normalisationList = [domainNames].map((name) => {
       const { normalized, valid, reason } = normalizeENSName(name);
       return { name, normalized, valid, reason };
     });
@@ -629,11 +629,11 @@ export async function estimateRegisterGas({
 }
 
 export async function prepareRegistration({
-  names,
+  name,
   owner,
   durationYears,
 }: {
-  names: string[];
+  name: string;
   owner: `0x${string}`;
   durationYears: number;
 }): Promise<PendingRegistration> {
@@ -647,60 +647,56 @@ export async function prepareRegistration({
   let totalDomainCostWei = 0n;
   let totalCommitGasWei = 0n;
 
-  for (const name of names) {
-    // Get label (remove .eth if present)
-    const label = name.replace(/\.eth$/, "");
+  // Get label (remove .eth if present)
+  const label = name.replace(/\.eth$/, "");
 
-    // Get domain price
-    const priceData = (await ethereumClient.readContract({
-      address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-      abi: CONTROLLER_ABI,
-      functionName: "rentPrice",
-      args: [label, durationSec],
-    })) as { base: bigint; premium: bigint };
+  // Get domain price
+  const priceData = (await ethereumClient.readContract({
+    address: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
+    abi: CONTROLLER_ABI,
+    functionName: "rentPrice",
+    args: [label, durationSec],
+  })) as { base: bigint; premium: bigint };
 
-    const domainPriceWei = priceData.base + priceData.premium;
-    totalDomainCostWei += domainPriceWei;
+  const domainPriceWei = priceData.base + priceData.premium;
+  totalDomainCostWei += domainPriceWei;
 
-    // Generate secret and commitment
-    const secret = generateSecret();
-    const commitment = await makeCommitment({
-      label,
-      owner,
-      durationSec,
-      secret,
-      resolver,
-      data,
-      reverseRecord,
-      ownerControlledFuses,
-    });
+  // Generate secret and commitment
+  const secret = generateSecret();
+  const commitment = await makeCommitment({
+    label,
+    owner,
+    durationSec,
+    secret,
+    resolver,
+    data,
+    reverseRecord,
+    ownerControlledFuses,
+  });
 
-    // Estimate commit gas for this commitment
-    const commitGas = await estimateCommitGas({ account: owner, commitment });
-    totalCommitGasWei += commitGas.gasWei;
-
-    commitments.push({
-      name: `${label}.eth`,
-      secret,
-      commitment,
-      owner,
-      durationSec,
-      domainPriceWei,
-    });
-  }
+  // Estimate commit gas for this commitment
+  const commitGas = await estimateCommitGas({ account: owner, commitment });
+  totalCommitGasWei += commitGas.gasWei;
 
   // Estimate register gas (rough estimate for phase 1)
   const fees = await ethereumClient.estimateFeesPerGas();
   const registerGasPerName = 280000n;
-  const totalRegisterGasWei =
-    registerGasPerName * BigInt(names.length) * (fees.maxFeePerGas ?? 0n);
+  const totalRegisterGasWei = registerGasPerName * (fees.maxFeePerGas ?? 0n);
 
   const grandTotalWei =
     totalDomainCostWei + totalCommitGasWei + totalRegisterGasWei;
 
   return {
     phase: "awaiting_commit_confirmation",
-    names: commitments,
+    name: `${label}.eth`,
+    commitment: {
+      name: `${label}.eth`,
+      secret,
+      commitment,
+      owner,
+      durationSec,
+      domainPriceWei,
+    },
     costs: {
       commitGasWei: totalCommitGasWei,
       commitGasEth: formatEther(totalCommitGasWei),

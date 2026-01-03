@@ -71,8 +71,7 @@ export class SubdomainService {
   }
 
   /**
-   * ✅ NEW METHOD: Verify that one of the user's wallets owns the parent name
-   * This is what handleSubdomainCommand calls
+   * Verify that one of the user's wallets owns the parent name
    */
   async verifyParentOwnership(
     parentName: string,

@@ -332,15 +332,14 @@ export function formatPhase1Summary(
   registration: PendingRegistration,
   durationYears: number,
 ): string {
-  const nameBreakdown = registration.names
-    .map((n, i) => {
-      const label = n.name.replace(/\.eth$/, "");
-      const priceEth = formatEther(n.domainPriceWei);
-      const lengthNote = label.length <= 4 ? " (short name premium)" : "";
-      return `**${i + 1}. ${n.name}** (${label.length} letters${lengthNote}) \n\n
-   └─ Domain: ${priceEth} ETH`;
-    })
-    .join("\n\n");
+  const n = registration.commitment;
+  const label = n.name.replace(/\.eth$/, "");
+  const priceEth = formatEther(n.domainPriceWei);
+  const lengthNote = label.length <= 4 ? " (short name premium)" : "";
+
+  const nameBreakdown =
+    `**${n.name}** (${label.length} letters${lengthNote})\n\n` +
+    `└─ Domain: ${priceEth} ETH`;
 
   return `
 📋 **Registration Summary**
@@ -351,8 +350,8 @@ ${nameBreakdown}
 
 ⛽ **Estimated Gas Costs** \n\n
 
-├─ Commit tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.commitGasEth} ETH \n\n
-└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH _(estimate)_ \n\n
+├─ Commit tx: ~${registration.costs.commitGasEth} ETH \n\n
+└─ Register tx: ~${registration.costs.registerGasEth} ETH _(estimate)_ \n\n
 
 💰 **Estimated Total: ~${registration.grandTotalEth} ETH**
 
@@ -366,7 +365,7 @@ Ready to proceed?
 }
 
 export function formatPhase2Summary(registration: PendingRegistration): string {
-  const nameList = registration.names.map((n) => n.name).join(", ");
+  const nameList = registration.name;
 
   return `
 ✅ **Commit Successful!**
@@ -377,7 +376,7 @@ Names reserved: ${nameList}
 You need to wait ~60 seconds before completing registration.
 
 ⛽ **Final Gas Cost**
-└─ Register tx${registration.names.length > 1 ? "s" : ""}: ~${registration.costs.registerGasEth} ETH
+└─ Register tx: ~${registration.costs.registerGasEth} ETH
 
 💰 **Remaining Cost: ~${formatEther(registration.totalDomainCostWei + registration.costs.registerGasWei)} ETH**
 _(Domain price + register gas)_

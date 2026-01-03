@@ -20,11 +20,8 @@ export function determineWaitingFor(
     "subdomain",
   ].includes(partial.action || "");
 
-  if (
-    needsNames &&
-    (!("names" in partial) || !partial.names || partial.names.length === 0)
-  ) {
-    return "names";
+  if (needsNames && (!("name" in partial) || !partial.name)) {
+    return "name";
   }
 
   // Check if we need duration
@@ -61,8 +58,8 @@ export function formatRustPayload(command: ParsedCommand) {
   lines.push(`**Action:** ${command.action}`);
 
   // Names (if applicable)
-  if ("names" in command && command.names && command.names.length > 0) {
-    lines.push(`**Names:** ${command.names.join(", ")}`);
+  if ("names" in command && command.names) {
+    lines.push(`**Names:** ${command.names}`);
   }
 
   // Duration (for register/renew)
@@ -126,10 +123,10 @@ export async function extractMissingInfo(
       }
       break;
 
-    case "names":
-      const names = userResponse.match(/[\w-]+\.eth/gi) || [];
+    case "name":
+      const name = userResponse.match(/[\w-]+\.eth/gi);
       if (
-        names.length > 0 &&
+        name &&
         (updated.action === "check" ||
           updated.action === "register" ||
           updated.action === "renew" ||
@@ -141,7 +138,7 @@ export async function extractMissingInfo(
           updated.action === "watch" ||
           updated.action === "subdomain") // ✅ ADD subdomain here
       ) {
-        updated.names = names;
+        updated.name = name.toString();
       }
       break;
 
@@ -220,15 +217,15 @@ export function getWaitingForMessage(pending: PendingCommand): string {
   const { partialCommand, waitingFor } = pending;
   const action = partialCommand.action || "something";
   const names =
-    "names" in partialCommand && partialCommand.names?.length
-      ? partialCommand.names.join(", ")
+    "name" in partialCommand && partialCommand.name
+      ? partialCommand.name
       : "your name(s)";
 
   switch (waitingFor) {
     case "duration":
       return `Let's continue ${action}ing **${names}**. How many years would you like to register for? (1-10)`;
 
-    case "names":
+    case "name":
       return `Let's continue. Which ENS name(s) would you like to ${action}?`;
 
     case "recipient":

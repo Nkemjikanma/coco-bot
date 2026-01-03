@@ -37,56 +37,65 @@ export function validate_parse(
   }
 
   const action = fields.action as ParsedCommand["action"];
-  const names = Array.isArray(fields.names) ? (fields.names as string[]) : [];
+
+  // Extract name - handle both string and array formats from parser
+  let name: string | undefined;
+  if (typeof fields.name === "string") {
+    name = fields.name;
+  } else if (Array.isArray(fields.names) && fields.names.length > 0) {
+    name = fields.names[0] as string;
+  } else if (Array.isArray(fields.name) && fields.name.length > 0) {
+    name = fields.name[0] as string;
+  }
+
   const address =
-    typeof fields.address === "string" ? (fields.address as string) : "";
+    typeof fields.address === "string" ? fields.address : undefined;
 
   switch (action) {
-    case "check": {
-      return validateCheckCommand(names);
-    }
+    case "check":
+      return validateCheckCommand(name);
+
     case "register":
-      return validateRegisterCommand(names, fields.duration, context);
+      return validateRegisterCommand(name, fields.duration, context);
 
     case "renew":
-      return validateRenewCommand(names, fields.duration, context);
+      return validateRenewCommand(name, fields.duration, context);
 
     case "transfer":
-      return validateTransferCommand(names, fields.recipient);
+      return validateTransferCommand(name, fields.recipient);
 
     case "set":
-      return validateSetCommand(names, fields.records);
+      return validateSetCommand(name, fields.records);
 
     case "portfolio":
       return validatePortfolioCommand(
         address,
         fields.options,
-        names,
+        name,
         fields.recipient,
       );
 
     case "expiry":
-      return validateExpiryCommand(names);
+      return validateExpiryCommand(name);
 
     case "history":
-      return validateHistoryCommand(names);
+      return validateHistoryCommand(name);
 
     case "remind":
-      return validateRemindCommand(names);
+      return validateRemindCommand(name);
 
     case "watch":
-      return validateWatchCommand(names);
+      return validateWatchCommand(name);
 
     case "subdomain":
-      return validateSubdomainCommand(names, fields.subdomain);
+      return validateSubdomainCommand(name, fields.subdomain);
 
     case "question":
       return validateQuestionCommand(fields.questionType, fields.questionText);
 
     case "help":
-      return { valid: true, command: { action: "help", names: [] } };
+      return { valid: true, command: { action: "help", name: "" } };
 
-    // TODO: Add other actions
     default:
       return {
         valid: false,
@@ -97,61 +106,62 @@ export function validate_parse(
   }
 }
 
-// -- helpers --
-function validateCheckCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+// ============================================
+// Helper Validators (Single Name)
+// ============================================
+
+function validateCheckCommand(name: string | undefined): ValidationResult {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question:
         "Which ENS name would you like me to check? (like alice.eth) 🔍",
-      partial: { action: "check", names: [] },
+      partial: { action: "check", name: "" },
     };
   }
 
   // Validate ENS format - must end with .eth
-  const invalidNames = names.filter((n) => !n.toLowerCase().endsWith(".eth"));
-  if (invalidNames.length > 0) {
-    const suggestions = invalidNames.map((n) => `${n}.eth`).join(", ");
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
     return {
       valid: false,
       needsClarification: true,
-      question: `ENS names need to end with .eth! Did you mean: ${suggestions}? 😊`,
-      partial: { action: "check", names },
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "check", name },
     };
   }
 
   return {
     valid: true,
-    command: { action: "check", names: names.map((n) => n.toLowerCase()) },
+    command: { action: "check", name: name.toLowerCase() },
   };
 }
 
 function validateRegisterCommand(
-  names: string[],
+  name: string | undefined,
   duration: unknown,
   context?: { pendingCommand?: PendingCommand },
 ): ValidationResult {
-  // Check names first
-  if (!names.length) {
+  // Check name first
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question:
         "Which ENS name would you like to register? (like alice.eth) 📝",
-      partial: { action: "register", names: [] },
+      partial: { action: "register", name: "" },
     };
   }
 
   // Validate ENS format
-  const invalidNames = names.filter((n) => !n.toLowerCase().endsWith(".eth"));
-  if (invalidNames.length > 0) {
-    const suggestions = invalidNames.map((n) => `${n}.eth`).join(", ");
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
     return {
       valid: false,
       needsClarification: true,
-      question: `ENS names need to end with .eth! Did you mean: ${suggestions}? 😊`,
-      partial: { action: "register", names },
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "register", name },
     };
   }
 
@@ -160,8 +170,8 @@ function validateRegisterCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `For how many years would you like to register ${names.join(", ")}? (1-10 years) ⏰`,
-      partial: { action: "register", names },
+      question: `For how many years would you like to register **${name}**? (1-10 years) ⏰`,
+      partial: { action: "register", name },
     };
   }
 
@@ -172,7 +182,7 @@ function validateRegisterCommand(
       valid: false,
       needsClarification: true,
       question: "Please give me a number of years (like 1, 2, or 3) 🔢",
-      partial: { action: "register", names },
+      partial: { action: "register", name },
     };
   }
 
@@ -183,36 +193,44 @@ function validateRegisterCommand(
       needsClarification: true,
       question:
         "I can register names for 1 to 10 years. How many years would you like? 📅",
-      partial: { action: "register", names, duration: durationNum },
+      partial: { action: "register", name, duration: durationNum },
     };
   }
 
   // All valid!
-  const isBatch = names.length > 1;
   return {
     valid: true,
     command: {
       action: "register",
-      names: names.map((n) => n.toLowerCase()),
+      name: name.toLowerCase(),
       duration: durationNum,
-      options: isBatch ? { batch: true } : undefined,
     },
   };
 }
 
 function validateRenewCommand(
-  names: string[],
+  name: string | undefined,
   duration: unknown,
   context?: { pendingCommand?: PendingCommand },
 ): ValidationResult {
-  // Check names
-  if (!names.length) {
+  // Check name
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
-      question:
-        "Which names would you like to renew? (or say 'all my names') 🔄",
-      partial: { action: "renew", names: [] },
+      question: "Which name would you like to renew? 🔄",
+      partial: { action: "renew", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "renew", name },
     };
   }
 
@@ -221,8 +239,8 @@ function validateRenewCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `For how many years would you like to renew ${names.join(", ")}? (1-10 years) ⏰`,
-      partial: { action: "renew", names },
+      question: `For how many years would you like to renew **${name}**? (1-10 years) ⏰`,
+      partial: { action: "renew", name },
     };
   }
 
@@ -237,32 +255,41 @@ function validateRenewCommand(
       valid: false,
       needsClarification: true,
       question: "Please tell me how many years (1 to 10) 📅",
-      partial: { action: "renew", names },
+      partial: { action: "renew", name },
     };
   }
 
-  const isBatch = names.length > 1;
   return {
     valid: true,
     command: {
       action: "renew",
-      names: names.map((n) => n.toLowerCase()),
+      name: name.toLowerCase(),
       duration: durationNum,
-      options: isBatch ? { batch: true } : undefined,
     },
   };
 }
 
 function validateTransferCommand(
-  names: string[],
+  name: string | undefined,
   recipient: unknown,
 ): ValidationResult {
-  if (!names.length) {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question: "Which ENS name would you like to transfer? 📤",
-      partial: { action: "transfer", names: [] },
+      partial: { action: "transfer", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "transfer", name },
     };
   }
 
@@ -270,8 +297,8 @@ function validateTransferCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `Where should I send ${names[0]}? Give me an Ethereum address (starts with 0x) 📬`,
-      partial: { action: "transfer", names },
+      question: `Where should I send **${name}**? Give me an Ethereum address (starts with 0x) 📬`,
+      partial: { action: "transfer", name },
     };
   }
 
@@ -280,7 +307,7 @@ function validateTransferCommand(
       valid: false,
       needsClarification: true,
       question: `"${recipient}" doesn't look like an Ethereum address. It should start with 0x and be 42 characters long! 🔍`,
-      partial: { action: "transfer", names, recipient },
+      partial: { action: "transfer", name, recipient },
     };
   }
 
@@ -288,22 +315,33 @@ function validateTransferCommand(
     valid: true,
     command: {
       action: "transfer",
-      names: names.map((n) => n.toLowerCase()),
+      name: name.toLowerCase(),
       recipient,
     },
   };
 }
 
 function validateSetCommand(
-  names: string[],
+  name: string | undefined,
   records: unknown,
 ): ValidationResult {
-  if (!names.length) {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question: "Which ENS name would you like to set records for? ⚙️",
-      partial: { action: "set", names: [] },
+      partial: { action: "set", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "set", name },
     };
   }
 
@@ -311,8 +349,8 @@ function validateSetCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `What would you like to set for ${names[0]}? You can set: address, twitter, github, email, url, avatar, or description 📋`,
-      partial: { action: "set", names },
+      question: `What would you like to set for **${name}**? You can set: address, twitter, github, email, url, avatar, or description 📋`,
+      partial: { action: "set", name },
     };
   }
 
@@ -334,7 +372,7 @@ function validateSetCommand(
       valid: false,
       needsClarification: true,
       question: `I didn't find any records to set. You can set: ${validKeys.join(", ")} 📝`,
-      partial: { action: "set", names, records: {} },
+      partial: { action: "set", name, records: {} },
     };
   }
 
@@ -348,7 +386,7 @@ function validateSetCommand(
           valid: false,
           needsClarification: true,
           question: `The value for "${key}" should be text, not a ${typeof value} 📝`,
-          partial: { action: "set", names, records: recordsObj },
+          partial: { action: "set", name, records: recordsObj },
         };
       }
       cleanRecords[key] = value;
@@ -359,7 +397,7 @@ function validateSetCommand(
     valid: true,
     command: {
       action: "set",
-      names: names.map((n) => n.toLowerCase()),
+      name: name.toLowerCase(),
       records: cleanRecords,
     },
   };
@@ -368,11 +406,9 @@ function validateSetCommand(
 function validatePortfolioCommand(
   address: unknown,
   options: unknown,
-  names?: string[],
+  name?: string,
   recipient?: unknown,
 ): ValidationResult {
-  const opts = typeof options === "object" && options !== null ? options : {};
-
   // Try to find address from multiple possible fields
   let resolvedAddress: string | undefined;
 
@@ -381,12 +417,12 @@ function validatePortfolioCommand(
     resolvedAddress = address;
   }
   // Check recipient field (parser sometimes puts it here)
-  else if (typeof recipient === "string" && isAddress(recipient)) {
-    resolvedAddress = recipient;
+  else if (typeof recipient === "string" && isAddress(recipient as string)) {
+    resolvedAddress = recipient as string;
   }
-  // Check names array (parser sometimes puts it here)
-  else if (names && names.length > 0 && isAddress(names[0])) {
-    resolvedAddress = names[0];
+  // Check name field (parser sometimes puts it here)
+  else if (name && isAddress(name)) {
+    resolvedAddress = name;
   }
 
   console.log("Validate portfolio command", resolvedAddress);
@@ -406,102 +442,144 @@ function validatePortfolioCommand(
     command: {
       action: "portfolio",
       address: resolvedAddress as `0x${string}`,
-
-      // options: opts as { batch?: boolean; filter?: "expiring" | "all" },
     },
   };
 }
 
-function validateExpiryCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+function validateExpiryCommand(name: string | undefined): ValidationResult {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question: "Which ENS name would you like to check the expiry for? ⏰",
-      partial: { action: "expiry", names: [] },
+      partial: { action: "expiry", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "expiry", name },
     };
   }
 
   return {
     valid: true,
-    command: { action: "expiry", names: names.map((n) => n.toLowerCase()) },
+    command: { action: "expiry", name: name.toLowerCase() },
   };
 }
 
-function validateHistoryCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+function validateHistoryCommand(name: string | undefined): ValidationResult {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question: "Which ENS name would you like to see the history for? 📜",
-      partial: { action: "history", names: [] },
+      partial: { action: "history", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "history", name },
     };
   }
 
   return {
     valid: true,
-    command: { action: "history", names: names.map((n) => n.toLowerCase()) },
+    command: { action: "history", name: name.toLowerCase() },
   };
 }
 
-function validateRemindCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+function validateRemindCommand(name: string | undefined): ValidationResult {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question: "Which ENS name would you like me to remind you about? 🔔",
-      partial: { action: "remind", names: [] },
+      partial: { action: "remind", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "remind", name },
     };
   }
 
   return {
     valid: true,
-    command: { action: "remind", names: names.map((n) => n.toLowerCase()) },
+    command: { action: "remind", name: name.toLowerCase() },
   };
 }
 
-function validateWatchCommand(names: string[]): ValidationResult {
-  if (!names.length) {
+function validateWatchCommand(name: string | undefined): ValidationResult {
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question:
         "Which ENS name would you like me to watch for availability? 👀",
-      partial: { action: "watch", names: [] },
+      partial: { action: "watch", name: "" },
+    };
+  }
+
+  // Validate ENS format
+  if (!name.toLowerCase().endsWith(".eth")) {
+    const suggestion = `${name}.eth`;
+    return {
+      valid: false,
+      needsClarification: true,
+      question: `ENS names need to end with .eth! Did you mean: ${suggestion}? 😊`,
+      partial: { action: "watch", name },
     };
   }
 
   return {
     valid: true,
-    command: { action: "watch", names: names.map((n) => n.toLowerCase()) },
+    command: { action: "watch", name: name.toLowerCase() },
   };
 }
 
 function validateSubdomainCommand(
-  names: string[],
+  name: string | undefined,
   subdomain: unknown,
 ): ValidationResult {
-  // Must have at least one subname
-  if (!names || names.length === 0) {
+  // Must have a name
+  if (!name) {
     return {
       valid: false,
       needsClarification: true,
       question:
         "Which subdomain would you like to create? For example: blog.yourname.eth",
-      partial: { action: "subdomain", names: [] },
+      partial: { action: "subdomain", name: "" },
     };
   }
 
-  // If no subdomain object provided, try to parse from names
+  // If no subdomain object provided, try to parse from name
   if (!subdomain || typeof subdomain !== "object") {
-    const parsed = parseSubname(names[0]);
+    const parsed = parseSubname(name);
     if (!parsed) {
       return {
         valid: false,
         needsClarification: true,
         question:
           "I couldn't parse the subdomain. Please specify like: blog.yourname.eth",
-        partial: { action: "subdomain", names },
+        partial: { action: "subdomain", name },
       };
     }
 
@@ -509,10 +587,10 @@ function validateSubdomainCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `What address should ${names[0]} point to? Please provide an Ethereum address (0x...) or ENS name.`,
+      question: `What address should **${name}** point to? Please provide an Ethereum address (0x...) or ENS name.`,
       partial: {
         action: "subdomain",
-        names,
+        name,
         subdomain: { parent: parsed.parent, label: parsed.label },
       },
     };
@@ -528,7 +606,7 @@ function validateSubdomainCommand(
 
   // Validate parent and label exist
   if (!sub.parent || !sub.label) {
-    const parsed = parseSubname(names[0]);
+    const parsed = parseSubname(name);
     if (!parsed) {
       return {
         valid: false,
@@ -537,7 +615,7 @@ function validateSubdomainCommand(
           "I couldn't determine the parent domain. Please specify like: blog.yourname.eth",
         partial: {
           action: "subdomain",
-          names,
+          name,
           subdomain: {
             parent: sub.parent,
             label: sub.label,
@@ -555,10 +633,10 @@ function validateSubdomainCommand(
     return {
       valid: false,
       needsClarification: true,
-      question: `What address should ${sub.label}.${sub.parent} point to? Please provide an Ethereum address (0x...) or ENS name.`,
+      question: `What address should **${sub.label}.${sub.parent}** point to? Please provide an Ethereum address (0x...) or ENS name.`,
       partial: {
         action: "subdomain",
-        names,
+        name,
         subdomain: { parent: sub.parent, label: sub.label },
       },
     };
@@ -574,7 +652,7 @@ function validateSubdomainCommand(
       question: `"${sub.resolveAddress}" doesn't look like a valid Ethereum address or ENS name. Please provide a valid address (0x...) or ENS name (.eth).`,
       partial: {
         action: "subdomain",
-        names,
+        name,
         subdomain: { parent: sub.parent, label: sub.label },
       },
     };
@@ -590,7 +668,7 @@ function validateSubdomainCommand(
     valid: true,
     command: {
       action: "subdomain",
-      names: names.map((n) => n.toLowerCase()),
+      name: name.toLowerCase(),
       subdomain: {
         parent: sub.parent,
         label: sub.label,

@@ -77,6 +77,7 @@ import { handleBridging } from "../services/bridge/bridgeUtils";
 import { handleSubdomainCommand } from "./handleSubdomainCommand";
 import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 import { handleRegisterCommand } from "./handleRegisterCommand";
+import { handleTransferCommand } from "./handleTransferCommand";
 
 type UnifiedEvent = {
   channelId: string;
@@ -360,6 +361,8 @@ export async function handleMessage(
       recentMessages,
     );
 
+    console.log("parser", parserResult);
+
     if (!parserResult.success) {
       await sendBotMessage(
         handler,
@@ -471,7 +474,7 @@ export async function handlePendingCommandResponse(
 
     const partialCommand = pending.partialCommand as RegisterCommand;
 
-    if (!partialCommand.names || partialCommand.names.length === 0) {
+    if (!partialCommand.name || partialCommand.name.length === 0) {
       await sendBotMessage(
         handler,
         channelId,
@@ -485,7 +488,7 @@ export async function handlePendingCommandResponse(
 
     const updatedCommand: RegisterCommand = {
       action: "register",
-      names: partialCommand.names,
+      name: partialCommand.name,
       duration,
     };
 
@@ -524,8 +527,22 @@ export async function handlePendingCommandResponse(
 
         const flow = flowResult.data;
         const regData = flow.data;
-        const firstCommitment = regData.names[0];
-        const commitData = encodeCommitData(firstCommitment.commitment);
+        const firstCommitment = regData.commitment;
+
+        if (!firstCommitment || !firstCommitment.commitment) {
+          await sendBotMessage(
+            handler,
+            channelId,
+            threadId,
+            userId,
+            "Registration data is incomplete. Please start again with `/register`.",
+          );
+          await clearUserPendingCommand(userId);
+          await clearActiveFlow(userId, threadId);
+          return;
+        }
+
+        const commitData = encodeCommitData(firstCommitment?.commitment);
         const commitmentId = `commit:${userId}:${Date.now()}`;
 
         // ✅ Update flow status
@@ -544,7 +561,7 @@ export async function handlePendingCommandResponse(
           {
             type: "transaction",
             id: commitmentId,
-            title: `Commit ENS Registration: ${firstCommitment.name}`,
+            title: `Commit ENS Registration: ${firstCommitment?.name}`,
             tx: {
               chainId: "1",
               to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
@@ -722,7 +739,7 @@ export async function executeValidCommand(
   }
 
   if (command.action === "check") {
-    const checkResult = await checkAvailability(command.names);
+    const checkResult = await checkAvailability(command.name);
     if (!checkResult.success) {
       await sendBotMessage(
         handler,
@@ -741,7 +758,7 @@ export async function executeValidCommand(
 
   if (command.action === "expiry") {
     const expiryResult: ApiResponse<ExpiryData> = await checkExpiry(
-      command.names,
+      command.name,
     );
 
     if (!expiryResult.success) {
@@ -760,18 +777,18 @@ export async function executeValidCommand(
   }
 
   if (command.action === "history") {
-    if (command.names.length > 1) {
+    if (command.name.length > 1) {
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        `I'll get history for just the first name "${command.names[0]}" because the data returned for history is usually long`,
+        `I'll get history for just the first name "${command.name[0]}" because the data returned for history is usually long`,
       );
     }
 
-    const historyResult: HistoryData = await getHistory(command.names[0]);
-    const historyData = formatHistoryResponse(command.names[0], historyResult);
+    const historyResult: HistoryData = await getHistory(command.name[0]);
+    const historyData = formatHistoryResponse(command.name[0], historyResult);
     await sendBotMessage(handler, channelId, threadId, userId, historyData);
     return;
   }
@@ -810,6 +827,7 @@ export async function executeValidCommand(
     await sendBotMessage(handler, channelId, threadId, userId, portfolioData);
     return;
   }
+  console.log("handleValid", command.name);
 
   await handleExecution(handler, channelId, threadId, userId, command);
 }
@@ -838,8 +856,8 @@ async function handleExecution(
           userId,
           threadId,
           channelId,
-          { action: "subdomain", names: [] },
-          "names",
+          { action: "subdomain", name: "" },
+          "name",
         );
         return;
       }
@@ -861,7 +879,7 @@ async function handleExecution(
           channelId,
           {
             action: "subdomain",
-            names: [fullName],
+            name: fullName,
             subdomain: {
               parent: subdomain.parent,
               label: subdomain.label,
@@ -888,6 +906,10 @@ async function handleExecution(
   if (command.action === "register") {
     await handleRegisterCommand(handler, channelId, threadId, userId, command);
   }
+
+  if (command.action === "transfer") {
+    await handleTransferCommand(handler, channelId, threadId, userId, command);
+  }
 }
 
 export async function proceedWithRegistration(
@@ -901,7 +923,7 @@ export async function proceedWithRegistration(
 ) {
   try {
     const registration = await prepareRegistration({
-      names: command.names,
+      name: command.name,
       owner: selectedWallet,
       durationYears: command.duration,
     });
@@ -921,7 +943,7 @@ export async function proceedWithRegistration(
       return;
     }
 
-    // ✅ Create registration flow with new API
+    // Create registration flow
     const registrationFlow = createRegistrationFlow({
       userId,
       threadId,

@@ -23,13 +23,15 @@ export interface PendingCommand {
   partialCommand: Partial<ParsedCommand>;
   waitingFor:
     | "duration"
-    | "names"
+    | "name"
     | "recipient"
     | "records"
     | "confirmation"
     | "wallet_selection"
     | "bridge_confirmation"
-    | "subdomain_address";
+    | "subdomain_address"
+    | "subdomain_confirmation"
+    | "transfer_confirmation";
   attemptCount: number;
   createdAt: number;
 }
@@ -93,7 +95,8 @@ export interface PendingRegistration {
     | "awaiting_commit_confirmation"
     | "commit_pending"
     | "awaiting_register_confirmation";
-  names: RegistrationCommitment[];
+  name: string;
+  commitment: RegistrationCommitment;
   costs: RegistrationCostEstimate;
   totalDomainCostWei: bigint;
   totalDomainCostEth: string;
@@ -171,32 +174,32 @@ export type CommandOptions = {
 
 export interface CheckCommand extends BaseCommand {
   action: "check";
-  names: string[];
+  name: string;
 }
 
 export interface RegisterCommand extends BaseCommand {
   action: "register";
-  names: string[];
+  name: string;
   duration: number;
   options?: CommandOptions; // Made optional to fix type mismatch
 }
 
 export interface RenewCommand extends BaseCommand {
   action: "renew";
-  names: string[];
+  name: string;
   duration: number;
   options?: CommandOptions; // Made optional to fix type mismatch
 }
 
 export interface TransferCommand extends BaseCommand {
   action: "transfer";
-  names: string[];
+  name: string;
   recipient: string;
 }
 
 export interface SetCommand extends BaseCommand {
   action: "set";
-  names: string[];
+  name: string;
   records: EnsRecords;
 }
 
@@ -223,33 +226,33 @@ export interface SubdomainInfo {
 }
 export interface SubdomainCommand extends BaseCommand {
   action: "subdomain";
-  names: string[];
+  name: string;
   subdomain?: SubdomainInfo;
 }
 
 export interface ExpiryCommand extends BaseCommand {
   action: "expiry";
-  names: string[];
+  name: string;
 }
 
 export interface HistoryCommand extends BaseCommand {
   action: "history";
-  names: string[];
+  name: string;
 }
 
 export interface RemindCommand extends BaseCommand {
   action: "remind";
-  names: string[];
+  name: string;
 }
 
 export interface WatchCommand extends BaseCommand {
   action: "watch";
-  names: string[];
+  name: string;
 }
 
 export interface HelpCommand extends BaseCommand {
   action: "help";
-  names: string[];
+  name: string;
 }
 
 export interface QuestionCommand extends BaseCommand {

@@ -1,4 +1,4 @@
-export type FlowType = "registration" | "bridge" | "subdomain";
+export type FlowType = "registration" | "bridge" | "subdomain" | "transfer";
 
 export type FlowStatus =
   | "initiated" // Flow started, waiting for first action
@@ -8,20 +8,27 @@ export type FlowStatus =
   | "step1_complete" // Step 1 done, preparing step 2
   | "step2_pending" // Step 2 transaction sent, waiting for confirmation
   | "complete" // All done
-  | "failed"; // Something went wrong
+  | "failed" // Something went wrong
+  | "awaiting_confirmation";
 
-export type ActiveFlow = RegistrationFlow | BridgeFlow | SubdomainFlow;
+export type ActiveFlow =
+  | RegistrationFlow
+  | BridgeFlow
+  | SubdomainFlow
+  | TransferFlow;
 
 export interface RegistrationFlowData {
-  // Names being registered
-  names: Array<{
+  // Name being registered
+  name: string;
+
+  commitment?: {
     name: string;
     secret: `0x${string}`;
     commitment: `0x${string}`;
     owner: `0x${string}`;
     durationSec: bigint;
     domainPriceWei: bigint;
-  }>;
+  };
 
   // Cost estimates
   costs: {
@@ -109,6 +116,20 @@ export interface SubdomainFlowData {
   canDoStep2: boolean;
 }
 
+export interface TransferFlowData {
+  // Core transfer info
+  domain: string;
+  recipient: `0x${string}`;
+  ownerWallet: `0x${string}`;
+  isWrapped: boolean;
+
+  // Transaction tracking (optional, populated after tx sent)
+  txHash?: `0x${string}`;
+
+  // Contract that will be used (helpful for debugging/display)
+  contract?: "registry" | "nameWrapper" | "registrar";
+}
+
 // ============ Base Flow Interface ============
 interface BaseFlow {
   // Identity
@@ -139,4 +160,9 @@ export interface BridgeFlow extends BaseFlow {
 export interface SubdomainFlow extends BaseFlow {
   type: "subdomain";
   data: SubdomainFlowData;
+}
+
+export interface TransferFlow extends BaseFlow {
+  type: "transfer";
+  data: TransferFlowData;
 }

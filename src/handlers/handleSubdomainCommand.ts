@@ -11,6 +11,8 @@ import {
   createSubdomainFlow,
   isSubdomainFlow,
   type SubdomainFlow,
+  setUserPendingCommand,
+  clearUserPendingCommand,
 } from "../db";
 import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 import { sendBotMessage } from "./handle_message_utils";
@@ -25,7 +27,7 @@ export async function handleSubdomainCommand(
   command: SubdomainCommand,
 ): Promise<void> {
   const service = getSubdomainService();
-  const { names, subdomain } = command;
+  const { name, subdomain } = command;
 
   // Validate subdomain info exists
   if (!subdomain || !subdomain.parent || !subdomain.label) {
@@ -201,6 +203,14 @@ export async function handleSubdomainCommand(
 
     await setActiveFlow(flow);
 
+    await setUserPendingCommand(
+      userId,
+      threadId,
+      channelId,
+      command,
+      "subdomain_confirmation",
+    );
+
     // Send first transaction request (create subdomain)
     await handler.sendInteractionRequest(
       channelId,
@@ -297,6 +307,7 @@ export async function handleSubdomainStep1Transaction(
       { threadId: validThreadId },
     );
     await clearActiveFlow(userId, originalThreadId);
+    await clearUserPendingCommand(userId);
     return;
   }
 
@@ -322,6 +333,7 @@ export async function handleSubdomainStep1Transaction(
 
     // Clean up flow
     await clearActiveFlow(userId, originalThreadId);
+    await clearUserPendingCommand(userId);
     return;
   }
 
@@ -420,10 +432,11 @@ export async function handleSubdomainStep2Transaction(
       { threadId: validThreadId },
     );
     await clearActiveFlow(userId, originalThreadId);
+    await clearUserPendingCommand(userId);
     return;
   }
 
-  //  Update flow and mark complete
+  // Update flow and mark complete
   await updateFlowData(userId, originalThreadId, {
     step2TxHash: tx.txHash,
   });
@@ -444,6 +457,7 @@ export async function handleSubdomainStep2Transaction(
 
   // Clean up flow
   await clearActiveFlow(userId, originalThreadId);
+  await clearUserPendingCommand(userId);
 }
 
 // ============ Main router for subdomain transactions ============

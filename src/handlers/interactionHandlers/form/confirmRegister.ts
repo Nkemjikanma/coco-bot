@@ -1,26 +1,19 @@
 import { BotHandler } from "@towns-protocol/bot";
 import { FormCase, OnInteractionEventType } from "../types";
-import {
-  clearPendingRegistration,
-  clearUserPendingCommand,
-  getPendingRegistration,
-  UserState,
-} from "../../../db/userStateStore";
 import { encodeRegisterData } from "../../../services/ens";
 import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
-import { hexToBytes } from "viem";
-import { PendingRegistration, RegistrationResult } from "../../../types";
 import {
   clearActiveFlow,
+  clearUserPendingCommand,
   getActiveFlow,
   isRegistrationFlow,
+  updateFlowStatus,
 } from "../../../db";
 
 export async function confirmRegister(
   handler: BotHandler,
   event: OnInteractionEventType,
   registerForm: FormCase,
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
   const threadId = event.threadId || event.eventId;
@@ -50,6 +43,17 @@ export async function confirmRegister(
   const flow = flowResult.data;
   const regData = flow.data;
 
+  // Validate we have required data
+  if (!regData || !regData.name || !regData.commitment) {
+    await handler.sendMessage(
+      channelId,
+      "Registration expired. Please start again.",
+      { threadId },
+    );
+    await clearActiveFlow(userId, threadId);
+    return;
+  }
+
   if (!registerForm) {
     return;
   }
@@ -65,33 +69,35 @@ export async function confirmRegister(
     }
 
     if (component.component.case === "button" && component.id === "confirm") {
-      const firstReg = regData.names[0];
+      const { commitment, selectedWallet, name } = regData;
 
-      // validate owner matches signer - safety
-      if (firstReg.owner !== regData.selectedWallet) {
+      // Validate owner matches signer
+      if (commitment.owner !== selectedWallet) {
         console.error("Owner/signer mismatch detected", {
-          owner: firstReg.owner,
-          signer: regData.selectedWallet,
+          owner: commitment.owner,
+          signer: selectedWallet,
         });
 
         await handler.sendMessage(
           channelId,
-          "Internal error: Wallet mismatch detected. Please start registratioin again",
+          "Internal error: Wallet mismatch detected. Please start registration again",
           { threadId },
         );
 
         await clearActiveFlow(userId, threadId);
         await clearUserPendingCommand(userId);
-
         return;
       }
 
+      // Update status
+      await updateFlowStatus(userId, threadId, "step2_pending");
+
       // Encode register function call
       const registerData = encodeRegisterData({
-        name: firstReg.name.replace(/\.eth$/, ""),
-        owner: firstReg.owner,
-        duration: firstReg.durationSec,
-        secret: firstReg.secret,
+        name: name.replace(/\.eth$/, ""),
+        owner: commitment.owner,
+        duration: commitment.durationSec,
+        secret: commitment.secret,
         resolver: ENS_CONTRACTS.PUBLIC_RESOLVER,
         data: [],
         reverseRecord: false,
@@ -105,19 +111,17 @@ export async function confirmRegister(
         {
           type: "transaction",
           id: registerId,
-          title: `Register: ${firstReg.name}`,
+          title: `Register: ${name}`,
           tx: {
             chainId: REGISTRATION.CHAIN_ID,
             to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
-            value: firstReg.domainPriceWei.toString(),
+            value: commitment.domainPriceWei.toString(),
             data: registerData,
-            signerWallet: regData.selectedWallet || undefined,
+            signerWallet: selectedWallet || undefined,
           },
           recipient: userId as `0x${string}`,
         },
-        {
-          threadId,
-        },
+        { threadId },
       );
 
       return;

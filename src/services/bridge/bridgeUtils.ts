@@ -8,6 +8,7 @@ import { sendBotMessage } from "../../handlers";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
+  RegistrationFlowData,
   updateFlowData,
   updateFlowStatus,
 } from "../../db";
@@ -19,7 +20,7 @@ export async function handleBridging(
   channelId: string,
   threadId: string,
   userId: string,
-  registration: PendingRegistration,
+  registration: RegistrationFlowData,
   command: RegisterCommand,
 ) {
   const baseBalanceCheck = await checkBalance(userWallet, CHAIN_IDS.BASE);
@@ -35,25 +36,25 @@ export async function handleBridging(
   try {
     // Check BOTH that commitment exists AND owner matches selected wallet
     const needsNewCommitment =
-      !registration.names ||
-      registration.names.length === 0 ||
-      !registration.names[0]?.commitment ||
-      registration.names[0]?.owner?.toLowerCase() !== userWallet.toLowerCase();
+      !registration.name ||
+      !registration.commitment?.commitment ||
+      registration.commitment?.owner?.toLowerCase() !==
+        userWallet.toLowerCase();
 
     if (needsNewCommitment) {
-      const reason = !registration.names?.length
+      const reason = !registration.name
         ? "no names"
-        : !registration.names[0]?.commitment
+        : !registration.commitment?.commitment
           ? "no commitment"
           : "owner mismatch";
 
       console.log(`handleBridging: Need new commitment - reason: ${reason}`);
-      console.log(`  Current owner: ${registration.names?.[0]?.owner}`);
+      console.log(`  Current owner: ${registration.commitment?.owner}`);
       console.log(`  Selected wallet: ${userWallet}`);
 
       try {
         const preparedReg = await prepareRegistration({
-          names: command.names,
+          name: command.name,
           owner: userWallet,
           durationYears: command.duration,
         });
@@ -75,9 +76,9 @@ export async function handleBridging(
           "handleBridging: Registration prepared with correct owner:",
         );
         console.log(
-          `  Commitment exists: ${registration.names[0]?.commitment ? "✅" : "❌"}`,
+          `  Commitment exists: ${registration.commitment?.commitment ? "✅" : "❌"}`,
         );
-        console.log(`  Owner: ${registration.names[0]?.owner}`);
+        console.log(`  Owner: ${registration.commitment?.owner}`);
       } catch (prepError) {
         console.error(
           "handleBridging: Error preparing registration:",

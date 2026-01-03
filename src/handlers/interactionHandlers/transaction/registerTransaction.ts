@@ -5,6 +5,7 @@ import {
   clearActiveFlow,
   getActiveFlow,
   isRegistrationFlow,
+  updateFlowData,
   updateFlowStatus,
 } from "../../../db";
 
@@ -15,7 +16,6 @@ export async function registerTransaction(
     requestId: string;
     txHash: string;
   },
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
   const threadId = event.threadId || event.eventId;
@@ -43,11 +43,15 @@ export async function registerTransaction(
 
   const flow = flowResult.data;
   const regData = flow.data;
-  // TODO: Multiple names fix?
-  const registeredName = regData.names[0].name;
+  const registeredName = regData.name;
 
   if (tx.txHash) {
-    // ✅ Update status to complete
+    // Update flow with register tx hash
+    await updateFlowData(userId, threadId, {
+      registerTxHash: tx.txHash as `0x${string}`,
+    });
+
+    // Update status to complete
     await updateFlowStatus(userId, threadId, "complete");
 
     // Registration complete!
@@ -73,7 +77,7 @@ Welcome to ENS! 🚀`,
     await clearActiveFlow(userId, threadId);
     await clearUserPendingCommand(userId);
   } else {
-    // ✅ Update status to failed
+    // Update status to failed
     await updateFlowStatus(userId, threadId, "failed");
 
     await handler.sendMessage(

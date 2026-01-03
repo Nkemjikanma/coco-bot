@@ -5,21 +5,17 @@ import {
   getActiveFlow,
   isRegistrationFlow,
   updateFlowStatus,
-  updateFlowData,
 } from "../../../db";
 import { encodeCommitData } from "../../../services/ens";
 import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
 import { FormCase, OnInteractionEventType } from "../types";
-import { UserState } from "../../../db/userStateStore";
 
 export async function confirmCommit(
   handler: BotHandler,
   event: OnInteractionEventType,
   confirmForm: FormCase,
-  userState: UserState,
 ) {
   const { userId, channelId } = event;
-
   const threadId = event.threadId || event.eventId;
 
   const flowResult = await getActiveFlow(userId, threadId);
@@ -47,7 +43,8 @@ export async function confirmCommit(
   const flow = flowResult.data;
   const regData = flow.data;
 
-  if (!regData || !regData.names || regData.names.length === 0) {
+  // Validate we have required data
+  if (!regData || !regData.name || !regData.commitment) {
     await handler.sendMessage(
       channelId,
       "Registration expired. Please start again.",
@@ -64,7 +61,6 @@ export async function confirmCommit(
   for (const component of confirmForm.components) {
     // Handle cancel
     if (component.component.case === "button" && component.id === "cancel") {
-      // ✅ Use new API for cleanup
       await clearActiveFlow(userId, threadId);
       await clearUserPendingCommand(userId);
       await handler.sendMessage(channelId, "Registration cancelled. 👋", {
@@ -74,7 +70,7 @@ export async function confirmCommit(
     }
 
     if (component.id === "confirm") {
-      // ✅ Update status using new API
+      // Update status
       await updateFlowStatus(userId, threadId, "step1_pending");
 
       await handler.sendMessage(
@@ -83,14 +79,13 @@ export async function confirmCommit(
         { threadId },
       );
 
-      // TODO: Handle multiple names
-      const firstCommitment = regData.names[0];
+      const { commitment, selectedWallet, name } = regData;
 
       // Validate owner matches signer
-      if (firstCommitment.owner !== regData.selectedWallet) {
+      if (commitment.owner !== selectedWallet) {
         console.error("Owner/signer mismatch detected", {
-          owner: firstCommitment.owner,
-          signer: regData.selectedWallet,
+          owner: commitment.owner,
+          signer: selectedWallet,
         });
 
         await handler.sendMessage(
@@ -99,13 +94,12 @@ export async function confirmCommit(
           { threadId },
         );
 
-        // ✅ Use new API for cleanup
         await clearActiveFlow(userId, threadId);
         await clearUserPendingCommand(userId);
         return;
       }
 
-      const commitData = encodeCommitData(firstCommitment.commitment);
+      const commitData = encodeCommitData(commitment.commitment);
 
       // Generate a unique ID for transaction
       const commitmentId = `commit:${userId}:${Date.now()}`;
@@ -116,13 +110,13 @@ export async function confirmCommit(
         {
           type: "transaction",
           id: commitmentId,
-          title: `Commit ENS Registration: ${firstCommitment.name}`,
+          title: `Commit ENS Registration: ${name}`,
           tx: {
             chainId: REGISTRATION.CHAIN_ID.toString(),
             to: ENS_CONTRACTS.REGISTRAR_CONTROLLER,
             value: "0",
             data: commitData,
-            signerWallet: regData.selectedWallet || undefined,
+            signerWallet: selectedWallet || undefined,
           },
           recipient: userId as `0x${string}`,
         },
