@@ -6,7 +6,7 @@ import {
   labelhash,
   namehash,
 } from "viem";
-import { mainnet } from "viem/chains";
+import { base, mainnet } from "viem/chains";
 import { getActualOwner, isNameWrapped, verifyOwnership } from "../utils";
 import { ENS_CONTRACTS, NAME_WRAPPER_ADDRESS } from "../constants";
 import { TransferContract, TransferTransactionData } from "./transfer.types";
@@ -338,6 +338,53 @@ export class TransferService {
       reclaim: params.reclaim,
       asParent: params.asParent,
     });
+  }
+
+  async checkSmartContractOnChains(address: `0x${string}`): Promise<{
+    isContractOnMainnet: boolean;
+    isContractOnBase: boolean;
+    warning?: string;
+  }> {
+    const [isContractOnMainnet, isContractOnBase] = await Promise.all([
+      this.isSmartContract(address, 1),
+      this.isSmartContract(address, 8453),
+    ]);
+
+    let warning: string | undefined;
+
+    if (isContractOnBase && !isContractOnMainnet) {
+      warning =
+        "⚠️ **Warning:** This appears to be a smart wallet on Base that doesn't exist on Ethereum Mainnet. \n\n" +
+        "ENS names live on Mainnet, so transferring to this address may result in **permanent loss** of the name. \n\n" +
+        "Please verify the recipient can access this address on Mainnet. \n\n";
+    } else if (isContractOnMainnet) {
+      warning =
+        "⚠️ **Note:** This is a smart contract address. Make sure the contract can manage ENS names. \n\n";
+    }
+
+    return {
+      isContractOnMainnet,
+      isContractOnBase,
+      warning,
+    };
+  }
+
+  async isSmartContract(
+    address: `0x${string}`,
+    chainId: number = 1,
+  ): Promise<boolean> {
+    const chain = chainId === 8453 ? base : mainnet;
+
+    const client = createPublicClient({
+      chain,
+      transport: http(),
+    });
+
+    const code = await client.getCode({ address });
+
+    // If code is "0x" or undefined, it's an EOA
+    // If code has actual bytecode, it's a smart contract
+    return code !== undefined && code !== "0x";
   }
 }
 

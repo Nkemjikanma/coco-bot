@@ -115,19 +115,32 @@ export async function handleTransferCommand(
       "transfer_confirmation",
     );
 
+    const contractCheck = await service.checkSmartContractOnChains(
+      recipient as `0x${string}`,
+    );
+
+    let confirmationMessage =
+      `✅ **Transfer Validation Passed**\n\n` +
+      `• **Name:** ${name}\n` +
+      `• **From:** \`${formatAddress(ownerWallet)}\`\n` +
+      `• **To:** \`${formatAddress(recipient as `0x${string}`)}\`\n` +
+      `• **Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped"}\n\n`;
+
+    if (contractCheck.warning) {
+      confirmationMessage += `${contractCheck.warning}\n\n`;
+    }
+
+    confirmationMessage +=
+      `⚠️ **Warning:** This action is irreversible. The recipient will become the new owner of **${name}**.\n\n` +
+      `💰 **Cost:** Gas only (~$2-5)`;
+
     // Show transfer summary
     await sendBotMessage(
       handler,
       channelId,
       threadId,
       userId,
-      `✅ **Transfer Validation Passed**\n\n` +
-        `• **Name:** ${name}\n` +
-        `• **From:** \`${formatAddress(ownerWallet)}\`\n` +
-        `• **To:** \`${formatAddress(recipient as `0x${string}`)}\`\n` +
-        `• **Type:** ${isWrapped ? "Wrapped (NameWrapper)" : "Unwrapped"}\n\n` +
-        `⚠️ **Warning:** This action is irreversible. The recipient will become the new owner of **${name}**.\n\n` +
-        `💰 **Cost:** Gas only (~$2-5)`,
+      confirmationMessage,
     );
 
     await handler.sendInteractionRequest(

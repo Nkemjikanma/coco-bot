@@ -1,5 +1,10 @@
 import { BotHandler } from "@towns-protocol/bot";
-import { getActiveFlow, clearActiveFlow, updateFlowStatus } from "../../../db";
+import {
+  getActiveFlow,
+  clearActiveFlow,
+  updateFlowStatus,
+  clearUserPendingCommand,
+} from "../../../db";
 import { isTransferFlow } from "../../../db/flow";
 import { getTransferService } from "../../../services/ens/transfer/transfer";
 import { formatAddress } from "../../../utils";
@@ -52,6 +57,7 @@ export async function handleTransferConfirmation(
     if (component.component?.case === "button") {
       if (component.id === "cancel") {
         await clearActiveFlow(userId, threadId);
+        await clearUserPendingCommand(userId);
         await handler.sendMessage(channelId, "Transfer cancelled. 👋", {
           threadId,
         });
@@ -100,6 +106,7 @@ export async function handleTransferConfirmation(
         await handler.sendMessage(
           channelId,
           `📤 **Transfer Transaction**\n\n` +
+            `` +
             `Please approve the transaction to transfer **${transferData.domain}** to \`${formatAddress(transferData.recipient)}\`.`,
           { threadId },
         );
