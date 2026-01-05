@@ -9,7 +9,9 @@ async function startBot() {
 
     const app = bot.start();
     app.get("/", (c) => c.text("Coco is up and running"));
-
+    app.get("/.well-known/agent-metadata.json", async (c) => {
+      return c.json(await bot.getIdentityMetadata());
+    });
     return app;
   } catch (error) {
     console.error("Failed to start bot:", error);
