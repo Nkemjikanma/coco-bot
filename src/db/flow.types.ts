@@ -7,6 +7,8 @@ export type FlowStatus =
   | "step1_pending" // Step 1 transaction sent, waiting for confirmation
   | "step1_complete" // Step 1 done, preparing step 2
   | "step2_pending" // Step 2 transaction sent, waiting for confirmation
+  | "step2_complete"
+  | "step3_pending" //Step 3, transafer subdomain
   | "complete" // All done
   | "failed" // Something went wrong
   | "awaiting_confirmation";
@@ -96,24 +98,30 @@ export interface BridgeFlowData {
 }
 
 export interface SubdomainFlowData {
-  // Subdomain info
-  subdomain: string; // e.g., "treasury"
-  domain: string; // e.g., "cocobot.eth"
-  fullName: string; // e.g., "treasury.cocobot.eth"
+  // Core subdomain info
+  subdomain: string; // The label (e.g., "treasury")
+  domain: string; // The parent (e.g., "myname.eth")
+  fullName: string; // The full name (e.g., "treasury.myname.eth")
 
   // Addresses
-  recipient: `0x${string}`;
-  ownerWallet: `0x${string}`;
+  resolveAddress: string; // Address the subdomain should point to (NEW!)
+  recipient: string; // Final owner of the subdomain
+  ownerWallet: string; // User's wallet that signs all transactions
 
-  // Parent domain info
-  isWrapped: boolean;
+  // Domain state
+  isWrapped: boolean; // Whether parent is wrapped
 
-  // Transaction tracking
-  step1TxHash?: string;
-  step2TxHash?: string;
+  // Flow progress (NEW!)
+  currentStep: number; // Current step (1, 2, or 3)
+  totalSteps: number; // Total steps (2 if recipient=caller, 3 otherwise)
 
-  // Whether step 2 is possible (recipient is user's wallet)
-  canDoStep2: boolean;
+  // Transaction hashes
+  step1TxHash?: string; // Create subdomain tx
+  step2TxHash?: string; // Set address record tx
+  step3TxHash?: string; // Transfer ownership tx (NEW!)
+
+  // Legacy field (keep for backward compatibility)
+  canDoStep2?: boolean;
 }
 
 export interface TransferFlowData {

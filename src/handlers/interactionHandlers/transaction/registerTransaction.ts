@@ -62,7 +62,7 @@ export async function registerTransaction(
 **${registeredName}** is now yours!
 
 🔗 **Transaction Details**
-└─ Tx: ${tx.txHash}
+└─ Tx: [tx](https://etherscan.io/tx/${tx.txHash})
 
 **What's Next?**
 - Set up your ENS records (address, avatar, social links)

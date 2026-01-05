@@ -2,6 +2,7 @@ import { bot } from "./bot";
 import { initRedis } from "./db";
 
 async function startBot() {
+  console.log("We are here");
   try {
     await initRedis();
     console.log("✅ Redis connected");

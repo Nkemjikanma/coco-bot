@@ -35,7 +35,6 @@ import {
   clearAllUserFlows,
   clearUserPendingCommand,
 } from "../../db";
-import { clearBridge } from "../../db/bridgeStore";
 import { OwnerInfo } from "./types";
 
 // Lazy-initialized client

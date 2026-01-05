@@ -28,33 +28,49 @@ export interface ParsedSubname {
   labelHash: `0x${string}`; // labelhash of the label
 }
 
-export interface SubdomainPrepareResult {
-  success: boolean;
-  reason?: string;
-  subdomain?: string;
-  domain?: string;
-  fullName?: string;
-  parentNode?: `0x${string}`;
-  subdomainNode?: `0x${string}`;
-  labelHash?: `0x${string}`;
-  recipient?: `0x${string}`;
-  ownerWallet?: `0x${string}`;
-  isWrapped?: boolean;
+// ============================================================
+// SUBDOMAIN FLOW DATA (for 3-step flow)
+// ============================================================
+
+/**
+ * Data stored in the flow for subdomain creation
+ * Used by the 3-step flow: Create → Set Address → Transfer
+ */
+export interface SubdomainFlowData {
+  // Core subdomain info
+  subdomain: string; // The label (e.g., "treasury")
+  domain: string; // The parent (e.g., "myname.eth")
+  fullName: string; // The full name (e.g., "treasury.myname.eth")
+
+  // Addresses
+  resolveAddress: string; // Address the subdomain should point to
+  recipient: string; // Final owner of the subdomain
+  ownerWallet: string; // User's wallet that signs all transactions
+
+  // Domain state
+  isWrapped: boolean; // Whether parent is wrapped
+
+  // Flow progress
+  currentStep: number; // Current step (1, 2, or 3)
+  totalSteps: number; // Total steps (2 if recipient=caller, 3 otherwise)
+
+  // Transaction hashes (populated as flow progresses)
+  step1TxHash?: string; // Create subdomain tx
+  step2TxHash?: string; // Set address record tx
+  step3TxHash?: string; // Transfer ownership tx
+
+  // Legacy field (for backward compatibility)
+  canDoStep2?: boolean;
 }
 
-export interface SubdomainAssignmentState {
-  userId: string;
-  channelId: string;
-  threadId: string;
-  subdomain: string;
-  domain: string;
-  fullName: string;
-  recipient: `0x${string}`;
-  ownerWallet: `0x${string}`;
-  isWrapped: boolean;
-  timestamp: number;
-  status: "pending" | "step1_complete" | "completed" | "failed";
-  step1TxHash?: string;
-  step2TxHash?: string;
-  canDoStep2: boolean;
-}
+/**
+ * Flow statuses for subdomain flow
+ */
+export type SubdomainFlowStatus =
+  | "step1_pending" // Waiting for step 1 tx
+  | "step1_complete" // Step 1 done
+  | "step2_pending" // Waiting for step 2 tx
+  | "step2_complete" // Step 2 done
+  | "step3_pending" // Waiting for step 3 tx
+  | "complete" // All done
+  | "failed"; // Something went wrong

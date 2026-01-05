@@ -10,8 +10,11 @@ import { mainnet } from "viem/chains";
 import {
   ENS_CONTRACTS,
   ENS_REGISTRY_ABI,
+  ENS_REGISTRY_SET_OWNER_ABI,
   NAME_WRAPPER_ABI,
   NAME_WRAPPER_ADDRESS,
+  NAME_WRAPPER_TRANSFER_ABI,
+  PUBLIC_RESOLVER_ABI,
 } from "../constants";
 import { FUSES } from "./subdomain.constants";
 import { SubnameTransactionData } from "./subdomain.types";
@@ -49,7 +52,6 @@ export class SubdomainService {
         args: [node as `0x${string}`],
       })) as string;
 
-      // Compare lowercase to handle checksum differences
       return registryOwner.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
     } catch (error) {
       console.error(`isNameWrapped error for ${name}:`, error);
@@ -59,8 +61,6 @@ export class SubdomainService {
 
   /**
    * Get the ACTUAL owner of a name
-   * - For wrapped names: queries NameWrapper.ownerOf(tokenId)
-   * - For unwrapped names: returns Registry owner
    */
   async getNameOwner(name: string): Promise<{
     owner: `0x${string}` | null;
@@ -89,7 +89,6 @@ export class SubdomainService {
     console.log(`NameWrapper address: ${NAME_WRAPPER_ADDRESS}`);
     console.log(`============================================\n`);
 
-    // Get the actual owner
     const ownerResult = await this.getNameOwner(parentName);
 
     if (!ownerResult.owner) {
@@ -104,12 +103,11 @@ export class SubdomainService {
     console.log(`[verifyParentOwnership] Is wrapped: ${ownerResult.isWrapped}`);
 
     const result = await verifyOwnership(parentName, userWallets);
-
     return result;
   }
 
   /**
-   * Check if the caller owns the parent name (original method for single wallet check)
+   * Check if the caller owns the parent name
    */
   async canCreateSubname(
     parentName: string,
@@ -195,121 +193,191 @@ export class SubdomainService {
     }
   }
 
-  /**
-   * Build transaction for wrapped names (via NameWrapper)
-   */
-  buildCreateSubnameWrapped(params: {
-    parentNode: `0x${string}`;
-    label: string;
-    owner: `0x${string}`;
-    resolverAddress?: `0x${string}`;
-    fuses?: number;
-    expiry?: bigint;
-  }): SubnameTransactionData {
-    const resolverAddress =
-      params.resolverAddress || ENS_CONTRACTS.PUBLIC_RESOLVER;
-
-    const data = encodeFunctionData({
-      abi: NAME_WRAPPER_ABI,
-      functionName: "setSubnodeRecord",
-      args: [
-        params.parentNode,
-        params.label,
-        params.owner,
-        resolverAddress,
-        0n,
-        params.fuses || 0,
-        params.expiry || 0n,
-      ],
-    });
-
-    return {
-      to: NAME_WRAPPER_ADDRESS as `0x${string}`,
-      data,
-      value: 0n,
-      chainId: this.chainId,
-    };
-  }
+  // ============================================================
+  // 3-STEP FLOW TRANSACTION BUILDERS
+  // ============================================================
 
   /**
-   * Build transaction for unwrapped names (via Registry)
+   * Step 1: Create subdomain with CALLER as temporary owner
+   * This allows the caller to set records before transferring ownership
    */
-  buildCreateSubnameUnwrapped(params: {
-    parentNode: `0x${string}`;
-    labelHash: `0x${string}`;
-    owner: `0x${string}`;
-    resolverAddress?: `0x${string}`;
-  }): SubnameTransactionData {
-    const resolverAddress =
-      params.resolverAddress || ENS_CONTRACTS.PUBLIC_RESOLVER;
-
-    const data = encodeFunctionData({
-      abi: ENS_REGISTRY_ABI,
-      functionName: "setSubnodeRecord",
-      args: [
-        params.parentNode,
-        params.labelHash,
-        params.owner,
-        resolverAddress,
-        0n,
-      ],
-    });
-
-    return {
-      to: ENS_CONTRACTS.ENS_REGISTRY,
-      data,
-      value: 0n,
-      chainId: this.chainId,
-    };
-  }
-
-  /**
-   * Build transaction based on whether parent is wrapped
-   */
-  buildCreateSubnameTransaction(params: {
+  buildStep1_CreateSubdomain(params: {
     fullSubname: string;
-    owner: `0x${string}`;
+    caller: `0x${string}`;
     isWrapped: boolean;
-    resolverAddress?: `0x${string}`;
-    fuses?: number;
-    expiry?: bigint;
   }): SubnameTransactionData {
     const parsed = parseSubname(params.fullSubname);
     if (!parsed) {
       throw new Error(`Invalid subname: ${params.fullSubname}`);
     }
 
-    console.log(
-      `[buildCreateSubnameTransaction] Building for ${params.fullSubname}`,
-    );
-    console.log(
-      `[buildCreateSubnameTransaction] isWrapped: ${params.isWrapped}`,
-    );
-    console.log(`[buildCreateSubnameTransaction] owner: ${params.owner}`);
+    const resolverAddress = ENS_CONTRACTS.PUBLIC_RESOLVER;
+
+    console.log(`[buildStep1] Creating subdomain: ${params.fullSubname}`);
+    console.log(`[buildStep1] Temporary owner (caller): ${params.caller}`);
+    console.log(`[buildStep1] isWrapped: ${params.isWrapped}`);
 
     if (params.isWrapped) {
-      console.log(
-        `[buildCreateSubnameTransaction] Using NameWrapper at ${NAME_WRAPPER_ADDRESS}`,
-      );
-      return this.buildCreateSubnameWrapped({
-        parentNode: parsed.parentNode,
-        label: parsed.label,
-        owner: params.owner,
-        resolverAddress: params.resolverAddress,
-        fuses: params.fuses,
-        expiry: params.expiry,
+      const data = encodeFunctionData({
+        abi: NAME_WRAPPER_ABI,
+        functionName: "setSubnodeRecord",
+        args: [
+          parsed.parentNode,
+          parsed.label,
+          params.caller, // CALLER is temporary owner
+          resolverAddress,
+          0n, // TTL
+          0, // Fuses (none burned)
+          0n, // Expiry (inherit from parent)
+        ],
       });
+
+      return {
+        to: NAME_WRAPPER_ADDRESS as `0x${string}`,
+        data,
+        value: 0n,
+        chainId: this.chainId,
+      };
     } else {
-      console.log(
-        `[buildCreateSubnameTransaction] Using Registry at ${ENS_CONTRACTS.ENS_REGISTRY}`,
-      );
-      return this.buildCreateSubnameUnwrapped({
-        parentNode: parsed.parentNode,
-        labelHash: parsed.labelHash,
-        owner: params.owner,
-        resolverAddress: params.resolverAddress,
+      const data = encodeFunctionData({
+        abi: ENS_REGISTRY_ABI,
+        functionName: "setSubnodeRecord",
+        args: [
+          parsed.parentNode,
+          parsed.labelHash,
+          params.caller, // CALLER is temporary owner
+          resolverAddress,
+          0n, // TTL
+        ],
       });
+
+      return {
+        to: ENS_CONTRACTS.ENS_REGISTRY,
+        data,
+        value: 0n,
+        chainId: this.chainId,
+      };
     }
+  }
+
+  /**
+   * Step 2: Set address record
+   * Since caller is the owner (from Step 1), they can set the address record
+   */
+  buildStep2_SetAddress(params: {
+    fullSubname: string;
+    resolveAddress: `0x${string}`;
+  }): SubnameTransactionData {
+    const subnameNode = namehash(params.fullSubname) as `0x${string}`;
+
+    console.log(`[buildStep2] Setting address for: ${params.fullSubname}`);
+    console.log(`[buildStep2] Address: ${params.resolveAddress}`);
+
+    const data = encodeFunctionData({
+      abi: PUBLIC_RESOLVER_ABI,
+      functionName: "setAddr",
+      args: [subnameNode, params.resolveAddress],
+    });
+
+    return {
+      to: ENS_CONTRACTS.PUBLIC_RESOLVER,
+      data,
+      value: 0n,
+      chainId: this.chainId,
+    };
+  }
+
+  /**
+   * Step 3: Transfer ownership from caller to recipient
+   * This is the final step - recipient becomes the owner
+   */
+  buildStep3_TransferOwnership(params: {
+    fullSubname: string;
+    caller: `0x${string}`;
+    recipient: `0x${string}`;
+    isWrapped: boolean;
+  }): SubnameTransactionData {
+    const subnameNode = namehash(params.fullSubname) as `0x${string}`;
+
+    console.log(
+      `[buildStep3] Transferring ownership of: ${params.fullSubname}`,
+    );
+    console.log(`[buildStep3] From: ${params.caller}`);
+    console.log(`[buildStep3] To: ${params.recipient}`);
+
+    if (params.isWrapped) {
+      // For wrapped names, use NameWrapper's safeTransferFrom (ERC1155)
+      const data = encodeFunctionData({
+        abi: NAME_WRAPPER_TRANSFER_ABI,
+        functionName: "safeTransferFrom",
+        args: [
+          params.caller,
+          params.recipient,
+          BigInt(subnameNode), // tokenId is the namehash as uint256
+          1n, // amount (always 1 for ERC1155)
+          "0x" as `0x${string}`, // data (empty)
+        ],
+      });
+
+      return {
+        to: NAME_WRAPPER_ADDRESS as `0x${string}`,
+        data,
+        value: 0n,
+        chainId: this.chainId,
+      };
+    } else {
+      // For unwrapped names, use Registry.setOwner
+      const data = encodeFunctionData({
+        abi: ENS_REGISTRY_SET_OWNER_ABI,
+        functionName: "setOwner",
+        args: [subnameNode, params.recipient],
+      });
+
+      return {
+        to: ENS_CONTRACTS.ENS_REGISTRY,
+        data,
+        value: 0n,
+        chainId: this.chainId,
+      };
+    }
+  }
+
+  /**
+   * Get all three transaction steps for subdomain creation with address assignment
+   *
+   * This is the correct flow where ALL transactions are signed by the parent owner:
+   * 1. Create subdomain with caller as owner
+   * 2. Set address record (caller can do this because they're owner)
+   * 3. Transfer ownership to recipient
+   */
+  buildSubdomainWithAddressSteps(params: {
+    fullSubname: string;
+    resolveAddress: `0x${string}`;
+    caller: `0x${string}`;
+    recipient: `0x${string}`;
+    isWrapped: boolean;
+  }): {
+    step1: SubnameTransactionData;
+    step2: SubnameTransactionData;
+    step3: SubnameTransactionData;
+  } {
+    return {
+      step1: this.buildStep1_CreateSubdomain({
+        fullSubname: params.fullSubname,
+        caller: params.caller,
+        isWrapped: params.isWrapped,
+      }),
+      step2: this.buildStep2_SetAddress({
+        fullSubname: params.fullSubname,
+        resolveAddress: params.resolveAddress,
+      }),
+      step3: this.buildStep3_TransferOwnership({
+        fullSubname: params.fullSubname,
+        caller: params.caller,
+        recipient: params.recipient,
+        isWrapped: params.isWrapped,
+      }),
+    };
   }
 }
 
