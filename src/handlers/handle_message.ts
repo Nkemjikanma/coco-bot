@@ -81,6 +81,7 @@ import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.uti
 import { handleRegisterCommand } from "./handleRegisterCommand";
 import { handleTransferCommand } from "./handleTransferCommand";
 import { formatMultiWalletPortfolio } from "../api/formatResponses";
+import { handleExecutionsForCheckingSubdomains } from "../services/ens/utils";
 
 type UnifiedEvent = {
   channelId: string;
@@ -727,6 +728,16 @@ export async function executeValidCommand(
   }
 
   if (command.action === "check") {
+    if (command.name.split(".").length > 2) {
+      await handleExecutionsForCheckingSubdomains(
+        handler,
+        channelId,
+        threadId,
+        userId,
+      );
+      return;
+    }
+
     const checkResult = await checkAvailability(command.name);
     if (!checkResult.success) {
       await sendBotMessage(
@@ -745,6 +756,16 @@ export async function executeValidCommand(
   }
 
   if (command.action === "expiry") {
+    if (command.name.split(".").length > 2) {
+      await handleExecutionsForCheckingSubdomains(
+        handler,
+        channelId,
+        threadId,
+        userId,
+      );
+      return;
+    }
+
     const expiryResult: ApiResponse<ExpiryData> = await checkExpiry(
       command.name,
     );
@@ -765,6 +786,16 @@ export async function executeValidCommand(
   }
 
   if (command.action === "history") {
+    if (command.name.split(".").length > 2) {
+      await handleExecutionsForCheckingSubdomains(
+        handler,
+        channelId,
+        threadId,
+        userId,
+      );
+      return;
+    }
+
     if (command.name.length > 1) {
       await sendBotMessage(
         handler,
@@ -782,6 +813,15 @@ export async function executeValidCommand(
   }
 
   if (command.action === "portfolio") {
+    if (command.name.split(".").length > 2) {
+      await handleExecutionsForCheckingSubdomains(
+        handler,
+        channelId,
+        threadId,
+        userId,
+      );
+      return;
+    }
     let addressesToQuery: `0x${string}`[] = [];
 
     // Check if user wants their own wallets

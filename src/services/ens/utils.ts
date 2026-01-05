@@ -36,6 +36,8 @@ import {
   clearUserPendingCommand,
 } from "../../db";
 import { OwnerInfo } from "./types";
+import { sendBotMessage } from "../../handlers";
+import { BotHandler } from "@towns-protocol/bot";
 
 // Lazy-initialized client
 let _client: PublicClient | null = null;
@@ -673,4 +675,19 @@ export async function verifyOwnership(
     actualOwner: ownerInfo.owner,
     error: `None of your wallets own ${name}. The owner is ${ownerInfo.owner}`,
   };
+}
+
+export async function handleExecutionsForCheckingSubdomains(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+) {
+  await sendBotMessage(
+    handler,
+    channelId,
+    threadId,
+    userId,
+    `❌ Sorry, we are still Working on implementing checks for subdomains. Check back soon`,
+  );
 }

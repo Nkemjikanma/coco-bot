@@ -46,6 +46,7 @@ import {
 } from "./utils";
 
 import { PendingRegistration, RegistrationCommitment } from "../../types";
+import { getSubdomainService } from "./subdomain/subdomain";
 if (!MAINNET_RPC_URL || !SUBGRAPH_API_KEY) {
   throw new Error(
     "MAINNET_RPC_URL or SUBGRAPH environment variable is required",
