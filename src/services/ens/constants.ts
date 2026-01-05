@@ -261,3 +261,32 @@ const MULTICALL_ABI = [
     stateMutability: "nonpayable",
   },
 ] as const;
+
+export const ENS_REGISTRY_SET_OWNER_ABI = [
+  {
+    name: "setOwner",
+    type: "function",
+    inputs: [
+      { name: "node", type: "bytes32" },
+      { name: "owner", type: "address" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+export const NAME_WRAPPER_TRANSFER_ABI = [
+  {
+    name: "safeTransferFrom",
+    type: "function",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "id", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;

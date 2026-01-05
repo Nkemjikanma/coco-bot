@@ -110,9 +110,10 @@ bot.onInteractionResponse(async (handler, event) => {
 
       if (
         tx.requestId.startsWith("subdomain_step1:") ||
-        tx.requestId.startsWith("subdomain_step2:")
+        tx.requestId.startsWith("subdomain_step2:") ||
+        tx.requestId.startsWith("subdomain_step3:")
       ) {
-        console.log("📤 Routing to subdomain transaction handler");
+        console.log("🔀 Routing to subdomain transaction handler");
         await handleSubdomainTransaction(handler, event, tx);
         return;
       }
