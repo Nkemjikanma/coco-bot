@@ -1,14 +1,13 @@
 import { FLOW_TTL } from "./flow";
-import {
-  RegistrationFlowData,
+import type {
+  ActiveFlow,
+  BridgeFlow,
+  BridgeFlowData,
   FlowStatus,
   RegistrationFlow,
-  BridgeFlowData,
-  BridgeFlow,
-  SubdomainFlowData,
+  RegistrationFlowData,
   SubdomainFlow,
-  ActiveFlow,
-  TransferFlowData,
+  SubdomainFlowData,
   TransferFlow,
 } from "./flow.types";
 
@@ -106,18 +105,21 @@ export function createTransferFlow(params: {
  */
 export function describeFlow(flow: ActiveFlow): string {
   switch (flow.type) {
-    case "registration":
+    case "registration": {
       const regData = flow.data as RegistrationFlowData;
       const name = regData.name;
       return `Registering ${name}`;
+    }
 
-    case "bridge":
+    case "bridge": {
       const bridgeData = flow.data as BridgeFlowData;
       return `Bridging ${bridgeData.amountEth} ETH`;
+    }
 
-    case "subdomain":
+    case "subdomain": {
       const subData = flow.data as SubdomainFlowData;
       return `Creating subdomain ${subData.fullName}`;
+    }
 
     default:
       return "Unknown flow";

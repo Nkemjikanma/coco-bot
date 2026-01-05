@@ -77,6 +77,13 @@ SINGLE NAME EXAMPLES:
 Input: "check alice.eth"
 Output: {"action":"check","name":"alice.eth"}
 
+Input: "who owns alice.eth?"
+Output: {"action":"check","name":"alice.eth"}
+
+
+Input: "who does alice.eth belong to?"
+Output: {"action":"check","name":"alice.eth"}
+
 Input: "register coolname.eth for 2 years"
 Output: {"action":"register","name":"coolname.eth","duration":2}
 

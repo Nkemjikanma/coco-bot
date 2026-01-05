@@ -1,24 +1,24 @@
-import { BotHandler, FlattenedFormComponent } from "@towns-protocol/bot";
-import { RegisterCommand } from "../types";
+import type { BotHandler, FlattenedFormComponent } from "@towns-protocol/bot";
 import { formatEther } from "viem";
 import {
+  clearActiveFlow,
+  clearUserPendingCommand,
+  createRegistrationFlow,
   getUserState,
   hasAnyActiveFlow,
-  clearUserPendingCommand,
-  clearActiveFlow,
-  setUserPendingCommand,
-  createRegistrationFlow,
   setActiveFlow,
+  setUserPendingCommand,
 } from "../db";
 import { checkAvailability, estimateRegistrationCost } from "../services/ens";
+import type { RegisterCommand } from "../types";
 import {
-  formatAddress,
-  filterEOAs,
   checkAllEOABalances,
+  filterEOAs,
+  formatAddress,
   formatAllWalletBalances,
 } from "../utils";
 import { proceedWithRegistration } from "./handle_message";
-import { sendBotMessage, determineWaitingFor } from "./handle_message_utils";
+import { determineWaitingFor, sendBotMessage } from "./handle_message_utils";
 
 export async function handleRegisterCommand(
   handler: BotHandler,

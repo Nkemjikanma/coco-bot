@@ -1,6 +1,6 @@
-import type { ParsedCommand, PendingCommand, SubdomainCommand } from "../types";
-import { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import { appendMessageToSession } from "../db";
+import type { ParsedCommand, PendingCommand, SubdomainCommand } from "../types";
 
 // tries to determine what we are waiting for
 export function determineWaitingFor(
@@ -75,7 +75,7 @@ export function formatRustPayload(command: ParsedCommand) {
 
   if ("records" in command && command.records) {
     const recordEntries = Object.entries(command.records)
-      .filter(([_, value]) => value != undefined)
+      .filter(([_, value]) => value !== undefined)
       .map(([key, value]) => `  • ${key}: ${value}`)
       .join("\n");
 
@@ -113,7 +113,7 @@ export async function extractMissingInfo(
   const updated = { ...partial };
 
   switch (waitingFor) {
-    case "duration":
+    case "duration": {
       const match = userResponse.match(/(\d+)\s*(?:year|yr)?s?/i);
       if (
         match &&
@@ -122,8 +122,9 @@ export async function extractMissingInfo(
         updated.duration = parseInt(match[1]);
       }
       break;
+    }
 
-    case "name":
+    case "name": {
       const name = userResponse.match(/[\w-]+\.eth/gi);
       if (
         name &&
@@ -141,13 +142,15 @@ export async function extractMissingInfo(
         updated.name = name.toString();
       }
       break;
+    }
 
-    case "recipient":
+    case "recipient": {
       const addressMatch = userResponse.match(/0x[a-fA-F0-9]{40}/);
       if (addressMatch && updated.action === "transfer") {
         updated.recipient = addressMatch[0];
       }
       break;
+    }
 
     // ✅ ADD THIS CASE:
     case "subdomain_address":

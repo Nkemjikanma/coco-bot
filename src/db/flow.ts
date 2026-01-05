@@ -1,15 +1,14 @@
-import { client } from "./redisClient";
 import { createHmac, timingSafeEqual } from "crypto";
-
-import {
-  RegistrationFlow,
+import type {
+  ActiveFlow,
   BridgeFlow,
-  SubdomainFlow,
   FlowStatus,
   FlowType,
-  ActiveFlow,
+  RegistrationFlow,
+  SubdomainFlow,
   TransferFlow,
 } from "./flow.types";
+import { client } from "./redisClient";
 
 export function isRegistrationFlow(flow: ActiveFlow): flow is RegistrationFlow {
   return flow.type === "registration";

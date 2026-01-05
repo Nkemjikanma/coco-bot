@@ -1,18 +1,14 @@
 import { isAddress } from "viem";
+import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 import {
   type EnsRecords,
   type ParsedCommand,
-  type PendingCommand,
   QUESTION_TYPES,
   type QuestionType,
   type ValidationResult,
 } from "../types";
-import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 
-export function validate_parse(
-  parsed: unknown,
-  context?: { recentMessages?: string[]; pendingCommand?: PendingCommand },
-): ValidationResult {
+export function validate_parse(parsed: unknown): ValidationResult {
   if (typeof parsed !== "object" || parsed === null) {
     return {
       valid: false,
@@ -56,10 +52,10 @@ export function validate_parse(
       return validateCheckCommand(name);
 
     case "register":
-      return validateRegisterCommand(name, fields.duration, context);
+      return validateRegisterCommand(name, fields.duration);
 
     case "renew":
-      return validateRenewCommand(name, fields.duration, context);
+      return validateRenewCommand(name, fields.duration);
 
     case "transfer":
       return validateTransferCommand(name, fields.recipient);
@@ -68,12 +64,7 @@ export function validate_parse(
       return validateSetCommand(name, fields.records);
 
     case "portfolio":
-      return validatePortfolioCommand(
-        address,
-        fields.options,
-        name,
-        fields.recipient,
-      );
+      return validatePortfolioCommand(address, name, fields.recipient);
 
     case "expiry":
       return validateExpiryCommand(name);
@@ -141,7 +132,6 @@ function validateCheckCommand(name: string | undefined): ValidationResult {
 function validateRegisterCommand(
   name: string | undefined,
   duration: unknown,
-  context?: { pendingCommand?: PendingCommand },
 ): ValidationResult {
   // Check name first
   if (!name) {
@@ -177,7 +167,7 @@ function validateRegisterCommand(
 
   // Validate duration is a number
   const durationNum = Number(duration);
-  if (isNaN(durationNum) || !Number.isInteger(durationNum)) {
+  if (Number.isNaN(durationNum) || !Number.isInteger(durationNum)) {
     return {
       valid: false,
       needsClarification: true,
@@ -211,7 +201,6 @@ function validateRegisterCommand(
 function validateRenewCommand(
   name: string | undefined,
   duration: unknown,
-  context?: { pendingCommand?: PendingCommand },
 ): ValidationResult {
   // Check name
   if (!name) {
@@ -246,7 +235,7 @@ function validateRenewCommand(
 
   const durationNum = Number(duration);
   if (
-    isNaN(durationNum) ||
+    Number.isNaN(durationNum) ||
     !Number.isInteger(durationNum) ||
     durationNum < 1 ||
     durationNum > 10
@@ -405,7 +394,6 @@ function validateSetCommand(
 
 function validatePortfolioCommand(
   address: unknown,
-  options: unknown,
   name?: string,
   recipient?: unknown,
 ): ValidationResult {

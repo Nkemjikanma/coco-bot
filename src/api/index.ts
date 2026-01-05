@@ -3,9 +3,9 @@ import {
   formatCheckResponse,
   formatExpiryResponse,
   formatHistoryResponse,
-  formatPortfolioResponse,
   formatPhase1Summary,
-  formatPhase2Summary
+  formatPhase2Summary,
+  formatPortfolioResponse,
 } from "./formatResponses";
 import type {
   ApiResponse,
@@ -37,7 +37,6 @@ export {
   formatExpiryResponse,
   formatHistoryResponse,
   formatPortfolioResponse,
-
   formatPhase1Summary,
-  formatPhase2Summary
+  formatPhase2Summary,
 };

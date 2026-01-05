@@ -1,4 +1,4 @@
-import { QuestionType } from "../types";
+import type { QuestionType } from "../types";
 
 // ============================================
 // ENS Knowledge Base

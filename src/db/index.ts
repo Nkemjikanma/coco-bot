@@ -1,3 +1,41 @@
+// Flow store - unified transaction flow management
+import {
+  clearActiveFlow,
+  clearAllUserFlows,
+  // CRUD operations
+  getActiveFlow,
+  hasAnyActiveFlow,
+  isBridgeFlow,
+  // Types
+
+  // Type guards
+  isRegistrationFlow,
+  isSubdomainFlow,
+  setActiveFlow,
+  updateActiveFlow,
+  updateFlowData,
+  updateFlowStatus,
+} from "./flow";
+import type {
+  ActiveFlow,
+  BridgeFlow,
+  BridgeFlowData,
+  FlowStatus,
+  FlowType,
+  RegistrationFlow,
+  RegistrationFlowData,
+  SubdomainFlow,
+  SubdomainFlowData,
+} from "./flow.types";
+import {
+  createBridgeFlow,
+  // Creation helpers
+  createRegistrationFlow,
+  createSubdomainFlow,
+  // Utilities
+  describeFlow,
+  isFlowExpired,
+} from "./flow.utils";
 import { initRedis } from "./redisClient";
 // Session store - conversation history for Claude context
 import {
@@ -7,10 +45,10 @@ import {
   sessionExists,
   updateSession,
 } from "./sessionStore";
-
 // User state store - user location and pending clarification
 import {
   clearUserPendingCommand,
+  deleteUserState,
   describePendingCommand,
   getUserState,
   hasPendingCommandElsewhere,
@@ -18,49 +56,7 @@ import {
   setUserPendingCommand,
   updateUserLocation,
   updateUserPreferences,
-  deleteUserState,
 } from "./userStateStore";
-
-// Flow store - unified transaction flow management
-import {
-  // Types
-
-  // Type guards
-  isRegistrationFlow,
-  isBridgeFlow,
-  isSubdomainFlow,
-  // CRUD operations
-  getActiveFlow,
-  setActiveFlow,
-  updateActiveFlow,
-  updateFlowData,
-  updateFlowStatus,
-  clearActiveFlow,
-  hasAnyActiveFlow,
-  clearAllUserFlows,
-} from "./flow";
-
-import {
-  type FlowType,
-  type FlowStatus,
-  type ActiveFlow,
-  type RegistrationFlow,
-  type BridgeFlow,
-  type SubdomainFlow,
-  type RegistrationFlowData,
-  type BridgeFlowData,
-  type SubdomainFlowData,
-} from "./flow.types";
-
-import {
-  // Creation helpers
-  createRegistrationFlow,
-  createBridgeFlow,
-  createSubdomainFlow,
-  // Utilities
-  describeFlow,
-  isFlowExpired,
-} from "./flow.utils";
 
 export {
   // Redis

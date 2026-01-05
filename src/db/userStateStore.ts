@@ -1,9 +1,4 @@
-import type {
-  ParsedCommand,
-  PendingCommand,
-  PendingRegistration,
-  RegistrationResult,
-} from "../types";
+import type { ParsedCommand, PendingCommand } from "../types";
 import {
   clearActiveFlow,
   getActiveFlow,

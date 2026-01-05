@@ -366,10 +366,7 @@ export async function handleMessage(
     console.log(parserResult.parsed);
 
     // Validate the parsed command
-    const validation = validate_parse(parserResult.parsed, {
-      recentMessages: recentMessages.map((m) => m.content),
-      pendingCommand: userState?.pendingCommand,
-    });
+    const validation = validate_parse(parserResult.parsed);
 
     if (!validation.valid) {
       await setUserPendingCommand(
@@ -450,7 +447,7 @@ export async function handlePendingCommandResponse(
 
     const duration = parseInt(durationMatch[1], 10);
 
-    if (isNaN(duration) || duration < 1 || duration > 10) {
+    if (Number.isNaN(duration) || duration < 1 || duration > 10) {
       await sendBotMessage(
         handler,
         channelId,

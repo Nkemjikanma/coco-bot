@@ -1,21 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
-import {
-  type CocoParserResult,
-  type Message,
-  ParsedCommand,
-  QUESTION_TYPES,
-  type QuestionCommand,
-} from "../types";
+import type { CocoParserResult, Message, QuestionCommand } from "../types";
 import { GENERAL_QUESTION_PROMPT, getKnowledgeAnswer } from "./knowledge";
-import {
-  CLARIFICATION_PROMPT,
-  COMMAND_PARSER_PROMPT,
-  COST_EXPLANATION_PROMPT,
-  ERROR_EXPLANATION_PROMPT,
-  fill_prompt,
-  NAME_SUGGESTION_PROMPT,
-} from "./prompts";
-import { validate_parse } from "./validators";
+import { COMMAND_PARSER_PROMPT, fill_prompt } from "./prompts";
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
