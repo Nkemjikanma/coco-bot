@@ -1,4 +1,6 @@
 import { client } from "./redisClient";
+import { createHmac, timingSafeEqual } from "crypto";
+
 import {
   RegistrationFlow,
   BridgeFlow,
@@ -26,33 +28,212 @@ export function isTransferFlow(flow: ActiveFlow): flow is TransferFlow {
 }
 
 // ============ Constants ============
+const INTEGRITY_SECRET = process.env.REDIS_INTEGRITY_SECRET;
 const FLOW_PREFIX = "flow:";
 export const FLOW_TTL = 60 * 30; // 30 minutes
+const MAX_DATA_AGE_MS = 30 * 60 * 1000;
 
-// ============ Serialization ============
-function serializeFlow(flow: ActiveFlow): string {
-  return JSON.stringify(flow, (_, value) =>
-    typeof value === "bigint" ? value.toString() + "n" : value,
+if (!INTEGRITY_SECRET || INTEGRITY_SECRET.length < 32) {
+  console.error(
+    "⚠️ WARNING: REDIS_INTEGRITY_SECRET is not set or too short (min 32 chars).",
+    "Flow data integrity checks will be DISABLED. This is insecure for production!",
   );
 }
 
-function deserializeFlow(json: string): ActiveFlow {
-  return JSON.parse(json, (_, value) => {
-    if (typeof value === "string" && /^\d+n$/.test(value)) {
-      return BigInt(value.slice(0, -1));
-    }
-    return value;
-  });
-}
-
-// ============ Key Helpers ============
+/**
+ * Generate Redis key for a user's flow in a specific thread
+ */
 function getFlowKey(userId: string, threadId: string): string {
   return `${FLOW_PREFIX}${userId}:${threadId}`;
 }
 
+/**
+ * Generate Redis pattern to match all flows for a user
+ */
 function getUserFlowPattern(userId: string): string {
   return `${FLOW_PREFIX}${userId}:*`;
 }
+
+// ============================================================
+// HMAC UTILITIES
+// ============================================================
+
+interface SecurePayload<T> {
+  d: T; // data
+  s: string; // signature
+  t: number; // timestamp
+  v: number; // version (for future migrations)
+}
+function generateHMAC(data: string): string {
+  if (!INTEGRITY_SECRET) {
+    // Return empty signature if no secret (insecure mode)
+    return "";
+  }
+  return createHmac("sha256", INTEGRITY_SECRET).update(data).digest("hex");
+}
+
+function verifyHMAC(data: string, signature: string): boolean {
+  if (!INTEGRITY_SECRET) {
+    // Skip verification if no secret (insecure mode)
+    console.warn("⚠️ Skipping HMAC verification - no INTEGRITY_SECRET set");
+    return true;
+  }
+
+  const expected = generateHMAC(data);
+
+  // Handle empty signatures (from insecure mode)
+  if (!signature || !expected) {
+    return !signature && !expected;
+  }
+
+  // Convert to buffers for timing-safe comparison
+  const expectedBuffer = Buffer.from(expected, "hex");
+  const signatureBuffer = Buffer.from(signature, "hex");
+
+  if (expectedBuffer.length !== signatureBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, signatureBuffer);
+}
+
+// ============ Serialization ============
+function serializeFlow<T>(data: T): string {
+  const timestamp = Date.now();
+  const jsonData = JSON.stringify(data);
+
+  // Sign: data + timestamp
+  const toSign = `${jsonData}|${timestamp}`;
+  const signature = generateHMAC(toSign);
+
+  const payload: SecurePayload<T> = {
+    d: data,
+    s: signature,
+    t: timestamp,
+    v: 1,
+  };
+
+  return JSON.stringify(payload);
+}
+
+function deserializeFlow<T>(
+  serialized: string,
+  options: { maxAgeMs?: number } = {},
+): T {
+  const { maxAgeMs = MAX_DATA_AGE_MS } = options;
+
+  let payload: SecurePayload<T>;
+  try {
+    payload = JSON.parse(serialized);
+  } catch {
+    throw new Error("DATA_INTEGRITY_VIOLATION: Invalid payload format");
+  }
+
+  const { d: data, s: signature, t: timestamp, v: version } = payload;
+
+  // Check version
+  if (version !== 1) {
+    throw new Error(`DATA_INTEGRITY_VIOLATION: Unknown version ${version}`);
+  }
+
+  // Reconstruct signed data
+  const jsonData = JSON.stringify(data);
+  const toVerify = `${jsonData}|${timestamp}`;
+
+  // Verify signature
+  if (!verifyHMAC(toVerify, signature)) {
+    throw new Error(
+      "DATA_INTEGRITY_VIOLATION: Signature mismatch - data tampered",
+    );
+  }
+
+  // Check age
+  const age = Date.now() - timestamp;
+  if (age > maxAgeMs) {
+    throw new Error(
+      `DATA_EXPIRED: Data is ${Math.round(age / 1000)}s old (max: ${maxAgeMs / 1000}s)`,
+    );
+  }
+
+  if (age < 0) {
+    throw new Error("DATA_INTEGRITY_VIOLATION: Future timestamp detected");
+  }
+
+  return data;
+}
+
+// ============================================================
+// SECURITY LOGGING
+// ============================================================
+
+function logSecurityIncident(
+  type: "tampering" | "expired" | "invalid",
+  details: Record<string, unknown>,
+): void {
+  console.error(`🚨 SECURITY INCIDENT [${type.toUpperCase()}]`, {
+    timestamp: new Date().toISOString(),
+    ...details,
+  });
+
+  // Tracing?
+  // - Send to monitoring service? (DataDog, Sentry, etc.)
+  // - Rate limit the affected user
+}
+
+// ============================================================
+// SECURE FLOW STORE FUNCTIONS
+// ============================================================
+
+export async function setSecureFlow<T>(
+  key: string,
+  data: T,
+  ttlSeconds: number = FLOW_TTL,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const serialized = serializeFlow(data);
+    await client.set(key, serialized, { EX: ttlSeconds });
+    return { success: true };
+  } catch (error) {
+    console.error("Error saving secure flow:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+export async function getSecureFlow<T>(
+  key: string,
+): Promise<{ success: boolean; data?: T; error?: string }> {
+  try {
+    const serialized = await client.get(key);
+
+    if (!serialized) {
+      return { success: false, error: "Not found" };
+    }
+
+    const data = deserializeFlow<T>(serialized);
+    return { success: true, data };
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes("INTEGRITY_VIOLATION")) {
+        logSecurityIncident("tampering", { key, error: error.message });
+        return { success: false, error: "Security violation" };
+      }
+      if (error.message.includes("DATA_EXPIRED")) {
+        logSecurityIncident("expired", { key, error: error.message });
+        return { success: false, error: "Data expired" };
+      }
+    }
+
+    console.error("Error getting secure flow:", error);
+    return { success: false, error: "Failed to retrieve" };
+  }
+}
+
+// ============================================================
+// FLOW CRUD OPERATIONS
+// ============================================================
 
 /**
  * Get active flow for a user in a specific thread
@@ -72,8 +253,24 @@ export async function getActiveFlow(
       return { success: false, error: "No active flow found" };
     }
 
-    return { success: true, data: deserializeFlow(data) };
+    const flow = deserializeFlow<ActiveFlow>(data);
+    return { success: true, data: flow };
   } catch (error) {
+    if (error instanceof Error) {
+      if (error.message.includes("INTEGRITY_VIOLATION")) {
+        logSecurityIncident("tampering", {
+          userId,
+          threadId,
+          error: error.message,
+        });
+        return { success: false, error: "Security violation detected" };
+      }
+      if (error.message.includes("DATA_EXPIRED")) {
+        // Clean up expired flow
+        await client.del(key);
+        return { success: false, error: "Flow expired" };
+      }
+    }
     console.error("Error getting active flow:", error);
     return { success: false, error: "Failed to retrieve flow" };
   }
@@ -86,15 +283,7 @@ export async function setActiveFlow(
   flow: ActiveFlow,
 ): Promise<{ success: boolean; error?: string }> {
   const key = getFlowKey(flow.userId, flow.threadId);
-
-  try {
-    const serialized = serializeFlow(flow);
-    await client.set(key, serialized, { EX: FLOW_TTL });
-    return { success: true };
-  } catch (error) {
-    console.error("Error saving flow:", error);
-    return { success: false, error: "Failed to save flow" };
-  }
+  return setSecureFlow(key, flow);
 }
 
 /**
@@ -219,12 +408,24 @@ export async function hasAnyActiveFlow(
     const data = await client.get(firstKey);
 
     if (data) {
-      const flow = deserializeFlow(data);
-      return {
-        hasFlow: true,
-        threadId: flow.threadId,
-        type: flow.type,
-      };
+      try {
+        const flow = deserializeFlow<ActiveFlow>(data);
+        return {
+          hasFlow: true,
+          threadId: flow.threadId,
+          type: flow.type,
+        };
+      } catch (error) {
+        // If deserialization fails (tampered/expired), clean up and report no flow
+        if (error instanceof Error) {
+          if (error.message.includes("INTEGRITY_VIOLATION")) {
+            logSecurityIncident("tampering", { userId, key: firstKey });
+          }
+          // Clean up the bad entry
+          await client.del(firstKey);
+        }
+        return { hasFlow: false };
+      }
     }
 
     return { hasFlow: false };

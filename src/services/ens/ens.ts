@@ -458,6 +458,7 @@ export async function getUserPorfolio(
   const data = mapNamesForAddressToPortfolioData(result, primaryName.name);
   return data;
 }
+
 export async function getHistory(name: string): Promise<HistoryData> {
   const result = await getNameHistory(ethereumClient, { name });
   const data = mapEnsHistoryResponse(result);

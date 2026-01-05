@@ -72,7 +72,7 @@ export async function handleTransferTransaction(
     `🎉 **Transfer Complete!**\n\n` +
       `**${transferData.domain}** has been transferred to:\n` +
       `\`${transferData.recipient}\`\n\n` +
-      `**Transaction:** \`${tx.txHash}\`\n\n` +
+      `**Transaction:** [tx](https://etherscan.io/tx/${tx.txHash})\n\n` +
       `The new owner can now manage this name at [app.ens.domains](https://app.ens.domains).`,
     { threadId },
   );

@@ -299,8 +299,8 @@ export async function handleSubdomainStep1Transaction(
   await handler.sendMessage(
     channelId,
     `✅ **Step 1 Complete!**\n\n` +
-      `Subdomain created: **${flowData.fullName}**\n` +
-      `Tx: \`${tx.txHash}\`\n\n` +
+      `Subdomain created: **${flowData.fullName}**\n\n` +
+      `[Tx:](https://etherscan.io/tx/${tx.txHash})\n\n` +
       `Now proceeding to Step 2: Set address record...`,
     { threadId: validThreadId },
   );
@@ -413,12 +413,12 @@ export async function handleSubdomainStep2Transaction(
     await handler.sendMessage(
       channelId,
       `🎉 **Subdomain Setup Complete!**\n\n` +
-        `**${flowData.fullName}** now:\n` +
-        `• Points to: \`${flowData.resolveAddress}\`\n` +
+        `**${flowData.fullName}** now:\n\n` +
+        `• Points to: \`${flowData.resolveAddress}\`\n\n` +
         `• Owned by: \`${formatAddress(flowData.ownerWallet as `0x${string}`)}\`\n\n` +
-        `**Transaction Details:**\n` +
+        `**Transaction Details:**\n\n` +
         `• Step 1 (Create): \`${flowData.step1TxHash}\`\n` +
-        `• Step 2 (Set Address): \`${tx.txHash}\`\n\n` +
+        `• Step 2 (Set Address): [Tx](https://etherscan.io/tx/${tx.txHash})\n\n` +
         `The subdomain is now active and ready to use! 🚀`,
       { threadId: validThreadId },
     );
@@ -433,7 +433,7 @@ export async function handleSubdomainStep2Transaction(
     channelId,
     `✅ **Step 2 Complete!**\n\n` +
       `Address record set for: **${flowData.fullName}**\n` +
-      `Tx: \`${tx.txHash}\`\n\n` +
+      `Tx: [](https://etherscan.io/tx/${tx.txHash})\n\n` +
       `Now proceeding to Step 3: Transfer ownership...`,
     { threadId: validThreadId },
   );
@@ -543,9 +543,9 @@ export async function handleSubdomainStep3Transaction(
       `• Points to: \`${flowData.resolveAddress}\`\n` +
       `• Owned by: \`${formatAddress(flowData.recipient as `0x${string}`)}\`\n\n` +
       `**Transaction Details:**\n` +
-      `• Step 1 (Create): \`${flowData.step1TxHash}\`\n` +
-      `• Step 2 (Set Address): \`${flowData.step2TxHash}\`\n` +
-      `• Step 3 (Transfer): \`${tx.txHash}\`\n\n` +
+      `• Step 1: [Creation](https://etherscan.io/tx/${flowData.step1TxHash})\n\n` +
+      `• Step 2: [Set Address](https://etherscan.io/tx/${flowData.step2TxHash})\n\n` +
+      `• Step 3: [Transfer](https://etherscan.io/tx/${tx.txHash})\n\n` +
       `The subdomain is now active and ready to use! 🚀`,
     { threadId: validThreadId },
   );

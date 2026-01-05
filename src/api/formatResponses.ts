@@ -384,3 +384,43 @@ _(Domain price + register gas)_
 Ready to complete registration?
   `.trim();
 }
+
+export function formatMultiWalletPortfolio(
+  addresses: `0x${string}`[],
+  results: PortfolioData[],
+): string {
+  const totalDomains = results.reduce(
+    (sum, r) => sum + (r.names?.length || 0),
+    0,
+  );
+
+  let message = `📋 **Your ENS Portfolio**\n\n`;
+  message += `Found **${totalDomains} ENS name(s)** across ${addresses.length} wallet(s):\n\n`;
+
+  for (let i = 0; i < addresses.length; i++) {
+    const addr = addresses[i];
+    const result = results[i];
+
+    if (result?.names && result.names.length > 0) {
+      message += `**Wallet ${formatAddress(addr)}:**\n\n`;
+      for (const domain of result.names) {
+        const expiry = domain.expiryDate
+          ? ` (expires ${formatExpiryDate(domain.expiryDate)})`
+          : "";
+        message += `  • ${domain.name}${expiry}\n\n`;
+      }
+      message += `\n\n`;
+    }
+  }
+
+  // Add wallets with no domains
+  const emptyWallets = addresses.filter(
+    (addr, i) => !results[i]?.names || results[i].names.length === 0,
+  );
+
+  if (emptyWallets.length > 0) {
+    message += `*No ENS names found in: ${emptyWallets.map(formatAddress).join(", ")}*\n`;
+  }
+
+  return message;
+}

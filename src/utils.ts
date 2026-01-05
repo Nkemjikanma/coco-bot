@@ -8,6 +8,7 @@ import {
   parseEther,
   encodeFunctionData,
   parseEventLogs,
+  isAddress,
 } from "viem";
 import { mainnet, base } from "viem/chains";
 import { CocoBotType, EOAWalletCheckResult, WalletBalanceInfo } from "./types";
@@ -269,3 +270,32 @@ export function formatAllWalletBalances(
 
   return `**Connected Wallets** (need ~${Number(requiredEth).toFixed(4)} ETH)\n\n${walletLines}`;
 }
+
+export function extractRecipientAddress(content: string): `0x${string}` | null {
+  // First, try to find address after intent keywords
+  const intentPattern =
+    /(?:to|for|recipient|assign to)[:\s]+(0x[a-fA-F0-9]{40})/i;
+  const intentMatch = content.match(intentPattern);
+
+  if (intentMatch && intentMatch[1] && isAddress(intentMatch[1])) {
+    return intentMatch[1] as `0x${string}`;
+  }
+
+  // Fallback: any address (current behavior)
+  const anyAddress = content.match(/0x[a-fA-F0-9]{40}/i);
+  return anyAddress && isAddress(anyAddress[0])
+    ? (anyAddress[0] as `0x${string}`)
+    : null;
+}
+
+export const PORTFOLIO_SELF_KEYWORDS = [
+  "my wallets",
+  "my portfolio",
+  "my ens",
+  "my names",
+  "my domains",
+  "what do i own",
+  "what do i have",
+  "show me my",
+  "find in my",
+];

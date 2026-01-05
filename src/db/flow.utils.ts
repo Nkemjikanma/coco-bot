@@ -19,15 +19,15 @@ export function createRegistrationFlow(params: {
   userId: string;
   threadId: string;
   channelId: string;
-  data: RegistrationFlowData;
-  status?: FlowStatus;
+  status: FlowStatus;
+  data: RegistrationFlow["data"];
 }): RegistrationFlow {
   return {
+    type: "registration",
     userId: params.userId,
     threadId: params.threadId,
     channelId: params.channelId,
-    type: "registration",
-    status: params.status || "initiated",
+    status: params.status,
     data: params.data,
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -41,15 +41,15 @@ export function createBridgeFlow(params: {
   userId: string;
   threadId: string;
   channelId: string;
-  data: BridgeFlowData;
-  status?: FlowStatus;
+  status: FlowStatus;
+  data: BridgeFlow["data"];
 }): BridgeFlow {
   return {
+    type: "bridge",
     userId: params.userId,
     threadId: params.threadId,
     channelId: params.channelId,
-    type: "bridge",
-    status: params.status || "initiated",
+    status: params.status,
     data: params.data,
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -63,37 +63,40 @@ export function createSubdomainFlow(params: {
   userId: string;
   threadId: string;
   channelId: string;
-  data: SubdomainFlowData;
-  status?: FlowStatus;
+  status: FlowStatus;
+  data: SubdomainFlow["data"];
 }): SubdomainFlow {
   return {
+    type: "subdomain",
     userId: params.userId,
     threadId: params.threadId,
     channelId: params.channelId,
-    type: "subdomain",
-    status: params.status || "initiated",
+    status: params.status,
     data: params.data,
     startedAt: Date.now(),
     updatedAt: Date.now(),
   };
 }
 
+/**
+ * Create a new transfer flow
+ */
 export function createTransferFlow(params: {
   userId: string;
   threadId: string;
   channelId: string;
   status: FlowStatus;
-  data: TransferFlowData;
+  data: TransferFlow["data"];
 }): TransferFlow {
   return {
+    type: "transfer",
     userId: params.userId,
     threadId: params.threadId,
     channelId: params.channelId,
-    type: "transfer",
     status: params.status,
+    data: params.data,
     startedAt: Date.now(),
     updatedAt: Date.now(),
-    data: params.data,
   };
 }
 

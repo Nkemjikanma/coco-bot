@@ -117,6 +117,28 @@ Output: {"action":"question","questionType":"subdomains","questionText":"how do 
 Input: "how much does it cost to register?"
 Output: {"action":"question","questionType":"pricing","questionText":"how much does it cost to register?"}
 
+PORTFOLIO_SELF_KEYWORDS = [
+  "my wallets",
+  "my portfolio",
+  "my ens",
+  "my names",
+  "my domains",
+  "what do i own",
+  "what do i have",
+  "show me my",
+  "find in my",
+];
+
+When the user asks about "my wallets", "my portfolio", "my ENS names", "my domains",
+"what do I own", "what ENS names do I have", or similar self-referential queries,
+return a portfolio command with useSelfWallets: true.
+
+Examples:
+- "what ens names can you find in my wallets?" → { action: "portfolio", useSelfWallets: true }
+- "show me my domains" → { action: "portfolio", useSelfWallets: true }
+- "what do I own?" → { action: "portfolio", useSelfWallets: true }
+- "portfolio for 0x123..." → { action: "portfolio", address: "0x123..." }
+
 EDGE CASES:
 - SINGLE NAME ONLY: Always use "name" (string), never "names" (array)
 - If user provides multiple names, take the FIRST one and set needsClarification

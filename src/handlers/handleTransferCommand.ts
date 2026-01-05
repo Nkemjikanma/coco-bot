@@ -4,7 +4,14 @@ import { getTransferService } from "../services/ens/transfer/transfer";
 import { sendBotMessage } from "./handle_message_utils";
 import { filterEOAs, formatAddress } from "../utils";
 import { createTransferFlow } from "../db/flow.utils";
-import { getActiveFlow, setActiveFlow, setUserPendingCommand } from "../db";
+import {
+  clearActiveFlow,
+  clearUserPendingCommand,
+  getActiveFlow,
+  setActiveFlow,
+  setUserPendingCommand,
+} from "../db";
+import { isAddress } from "viem";
 
 export async function handleTransferCommand(
   handler: BotHandler,
@@ -89,6 +96,21 @@ export async function handleTransferCommand(
 
     // Determine which contract will be used
     const contract = service.getTransferContract(name, isWrapped);
+
+    if (!isAddress(recipient)) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        `❌ **Something wrong**\n\n` +
+          `recipient address might have malformed, let's try again `,
+      );
+      await clearActiveFlow(userId, threadId);
+      await clearUserPendingCommand(userId);
+
+      return;
+    }
 
     // Create transfer flow
     const transferFlow = createTransferFlow({

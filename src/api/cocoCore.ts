@@ -85,9 +85,10 @@ async function fetchHandler<T>(actionURL: string): Promise<ApiResponse<T>> {
   } catch (error) {
     if (error instanceof Error) {
       if (error.name === "AbortError") {
+        console.log("Error in cocoCore.ts", error.message);
         return {
           success: false,
-          error: `I think the request too way too long but here's more info: ${error.message}`,
+          error: `I think the request too way too long.`,
         };
       }
 

@@ -1,11 +1,21 @@
 import { createClient } from "redis";
 
+const REDIS_HOST = process.env.REDIS_HOST;
+const REDIS_PORT = process.env.REDIS_PORT;
+const REDIS_PASSWORD = process.env.REDIS_PASSWORD;
+
+if (!REDIS_HOST || !REDIS_PASSWORD) {
+  throw new Error("REDIS_HOST and REDIS_PASSWORD must be set");
+}
+
 export const client = createClient({
   username: "default",
-  password: process.env.REDIS!,
+  password: REDIS_PASSWORD,
   socket: {
-    host: "redis-19777.c10.us-east-1-2.ec2.cloud.redislabs.com",
-    port: 19777,
+    host: REDIS_HOST,
+    port: parseInt(REDIS_PORT!) || 19777,
+    // tls: true,
+    // rejectUnauthorized: true,
     reconnectStrategy: (retries) => {
       if (retries > 10) {
         console.error("Redis: Max reconnection attempts reached");

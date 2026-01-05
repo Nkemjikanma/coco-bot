@@ -205,7 +205,8 @@ export interface SetCommand extends BaseCommand {
 
 export interface PortfolioCommand extends BaseCommand {
   action: "portfolio";
-  address: Address;
+  address?: Address;
+  useSelfWallets?: boolean;
   // options?: CommandOptions;
 }
 

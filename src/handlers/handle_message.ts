@@ -60,9 +60,11 @@ import type {
 import {
   checkAllEOABalances,
   checkBalance,
+  extractRecipientAddress,
   filterEOAs,
   formatAddress,
   formatAllWalletBalances,
+  getLinkedWallets,
 } from "../utils";
 import {
   determineWaitingFor,
@@ -78,6 +80,7 @@ import { handleSubdomainCommand } from "./handleSubdomainCommand";
 import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 import { handleRegisterCommand } from "./handleRegisterCommand";
 import { handleTransferCommand } from "./handleTransferCommand";
+import { formatMultiWalletPortfolio } from "../api/formatResponses";
 
 type UnifiedEvent = {
   channelId: string;
@@ -151,18 +154,6 @@ export async function handleMessage(
   // Skip empty messages
   if (!content || content.trim() === "") {
     return;
-  }
-
-  // Get user's Towns wallet address
-  let walletAdd: `0x${string}` | null;
-  const walletAddressInContent = content.split(" ").filter((c) => isAddress(c));
-
-  if (walletAddressInContent.length === 0) {
-    walletAdd = await getSmartAccountFromUserId(bot, {
-      userId: event.userId,
-    });
-  } else {
-    walletAdd = walletAddressInContent[0];
   }
 
   // Store message in session
@@ -356,10 +347,7 @@ export async function handleMessage(
 
     // Parse the message using Claude
     const recentMessages = await getRecentMessages(threadId, 5);
-    const parserResult = await coco_parser(
-      `${content} ${walletAdd}`,
-      recentMessages,
-    );
+    const parserResult = await coco_parser(content, recentMessages);
 
     console.log("parser", parserResult);
 
@@ -794,35 +782,73 @@ export async function executeValidCommand(
   }
 
   if (command.action === "portfolio") {
-    if (!command.address || !isAddress(command.address)) {
+    let addressesToQuery: `0x${string}`[] = [];
+
+    // Check if user wants their own wallets
+    if (command.useSelfWallets || !command.address) {
+      // Fetch user's wallets from Towns
+      const userWallets = await filterEOAs(userId as `0x${string}`);
+      const smartWallet = await getSmartAccountFromUserId(bot, {
+        userId: userId as `0x${string}`,
+      });
+
+      // Combine all wallets
+      addressesToQuery = [...userWallets];
+      if (smartWallet) {
+        addressesToQuery.push(smartWallet);
+      }
+
+      if (addressesToQuery.length === 0) {
+        await sendBotMessage(
+          handler,
+          channelId,
+          threadId,
+          userId,
+          "I couldn't find any wallets linked to your account. Please connect a wallet first.",
+        );
+        return;
+      }
+    } else if (command.address && isAddress(command.address)) {
+      addressesToQuery = [command.address];
+    } else {
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        "I need a valid wallet address to show the portfolio. Please provide an Ethereum address (0x...)",
+        "I need a valid wallet address to show the portfolio. Please provide an Ethereum address (0x...) or say 'my wallets' to see your own.",
       );
       return;
     }
 
-    const portfolioResult: PortfolioData | null = await getUserPorfolio(
-      command.address,
-    );
+    // Query portfolio for all addresses
+    const allResults: PortfolioData[] = [];
 
-    if (portfolioResult === null) {
+    for (const addr of addressesToQuery) {
+      const portfolioResult = await getUserPorfolio(addr);
+      if (portfolioResult) {
+        allResults.push({ ...portfolioResult });
+      }
+    }
+
+    if (
+      allResults.length === 0 ||
+      allResults.every((r) => r.names?.length === 0)
+    ) {
       await sendBotMessage(
         handler,
         channelId,
         threadId,
         userId,
-        "Looks like you don't own any. You can always register one",
+        `I checked ${addressesToQuery.length} wallet(s) but didn't find any ENS names. You can register one with \`/register yourname.eth\``,
       );
       return;
     }
 
-    const portfolioData = formatPortfolioResponse(
-      command.address,
-      portfolioResult,
+    // Format combined results
+    const portfolioData = formatMultiWalletPortfolio(
+      addressesToQuery,
+      allResults,
     );
     await sendBotMessage(handler, channelId, threadId, userId, portfolioData);
     return;
