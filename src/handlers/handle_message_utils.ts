@@ -193,22 +193,22 @@ export async function extractMissingInfo(
 export function getHelpMessage(): string {
   return `👋 **Hi! I'm Coco, your ENS assistant.**
 
-**Talk to me naturally:**
-_"Check if alice.eth is available"_
-_"Register bob.eth for 2 years"_
-_"How much does a 3-letter name cost?"_
+**Talk to me naturally:**\n\n
+_"Check if alice.eth is available"_ \n\n
+_"Register bob.eth for 2 years"_ \n\n
+_"How much does a 3-letter name cost?"_\n\n
 
 **Or use commands:**
-🔍 \`/check alice.eth\` - Check availability
-📝 \`/register alice.eth 3\` - Register for 3 years
-🔄 \`/renew alice.eth 2\` - Renew for 2 years
-📤 \`/transfer alice.eth 0x...\` - Transfer to address
-⚙️ \`/set alice.eth\` - Set records
-📂 \`/portfolio\` - View your names
-⏰ \`/expiry alice.eth\` - Check expiration
-📜 \`/history alice.eth\` - Registration history
-🔔 \`/remind alice.eth\` - Set reminder
-👀 \`/watch alice.eth\` - Watch availability
+🔍 \`/check alice.eth\` - Check availability \n\n
+📝 \`/register alice.eth 3\` - Register for 3 years \n\n
+🔄 \`/renew alice.eth 2\` - Renew for 2 years - coming soon \n\n
+📤 \`/transfer alice.eth 0x...\` - Transfer to address\n\n
+⚙️ \`/set alice.eth\` - Set records - coming soon \n\n
+📂 \`/portfolio\` - View your names \n\n
+⏰ \`/expiry alice.eth\` - Check expiration \n\n
+📜 \`/history alice.eth\` - Registration history \n\n
+🔔 \`/remind alice.eth\` - Set reminder - coming soon \n\n
+👀 \`/watch alice.eth\` - Watch availability - coming soon\n\n
 
 **Ask me anything about ENS!** 💡`;
 }
