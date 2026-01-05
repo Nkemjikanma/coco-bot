@@ -201,12 +201,12 @@ _"How much does a 3-letter name cost?"_\n\n
 **Or use commands:**
 🔍 \`/check alice.eth\` - Check availability \n\n
 📝 \`/register alice.eth 3\` - Register for 3 years \n\n
-🔄 \`/renew alice.eth 2\` - Renew for 2 years - coming soon \n\n
 📤 \`/transfer alice.eth 0x...\` - Transfer to address\n\n
-⚙️ \`/set alice.eth\` - Set records - coming soon \n\n
 📂 \`/portfolio\` - View your names \n\n
 ⏰ \`/expiry alice.eth\` - Check expiration \n\n
 📜 \`/history alice.eth\` - Registration history \n\n
+🔄 \`/renew alice.eth 2\` - Renew for 2 years - coming soon \n\n
+⚙️ \`/set alice.eth\` - Set records - coming soon \n\n
 🔔 \`/remind alice.eth\` - Set reminder - coming soon \n\n
 👀 \`/watch alice.eth\` - Watch availability - coming soon\n\n
 
