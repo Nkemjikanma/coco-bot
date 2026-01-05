@@ -1,4 +1,3 @@
-import { ENS_CONTRACTS } from "../services/ens/constants";
 import {
   type BotHandler,
   FlattenedFormComponent,
@@ -12,41 +11,47 @@ import {
   formatCheckResponse,
   formatExpiryResponse,
   formatHistoryResponse,
+  formatPhase1Summary,
   formatPortfolioResponse,
   type HistoryData,
   type PortfolioData,
-  formatPhase1Summary,
 } from "../api";
+import { formatMultiWalletPortfolio } from "../api/formatResponses";
 import { bot } from "../bot";
 import {
   appendMessageToSession,
+  clearActiveFlow,
   clearUserPendingCommand,
+  createRegistrationFlow,
   describePendingCommand,
-  getRecentMessages,
-  getUserState,
-  hasPendingCommandElsewhere,
-  movePendingCommandToThread,
-  setUserPendingCommand,
-  updateUserLocation,
   // ✅ New flow store imports
   getActiveFlow,
-  setActiveFlow,
-  clearActiveFlow,
+  getRecentMessages,
+  getUserState,
   hasAnyActiveFlow,
-  createRegistrationFlow,
+  hasPendingCommandElsewhere,
   isRegistrationFlow,
+  movePendingCommandToThread,
+  setActiveFlow,
+  setUserPendingCommand,
   updateFlowData,
   updateFlowStatus,
+  updateUserLocation,
 } from "../db";
+import { CHAIN_IDS } from "../services/bridge";
+import { handleBridging } from "../services/bridge/bridgeUtils";
 import {
   checkAvailability,
   checkExpiry,
+  encodeCommitData,
+  estimateRegistrationCost,
   getHistory,
   getUserPorfolio,
   prepareRegistration,
-  encodeCommitData,
-  estimateRegistrationCost,
 } from "../services/ens";
+import { ENS_CONTRACTS } from "../services/ens/constants";
+import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
+import { handleExecutionsForCheckingSubdomains } from "../services/ens/utils";
 import type {
   EOAWalletCheckResult,
   EventType,
@@ -74,14 +79,9 @@ import {
   getWaitingForMessage,
   sendBotMessage,
 } from "./handle_message_utils";
-import { CHAIN_IDS } from "../services/bridge";
-import { handleBridging } from "../services/bridge/bridgeUtils";
-import { handleSubdomainCommand } from "./handleSubdomainCommand";
-import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 import { handleRegisterCommand } from "./handleRegisterCommand";
+import { handleSubdomainCommand } from "./handleSubdomainCommand";
 import { handleTransferCommand } from "./handleTransferCommand";
-import { formatMultiWalletPortfolio } from "../api/formatResponses";
-import { handleExecutionsForCheckingSubdomains } from "../services/ens/utils";
 
 type UnifiedEvent = {
   channelId: string;
@@ -813,15 +813,6 @@ export async function executeValidCommand(
   }
 
   if (command.action === "portfolio") {
-    if (command.name.split(".").length > 2) {
-      await handleExecutionsForCheckingSubdomains(
-        handler,
-        channelId,
-        threadId,
-        userId,
-      );
-      return;
-    }
     let addressesToQuery: `0x${string}`[] = [];
 
     // Check if user wants their own wallets
