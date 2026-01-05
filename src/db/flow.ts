@@ -96,10 +96,23 @@ function verifyHMAC(data: string, signature: string): boolean {
   return timingSafeEqual(expectedBuffer, signatureBuffer);
 }
 
+// ============ BigInt-Safe Stringify/Parse ============
+
+const bigIntReplacer = (_: string, value: unknown) =>
+  typeof value === "bigint" ? `${value.toString()}n` : value;
+
+const bigIntReviver = (_: string, value: unknown) =>
+  typeof value === "string" && /^\d+n$/.test(value)
+    ? BigInt(value.slice(0, -1))
+    : value;
+
+const safeStringify = (data: unknown) => JSON.stringify(data, bigIntReplacer);
+const safeParse = <T>(json: string) => JSON.parse(json, bigIntReviver) as T;
+
 // ============ Serialization ============
 function serializeFlow<T>(data: T): string {
   const timestamp = Date.now();
-  const jsonData = JSON.stringify(data);
+  const jsonData = safeStringify(data); // ✅ Use safe stringify
 
   // Sign: data + timestamp
   const toSign = `${jsonData}|${timestamp}`;
@@ -112,7 +125,7 @@ function serializeFlow<T>(data: T): string {
     v: 1,
   };
 
-  return JSON.stringify(payload);
+  return safeStringify(payload); // ✅ Use safe stringify
 }
 
 function deserializeFlow<T>(
@@ -123,30 +136,27 @@ function deserializeFlow<T>(
 
   let payload: SecurePayload<T>;
   try {
-    payload = JSON.parse(serialized);
+    payload = safeParse<SecurePayload<T>>(serialized); // ✅ Use safe parse
   } catch {
     throw new Error("DATA_INTEGRITY_VIOLATION: Invalid payload format");
   }
 
   const { d: data, s: signature, t: timestamp, v: version } = payload;
 
-  // Check version
   if (version !== 1) {
     throw new Error(`DATA_INTEGRITY_VIOLATION: Unknown version ${version}`);
   }
 
-  // Reconstruct signed data
-  const jsonData = JSON.stringify(data);
+  // Reconstruct signed data - MUST match serialization!
+  const jsonData = safeStringify(data); // ✅ Use safe stringify (same as serialize)
   const toVerify = `${jsonData}|${timestamp}`;
 
-  // Verify signature
   if (!verifyHMAC(toVerify, signature)) {
     throw new Error(
       "DATA_INTEGRITY_VIOLATION: Signature mismatch - data tampered",
     );
   }
 
-  // Check age
   const age = Date.now() - timestamp;
   if (age > maxAgeMs) {
     throw new Error(

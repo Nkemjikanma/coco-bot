@@ -33,7 +33,6 @@ export async function handleRegisterCommand(
 
   const { name, duration } = command;
 
-  // ✅ CLEANUP: Clear any stale state
   const existingState = await getUserState(userId);
   const existingFlow = await hasAnyActiveFlow(userId);
 
