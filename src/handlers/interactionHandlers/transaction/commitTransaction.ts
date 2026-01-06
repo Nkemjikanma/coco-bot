@@ -1,9 +1,5 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { OnInteractionEventType } from "../types";
-import { clearUserPendingCommand } from "../../../db/userStateStore";
-import { estimateRegisterGas } from "../../../services/ens/ens";
+import type { BotHandler } from "@towns-protocol/bot";
 import { formatEther } from "viem";
-import { ENS_CONTRACTS } from "../../../services/ens/constants";
 import {
   clearActiveFlow,
   getActiveFlow,
@@ -11,6 +7,11 @@ import {
   updateFlowData,
   updateFlowStatus,
 } from "../../../db";
+import { clearUserPendingCommand } from "../../../db/userStateStore";
+import { ENS_CONTRACTS } from "../../../services/ens/constants";
+import { estimateRegisterGas } from "../../../services/ens/ens";
+import { metrics } from "../../../services/metrics/metrics";
+import type { OnInteractionEventType } from "../types";
 
 export async function commitTransaction(
   handler: BotHandler,
@@ -48,6 +49,12 @@ export async function commitTransaction(
   const regData = flow.data;
 
   if (tx.txHash) {
+    await metrics.trackEvent("commit_completed", {
+      userId,
+      name: regData.name,
+      txHash: tx.txHash,
+    });
+
     // Update registration with tx hash and timestamp
     await updateFlowData(userId, threadId, {
       commitTxHash: tx.txHash as `0x${string}`,
@@ -65,6 +72,11 @@ export async function commitTransaction(
     // Start the wait timer
     startCommitWaitTimer(handler, channelId, userId, threadId);
   } else {
+    await metrics.trackEvent("commit_failed", {
+      userId,
+      name: regData.name,
+    });
+
     await handler.sendMessage(
       channelId,
       "❌ Commit transaction failed. Please try again.",

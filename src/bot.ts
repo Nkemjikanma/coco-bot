@@ -1,8 +1,8 @@
-import { getSmartAccountFromUserId, makeTownsBot } from "@towns-protocol/bot";
+import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
-import { getUserState, getActiveFlow } from "./db";
+import { getActiveFlow, getUserState } from "./db";
 import { handleOnMessage, handleSlashCommand } from "./handlers";
-
+import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
   confirmCommit,
   confirmRegister,
@@ -10,16 +10,15 @@ import {
   durationForm,
   walletSelection,
 } from "./handlers/interactionHandlers/form";
+import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
 import {
   bridgeTransaction,
   commitTransaction,
   registerTransaction,
 } from "./handlers/interactionHandlers/transaction";
-import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
-import { CocoBotType } from "./types";
-import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
-import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
 import { handleTransferTransaction } from "./handlers/interactionHandlers/transaction/transferTransaction";
+import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
+import type { CocoBotType } from "./types";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -36,15 +35,15 @@ const cocoCommands = [
   "help",
   "check",
   "register",
-  "renew",
+  // "renew",
   "transfer",
-  "set",
+  // "set",
   "subdomain",
   "portfolio",
   "expiry",
   "history",
-  "remind",
-  "watch",
+  // "remind",
+  // "watch",
 ] as const;
 
 for (const command of cocoCommands) {

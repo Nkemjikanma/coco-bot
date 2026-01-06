@@ -52,6 +52,7 @@ import {
 import { ENS_CONTRACTS } from "../services/ens/constants";
 import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 import { handleExecutionsForCheckingSubdomains } from "../services/ens/utils";
+import { metrics } from "../services/metrics/metrics";
 import type {
   EOAWalletCheckResult,
   EventType,
@@ -713,18 +714,26 @@ export async function executeValidCommand(
   command: ParsedCommand,
 ): Promise<void> {
   if (command.action === "question") {
+    await metrics.trackCommand(command.action, userId, {});
+
     const answer = await handleQuestionCommand(command as QuestionCommand);
     await sendBotMessage(handler, channelId, threadId, userId, answer);
     return;
   }
 
   if (command.action === "help") {
+    await metrics.trackCommand(command.action, userId, {});
+
     const helpMessage = getHelpMessage();
     await sendBotMessage(handler, channelId, threadId, userId, helpMessage);
     return;
   }
 
   if (command.action === "check") {
+    await metrics.trackCommand(command.action, userId, {
+      name: command.name,
+    });
+
     if (command.name.split(".").length > 2) {
       await handleExecutionsForCheckingSubdomains(
         handler,
@@ -753,6 +762,10 @@ export async function executeValidCommand(
   }
 
   if (command.action === "expiry") {
+    await metrics.trackCommand(command.action, userId, {
+      name: command.name,
+    });
+
     if (command.name.split(".").length > 2) {
       await handleExecutionsForCheckingSubdomains(
         handler,
@@ -783,6 +796,9 @@ export async function executeValidCommand(
   }
 
   if (command.action === "history") {
+    await metrics.trackCommand(command.action, userId, {
+      name: command.name,
+    });
     if (command.name.split(".").length > 2) {
       await handleExecutionsForCheckingSubdomains(
         handler,
@@ -848,6 +864,10 @@ export async function executeValidCommand(
       );
       return;
     }
+
+    await metrics.trackCommand(command.action, userId, {
+      address: addressesToQuery.join(", "),
+    });
 
     // Query portfolio for all addresses
     const allResults: PortfolioData[] = [];
@@ -963,111 +983,5 @@ async function handleExecution(
 
   if (command.action === "transfer") {
     await handleTransferCommand(handler, channelId, threadId, userId, command);
-  }
-}
-
-export async function proceedWithRegistration(
-  handler: BotHandler,
-  channelId: string,
-  threadId: string,
-  userId: string,
-  command: RegisterCommand,
-  selectedWallet: `0x${string}`,
-  walletCheck: EOAWalletCheckResult,
-) {
-  try {
-    const registration = await prepareRegistration({
-      name: command.name,
-      owner: selectedWallet,
-      durationYears: command.duration,
-    });
-
-    const walletInfo = walletCheck.wallets.find(
-      (w) => w.address.toLowerCase() === selectedWallet.toLowerCase(),
-    );
-
-    if (!walletInfo) {
-      await sendBotMessage(
-        handler,
-        channelId,
-        threadId,
-        userId,
-        "❌ Wallet not found. Please try again.",
-      );
-      return;
-    }
-
-    // Create registration flow
-    const registrationFlow = createRegistrationFlow({
-      userId,
-      threadId,
-      channelId,
-      status: "initiated",
-      data: {
-        ...registration,
-        selectedWallet,
-        walletCheckResult: walletCheck,
-      },
-    });
-    await setActiveFlow(registrationFlow);
-
-    await setUserPendingCommand(
-      userId,
-      threadId,
-      channelId,
-      command,
-      "confirmation",
-    );
-
-    const balanceMessage =
-      walletInfo.l1Balance >= registration.grandTotalWei
-        ? `✅ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (sufficient)`
-        : `⚠️ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (need bridging)`;
-
-    const summary = formatPhase1Summary(registration, command.duration);
-
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      `${summary}\n\n` +
-        `💰 **Wallet:** ${formatAddress(selectedWallet)}\n` +
-        `${balanceMessage}\n\n` +
-        `⚠️ **Note:** ENS registration happens on Ethereum Mainnet (L1). \n\n` +
-        `Make sure to select the correct wallet when approving transactions. \n\n`,
-    );
-
-    await handler.sendInteractionRequest(
-      channelId,
-      {
-        type: "form",
-        id: `confirm_commit:${threadId}`,
-        title: "Confirm Registration: Step 1 of 2",
-        components: [
-          {
-            id: "confirm",
-            type: "button",
-            label: "✅ Start Registration",
-          },
-          {
-            id: "cancel",
-            type: "button",
-            label: "❌ Cancel",
-          },
-        ],
-        recipient: userId as `0x${string}`,
-      },
-      { threadId },
-    );
-  } catch (e) {
-    console.error("Error preparing registration:", e);
-    await sendBotMessage(
-      handler,
-      channelId,
-      threadId,
-      userId,
-      "Something went wrong. Please try again.",
-    );
   }
 }
