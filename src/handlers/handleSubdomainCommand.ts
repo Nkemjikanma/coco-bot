@@ -1,18 +1,19 @@
-import { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
-  createSubdomainFlow,
-  setActiveFlow,
-  setUserPendingCommand,
-  getActiveFlow,
-  isSubdomainFlow,
   clearActiveFlow,
   clearUserPendingCommand,
+  createSubdomainFlow,
+  getActiveFlow,
+  isSubdomainFlow,
+  setActiveFlow,
+  setUserPendingCommand,
   updateFlowData,
   updateFlowStatus,
 } from "../db";
 import { getSubdomainService } from "../services/ens/subdomain/subdomain";
 import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
-import { SubdomainCommand } from "../types";
+import { metrics } from "../services/metrics/metrics";
+import type { SubdomainCommand } from "../types";
 import { filterEOAs, formatAddress } from "../utils";
 import { sendBotMessage } from "./handle_message_utils";
 
@@ -35,6 +36,10 @@ export async function handleSubdomainCommand(
 ): Promise<void> {
   const service = getSubdomainService();
   const { name, subdomain } = command;
+
+  await metrics.trackCommand("subdomain", userId, {
+    name,
+  });
 
   // Validate subdomain info exists
   if (!subdomain || !subdomain.parent || !subdomain.label) {
@@ -140,6 +145,14 @@ export async function handleSubdomainCommand(
     const recipientIsCaller =
       ownerWallet.toLowerCase() === resolveAddress.toLowerCase();
     const totalSteps = recipientIsCaller ? 2 : 3;
+
+    await metrics.trackEvent("subdomain_started", {
+      userId,
+      fullName: fullSubname,
+      parent,
+      recipient: resolveAddress,
+      totalSteps: totalSteps.toString(),
+    });
 
     // Display validation success
     await sendBotMessage(
@@ -278,6 +291,12 @@ export async function handleSubdomainStep1Transaction(
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
+    await metrics.trackEvent("subdomain_step1_failed", {
+      userId,
+      fullName: flowData.fullName,
+      reason: "user_rejected",
+    });
+
     await handler.sendMessage(
       channelId,
       `❌ **Transaction Rejected**\n\n` +
@@ -288,6 +307,12 @@ export async function handleSubdomainStep1Transaction(
     await clearUserPendingCommand(userId);
     return;
   }
+
+  await metrics.trackEvent("subdomain_step1_completed", {
+    userId,
+    fullName: flowData.fullName,
+    txHash: tx.txHash,
+  });
 
   // Update flow with step 1 tx hash
   await updateFlowData(userId, originalThreadId, {
@@ -382,6 +407,12 @@ export async function handleSubdomainStep2Transaction(
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
+    await metrics.trackEvent("subdomain_step2_failed", {
+      userId,
+      fullName: flowData.fullName,
+      reason: "user_rejected",
+    });
+
     await handler.sendMessage(
       channelId,
       `❌ **Transaction Rejected**\n\n` +
@@ -408,6 +439,21 @@ export async function handleSubdomainStep2Transaction(
 
   if (!needsTransfer) {
     // Owner IS the recipient - we're done!
+    await metrics.trackTransaction({
+      type: "subdomain",
+      name: flowData.fullName,
+      txHash: tx.txHash,
+      userId,
+      timestamp: Date.now(),
+    });
+
+    await metrics.trackEvent("subdomain_created", {
+      userId,
+      fullName: flowData.fullName,
+      recipient: flowData.recipient || "",
+      totalSteps: "2",
+    });
+
     await updateFlowStatus(userId, originalThreadId, "complete");
 
     await handler.sendMessage(
@@ -427,6 +473,12 @@ export async function handleSubdomainStep2Transaction(
     await clearUserPendingCommand(userId);
     return;
   }
+
+  await metrics.trackEvent("subdomain_step2_completed", {
+    userId,
+    fullName: flowData.fullName,
+    txHash: tx.txHash,
+  });
 
   // Need Step 3 - transfer ownership
   await handler.sendMessage(
@@ -515,6 +567,12 @@ export async function handleSubdomainStep3Transaction(
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
+    await metrics.trackEvent("subdomain_step3_failed", {
+      userId,
+      fullName: flowData.fullName,
+      reason: "user_rejected",
+    });
+
     await handler.sendMessage(
       channelId,
       `❌ **Transaction Rejected**\n\n` +
@@ -534,6 +592,21 @@ export async function handleSubdomainStep3Transaction(
     step3TxHash: tx.txHash,
   });
   await updateFlowStatus(userId, originalThreadId, "complete");
+
+  await metrics.trackTransaction({
+    type: "subdomain",
+    name: flowData.fullName,
+    txHash: tx.txHash,
+    userId,
+    timestamp: Date.now(),
+  });
+
+  await metrics.trackEvent("subdomain_created", {
+    userId,
+    fullName: flowData.fullName,
+    recipient: flowData.recipient || "",
+    totalSteps: "3",
+  });
 
   // Success!
   await handler.sendMessage(

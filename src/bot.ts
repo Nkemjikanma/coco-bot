@@ -1,8 +1,12 @@
-import { getSmartAccountFromUserId, makeTownsBot } from "@towns-protocol/bot";
+import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
-import { getUserState, getActiveFlow } from "./db";
-import { handleOnMessage, handleSlashCommand } from "./handlers";
-
+import { getActiveFlow, getUserState } from "./db";
+import {
+  handleOnMessage,
+  handleSlashCommand,
+  sendBotMessage,
+} from "./handlers";
+import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
   confirmCommit,
   confirmRegister,
@@ -10,16 +14,16 @@ import {
   durationForm,
   walletSelection,
 } from "./handlers/interactionHandlers/form";
+import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
 import {
   bridgeTransaction,
   commitTransaction,
   registerTransaction,
 } from "./handlers/interactionHandlers/transaction";
-import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
-import { CocoBotType } from "./types";
-import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
-import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
 import { handleTransferTransaction } from "./handlers/interactionHandlers/transaction/transferTransaction";
+import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
+import { metrics } from "./services/metrics/metrics";
+import type { CocoBotType } from "./types";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
 const SECRET = process.env.JWT_SECRET;
@@ -36,24 +40,60 @@ const cocoCommands = [
   "help",
   "check",
   "register",
-  "renew",
+  // "renew",
   "transfer",
-  "set",
+  // "set",
   "subdomain",
   "portfolio",
   "expiry",
   "history",
-  "remind",
-  "watch",
+  // "remind",
+  // "watch",
+  "stats",
 ] as const;
 
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {
+    if (command === "stats" && event.userId === process.env.DEV_ID!) {
+      const overview = await metrics.getOverview();
+      const commandStats = await metrics.getCommandStats();
+
+      const message =
+        `📊 **Coco Bot Statistics**\n\n` +
+        `**Usage:**\n` +
+        `• Total Commands: ${overview.totalCommands}\n` +
+        `• Daily Active Users: ${overview.dailyActiveUsers}\n\n` +
+        `**Transactions:**\n` +
+        `• Registrations: ${overview.totalRegistrations}\n` +
+        `• Transfers: ${overview.totalTransfers}\n` +
+        `• Subdomains: ${overview.totalSubdomains}\n` +
+        `• Bridges: ${overview.totalBridges}\n\n` +
+        `**Total Gas Spent:** ${overview.totalCostEth} ETH\n\n` +
+        `**Command Breakdown:**\n` +
+        Object.entries(commandStats)
+          .sort(([, a], [, b]) => b - a)
+          .map(([cmd, count]) => `• ${cmd}: ${count}`)
+          .join("\n");
+
+      const validThread = event.threadId || event.eventId;
+
+      await sendBotMessage(
+        handler,
+        event.channelId,
+        validThread,
+        event.userId,
+        message,
+      );
+
+      return;
+    }
+
     await handleSlashCommand(handler, event);
   });
 }
 
 bot.onMessage(async (handler, event) => {
+  console.log("userId is mine", event.userId);
   if (event.userId === bot.botId) return;
 
   const shouldRespond = await shouldRespondToMessage(event);

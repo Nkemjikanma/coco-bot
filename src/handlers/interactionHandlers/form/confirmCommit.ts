@@ -1,4 +1,4 @@
-import { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
@@ -8,7 +8,8 @@ import {
 } from "../../../db";
 import { encodeCommitData } from "../../../services/ens";
 import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
-import { FormCase, OnInteractionEventType } from "../types";
+import { metrics } from "../../../services/metrics/metrics";
+import type { FormCase, OnInteractionEventType } from "../types";
 
 export async function confirmCommit(
   handler: BotHandler,
@@ -70,6 +71,11 @@ export async function confirmCommit(
     }
 
     if (component.id === "confirm") {
+      await metrics.trackEvent("registration_started", {
+        userId,
+        name: regData.name,
+      });
+
       // Update status
       await updateFlowStatus(userId, threadId, "step1_pending");
 

@@ -1,7 +1,7 @@
 import type { BasePayload, Bot } from "@towns-protocol/bot";
 import type { ChannelMessage_Post_Mention } from "@towns-protocol/proto";
 import type { Address } from "./api/types";
-import commands from "./commands";
+import type commands from "./commands";
 
 export type CocoBotType = Bot<typeof commands>;
 export interface Message {
@@ -296,7 +296,7 @@ export type EventType = BasePayload & {
     | "remind"
     | "watch"
     | "migrate"
-    | "test_bridge";
+    | "stats";
   args: string[];
   mentions: Pick<ChannelMessage_Post_Mention, "userId" | "displayName">[];
   replyId: string | undefined;
