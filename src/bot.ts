@@ -2,6 +2,8 @@ import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
 import { getActiveFlow, getUserState } from "./db";
 
+import { handleOnMessage, handleSlashCommand } from "./handlers";
+import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
   handleOnMessage,
   handleSlashCommand,
