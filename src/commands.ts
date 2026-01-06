@@ -27,6 +27,7 @@ const commands = [
   // { name: "watch", description: "Watch for when name becomes available" },
   // { name: "test_bridge", description: "Test out bridge" },
   // { name: "migrate", description: "TODO: Migrate names to Namechain L2" },
+  { name: "stats", description: "Admin only" },
 ] as const satisfies BotCommand[];
 
 export default commands;
