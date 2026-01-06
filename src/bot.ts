@@ -84,6 +84,8 @@ for (const command of cocoCommands) {
         event.userId,
         message,
       );
+
+      return;
     }
 
     await handleSlashCommand(handler, event);
