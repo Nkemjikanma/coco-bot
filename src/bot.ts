@@ -1,11 +1,13 @@
 import { makeTownsBot } from "@towns-protocol/bot";
 import commands from "./commands";
 import { getActiveFlow, getUserState } from "./db";
+
 import {
   handleOnMessage,
   handleSlashCommand,
   sendBotMessage,
 } from "./handlers";
+
 import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
   confirmCommit,
@@ -22,7 +24,9 @@ import {
 } from "./handlers/interactionHandlers/transaction";
 import { handleTransferTransaction } from "./handlers/interactionHandlers/transaction/transferTransaction";
 import { shouldRespondToMessage } from "./handlers/interactionHandlers/utils";
+
 import { metrics } from "./services/metrics/metrics";
+
 import type { CocoBotType } from "./types";
 
 const APP_DATA = process.env.APP_PRIVATE_DATA;
