@@ -53,6 +53,7 @@ for (const command of cocoCommands) {
 }
 
 bot.onMessage(async (handler, event) => {
+  console.log("userId is mine", event.userId);
   if (event.userId === bot.botId) return;
 
   const shouldRespond = await shouldRespondToMessage(event);
