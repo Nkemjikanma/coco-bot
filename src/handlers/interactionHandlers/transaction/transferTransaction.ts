@@ -1,12 +1,13 @@
-import { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
-  getActiveFlow,
   clearActiveFlow,
-  updateFlowStatus,
-  updateFlowData,
   clearUserPendingCommand,
+  getActiveFlow,
+  updateFlowData,
+  updateFlowStatus,
 } from "../../../db";
 import { isTransferFlow } from "../../../db/flow";
+import { metrics } from "../../../services/metrics/metrics";
 
 export async function handleTransferTransaction(
   handler: BotHandler,
@@ -47,6 +48,11 @@ export async function handleTransferTransaction(
 
   // Check if transaction was rejected
   if (!tx.txHash || tx.txHash === "" || tx.txHash === "0x") {
+    await metrics.trackEvent("transfer_failed", {
+      userId,
+      name: transferData.domain,
+      recipient: transferData.recipient,
+    });
     await updateFlowStatus(userId, threadId, "failed");
     await handler.sendMessage(
       channelId,
@@ -58,6 +64,12 @@ export async function handleTransferTransaction(
     await clearUserPendingCommand(userId);
     return;
   }
+
+  await metrics.trackEvent("transfer_completed", {
+    userId,
+    name: transferData.domain,
+    txHash: tx.txHash,
+  });
 
   // Update flow with tx hash and mark complete
   await updateFlowData(userId, threadId, {

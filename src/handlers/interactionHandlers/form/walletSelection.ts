@@ -1,22 +1,22 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { FormCase, OnInteractionEventType } from "../types";
-import {
-  clearUserPendingCommand,
-  getUserState,
-  setUserPendingCommand,
-} from "../../../db/userStateStore";
-import { RegisterCommand } from "../../../types";
-import { formatAddress } from "../../../utils";
-import { proceedWithRegistration } from "../../handle_message";
+import type { BotHandler } from "@towns-protocol/bot";
 import { formatEther } from "viem";
-import { handleBridging } from "../../../services/bridge/bridgeUtils";
-import { prepareRegistration } from "../../../services/ens";
 import {
   clearActiveFlow,
   getActiveFlow,
   isRegistrationFlow,
   updateFlowData,
 } from "../../../db";
+import {
+  clearUserPendingCommand,
+  getUserState,
+  setUserPendingCommand,
+} from "../../../db/userStateStore";
+import { handleBridging } from "../../../services/bridge/bridgeUtils";
+import { prepareRegistration } from "../../../services/ens";
+import type { RegisterCommand } from "../../../types";
+import { formatAddress } from "../../../utils";
+import { proceedWithRegistration } from "../../handleRegisterCommand";
+import type { FormCase, OnInteractionEventType } from "../types";
 
 export async function walletSelection(
   handler: BotHandler,

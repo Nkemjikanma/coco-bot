@@ -1,9 +1,5 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { TransferCommand } from "../types";
-import { getTransferService } from "../services/ens/transfer/transfer";
-import { sendBotMessage } from "./handle_message_utils";
-import { filterEOAs, formatAddress } from "../utils";
-import { createTransferFlow } from "../db/flow.utils";
+import type { BotHandler } from "@towns-protocol/bot";
+import { isAddress } from "viem";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
@@ -11,7 +7,12 @@ import {
   setActiveFlow,
   setUserPendingCommand,
 } from "../db";
-import { isAddress } from "viem";
+import { createTransferFlow } from "../db/flow.utils";
+import { getTransferService } from "../services/ens/transfer/transfer";
+import { metrics } from "../services/metrics/metrics";
+import type { TransferCommand } from "../types";
+import { filterEOAs, formatAddress } from "../utils";
+import { sendBotMessage } from "./handle_message_utils";
 
 export async function handleTransferCommand(
   handler: BotHandler,
@@ -22,6 +23,8 @@ export async function handleTransferCommand(
 ) {
   const service = getTransferService();
   const { name, recipient } = command;
+
+  await metrics.trackCommand("transfer", userId, { name });
 
   console.log(name, recipient);
 
@@ -140,6 +143,12 @@ export async function handleTransferCommand(
     const contractCheck = await service.checkSmartContractOnChains(
       recipient as `0x${string}`,
     );
+
+    await metrics.trackEvent("transfer_started", {
+      userId,
+      name,
+      recipient,
+    });
 
     let confirmationMessage =
       `✅ **Transfer Validation Passed**\n\n` +

@@ -1,9 +1,8 @@
 import {
-  handleOnMessage,
-  handleSlashCommand,
-  handlePendingCommandResponse,
   executeValidCommand,
-  proceedWithRegistration,
+  handleOnMessage,
+  handlePendingCommandResponse,
+  handleSlashCommand,
 } from "./handle_message";
 
 import { sendBotMessage } from "./handle_message_utils";
@@ -16,7 +15,6 @@ export {
   handleOnMessage,
   handlePendingCommandResponse,
   sendBotMessage,
-  proceedWithRegistration,
   handleRegisterCommand,
   handleSubdomainCommand,
   handleTransferCommand,

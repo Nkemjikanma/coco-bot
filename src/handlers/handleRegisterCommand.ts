@@ -1,5 +1,6 @@
 import type { BotHandler, FlattenedFormComponent } from "@towns-protocol/bot";
 import { formatEther } from "viem";
+import { formatPhase1Summary } from "../api";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
@@ -9,15 +10,19 @@ import {
   setActiveFlow,
   setUserPendingCommand,
 } from "../db";
-import { checkAvailability, estimateRegistrationCost } from "../services/ens";
-import type { RegisterCommand } from "../types";
+import {
+  checkAvailability,
+  estimateRegistrationCost,
+  prepareRegistration,
+} from "../services/ens";
+import { metrics } from "../services/metrics/metrics";
+import type { EOAWalletCheckResult, RegisterCommand } from "../types";
 import {
   checkAllEOABalances,
   filterEOAs,
   formatAddress,
   formatAllWalletBalances,
 } from "../utils";
-import { proceedWithRegistration } from "./handle_message";
 import { determineWaitingFor, sendBotMessage } from "./handle_message_utils";
 
 export async function handleRegisterCommand(
@@ -30,6 +35,16 @@ export async function handleRegisterCommand(
   if (command.action !== "register") {
     return;
   }
+
+  await metrics.trackCommand("register", userId, {
+    name: command.name,
+    duration: command.duration.toString(),
+  });
+
+  await metrics.trackEvent("registration_started", {
+    userId,
+    name: command.name,
+  });
 
   const { name, duration } = command;
 
@@ -353,4 +368,110 @@ export async function handleRegisterCommand(
     },
     { threadId },
   );
+}
+
+export async function proceedWithRegistration(
+  handler: BotHandler,
+  channelId: string,
+  threadId: string,
+  userId: string,
+  command: RegisterCommand,
+  selectedWallet: `0x${string}`,
+  walletCheck: EOAWalletCheckResult,
+) {
+  try {
+    const registration = await prepareRegistration({
+      name: command.name,
+      owner: selectedWallet,
+      durationYears: command.duration,
+    });
+
+    const walletInfo = walletCheck.wallets.find(
+      (w) => w.address.toLowerCase() === selectedWallet.toLowerCase(),
+    );
+
+    if (!walletInfo) {
+      await sendBotMessage(
+        handler,
+        channelId,
+        threadId,
+        userId,
+        "❌ Wallet not found. Please try again.",
+      );
+      return;
+    }
+
+    // Create registration flow
+    const registrationFlow = createRegistrationFlow({
+      userId,
+      threadId,
+      channelId,
+      status: "initiated",
+      data: {
+        ...registration,
+        selectedWallet,
+        walletCheckResult: walletCheck,
+      },
+    });
+    await setActiveFlow(registrationFlow);
+
+    await setUserPendingCommand(
+      userId,
+      threadId,
+      channelId,
+      command,
+      "confirmation",
+    );
+
+    const balanceMessage =
+      walletInfo.l1Balance >= registration.grandTotalWei
+        ? `✅ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (sufficient)`
+        : `⚠️ L1 Balance: ${Number(walletInfo.l1BalanceEth).toFixed(4)} ETH (need bridging)`;
+
+    const summary = formatPhase1Summary(registration, command.duration);
+
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      `${summary}\n\n` +
+        `💰 **Wallet:** ${formatAddress(selectedWallet)}\n` +
+        `${balanceMessage}\n\n` +
+        `⚠️ **Note:** ENS registration happens on Ethereum Mainnet (L1). \n\n` +
+        `Make sure to select the correct wallet when approving transactions. \n\n`,
+    );
+
+    await handler.sendInteractionRequest(
+      channelId,
+      {
+        type: "form",
+        id: `confirm_commit:${threadId}`,
+        title: "Confirm Registration: Step 1 of 2",
+        components: [
+          {
+            id: "confirm",
+            type: "button",
+            label: "✅ Start Registration",
+          },
+          {
+            id: "cancel",
+            type: "button",
+            label: "❌ Cancel",
+          },
+        ],
+        recipient: userId as `0x${string}`,
+      },
+      { threadId },
+    );
+  } catch (e) {
+    console.error("Error preparing registration:", e);
+    await sendBotMessage(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      "Something went wrong. Please try again.",
+    );
+  }
 }

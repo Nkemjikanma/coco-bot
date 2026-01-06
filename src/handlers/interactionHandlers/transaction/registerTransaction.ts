@@ -1,6 +1,4 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { OnInteractionEventType } from "../types";
-import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
   clearActiveFlow,
   getActiveFlow,
@@ -8,6 +6,9 @@ import {
   updateFlowData,
   updateFlowStatus,
 } from "../../../db";
+import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
+import { metrics } from "../../../services/metrics/metrics";
+import type { OnInteractionEventType } from "../types";
 
 export async function registerTransaction(
   handler: BotHandler,
@@ -45,7 +46,20 @@ export async function registerTransaction(
   const regData = flow.data;
   const registeredName = regData.name;
 
+  const costWei = regData.grandTotalWei;
+  const costEth = regData.grandTotalEth;
+
   if (tx.txHash) {
+    await metrics.trackTransaction({
+      type: "registration",
+      name: regData.name,
+      costWei: regData.grandTotalWei?.toString(),
+      costEth: regData.grandTotalEth,
+      txHash: tx.txHash,
+      userId,
+      timestamp: Date.now(),
+    });
+
     // Update flow with register tx hash
     await updateFlowData(userId, threadId, {
       registerTxHash: tx.txHash as `0x${string}`,
@@ -62,7 +76,7 @@ export async function registerTransaction(
 **${registeredName}** is now yours!
 
 🔗 **Transaction Details**
-└─ Tx: [tx](https://etherscan.io/tx/${tx.txHash})
+└─ Tx: [transaction](https://etherscan.io/tx/${tx.txHash})
 
 **What's Next?**
 - Set up your ENS records (address, avatar, social links)
@@ -77,6 +91,12 @@ Welcome to ENS! 🚀`,
     await clearActiveFlow(userId, threadId);
     await clearUserPendingCommand(userId);
   } else {
+    await metrics.trackEvent("registration_failed", {
+      userId,
+      name: registeredName,
+      reason: "register_tx_failed",
+    });
+
     // Update status to failed
     await updateFlowStatus(userId, threadId, "failed");
 
