@@ -8,13 +8,6 @@ import {
 } from "./handlers";
 import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
-  handleOnMessage,
-  handleSlashCommand,
-  sendBotMessage,
-} from "./handlers";
-
-import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
-import {
   confirmCommit,
   confirmRegister,
   continueAfterBridge,
