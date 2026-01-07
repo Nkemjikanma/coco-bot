@@ -7,8 +7,6 @@ import {
   sendBotMessage,
 } from "./handlers";
 import {
-  completionPrompts,
-  getPromptKey,
   handleCompletionResponse,
   handlePossibleContinuation,
 } from "./handlers/commandCompletion";
@@ -47,7 +45,7 @@ const cocoCommands = [
   "help",
   "check",
   "register",
-  // "renew",
+  "renew",
   "transfer",
   // "set",
   "subdomain",

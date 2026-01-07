@@ -10,10 +10,10 @@ const commands = [
     name: "register",
     description: "Register new ENS name",
   },
-  // {
-  //   name: "renew",
-  //   description: "Renew ENS name",
-  // },
+  {
+    name: "renew",
+    description: "Renew ENS name",
+  },
   { name: "transfer", description: "Transfer name to another wallet" },
   // { name: "set", description: "Set records" },
   {
