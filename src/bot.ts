@@ -6,6 +6,12 @@ import {
   handleSlashCommand,
   sendBotMessage,
 } from "./handlers";
+import {
+  completionPrompts,
+  getPromptKey,
+  handleCompletionResponse,
+  handlePossibleContinuation,
+} from "./handlers/commandCompletion";
 import { handleSubdomainTransaction } from "./handlers/handleSubdomainCommand";
 import {
   confirmCommit,
@@ -14,6 +20,7 @@ import {
   durationForm,
   walletSelection,
 } from "./handlers/interactionHandlers/form";
+import { handleRenewConfirmation } from "./handlers/interactionHandlers/form/renewConfirmation";
 import { handleTransferConfirmation } from "./handlers/interactionHandlers/form/transferConfirmation";
 import {
   bridgeTransaction,
@@ -96,6 +103,21 @@ bot.onMessage(async (handler, event) => {
   console.log("userId is mine", event.userId);
   if (event.userId === bot.botId) return;
 
+  const threadId = event.threadId || event.userId;
+
+  const handledContinuation = await handlePossibleContinuation(
+    handler,
+    event.channelId,
+    threadId,
+    event.userId,
+    event.message,
+  );
+
+  if (!handledContinuation) {
+    await handleCompletionResponse(handler, { ...event });
+
+    return;
+  }
   const shouldRespond = await shouldRespondToMessage(event);
 
   if (shouldRespond) {
@@ -250,6 +272,11 @@ bot.onInteractionResponse(async (handler, event) => {
       if (form.requestId.startsWith("transfer_confirm:")) {
         console.log("here now");
         await handleTransferConfirmation(handler, event, form);
+        return;
+      }
+
+      if (form.requestId.startsWith("renew_confirm:")) {
+        await handleRenewConfirmation(handler, event, form);
         return;
       }
 

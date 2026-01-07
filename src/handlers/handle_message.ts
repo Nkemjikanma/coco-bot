@@ -1,9 +1,8 @@
 import {
   type BotHandler,
-  FlattenedFormComponent,
   getSmartAccountFromUserId,
 } from "@towns-protocol/bot";
-import { formatEther, isAddress } from "viem";
+import { isAddress } from "viem";
 import { coco_parser, handleQuestionCommand, validate_parse } from "../ai";
 import {
   type ApiResponse,
@@ -11,8 +10,6 @@ import {
   formatCheckResponse,
   formatExpiryResponse,
   formatHistoryResponse,
-  formatPhase1Summary,
-  formatPortfolioResponse,
   type HistoryData,
   type PortfolioData,
 } from "../api";
@@ -22,65 +19,50 @@ import {
   appendMessageToSession,
   clearActiveFlow,
   clearUserPendingCommand,
-  createRegistrationFlow,
   describePendingCommand,
   // ✅ New flow store imports
   getActiveFlow,
   getRecentMessages,
   getUserState,
-  hasAnyActiveFlow,
   hasPendingCommandElsewhere,
   isRegistrationFlow,
   movePendingCommandToThread,
-  setActiveFlow,
   setUserPendingCommand,
-  updateFlowData,
   updateFlowStatus,
   updateUserLocation,
 } from "../db";
-import { CHAIN_IDS } from "../services/bridge";
-import { handleBridging } from "../services/bridge/bridgeUtils";
 import {
   checkAvailability,
   checkExpiry,
   encodeCommitData,
-  estimateRegistrationCost,
   getHistory,
   getUserPorfolio,
-  prepareRegistration,
 } from "../services/ens";
 import { ENS_CONTRACTS } from "../services/ens/constants";
 import { isCompleteSubdomainInfo } from "../services/ens/subdomain/subdomain.utils";
 import { handleExecutionsForCheckingSubdomains } from "../services/ens/utils";
 import { metrics } from "../services/metrics/metrics";
 import type {
-  EOAWalletCheckResult,
   EventType,
   OnMessageEventType,
   ParsedCommand,
   PendingCommand,
   QuestionCommand,
   RegisterCommand,
+  RenewCommand,
   SubdomainCommand,
 } from "../types";
-import {
-  checkAllEOABalances,
-  checkBalance,
-  extractRecipientAddress,
-  filterEOAs,
-  formatAddress,
-  formatAllWalletBalances,
-  getLinkedWallets,
-} from "../utils";
+import { filterEOAs } from "../utils";
+import { handlePossibleContinuation } from "./commandCompletion";
 import {
   determineWaitingFor,
   extractMissingInfo,
-  formatRustPayload,
   getHelpMessage,
   getWaitingForMessage,
   sendBotMessage,
 } from "./handle_message_utils";
 import { handleRegisterCommand } from "./handleRegisterCommand";
+import { handleRenewCommand } from "./handleRenewCommand";
 import { handleSubdomainCommand } from "./handleSubdomainCommand";
 import { handleTransferCommand } from "./handleTransferCommand";
 
@@ -152,6 +134,19 @@ export async function handleMessage(
   const unified = normalizeEvent(event, source);
   const { channelId, userId, eventId, content } = unified;
   const threadId = unified.threadId || eventId;
+
+  // Check if user is responding to "anything else?" prompt
+  const handledContinuation = await handlePossibleContinuation(
+    handler,
+    channelId,
+    threadId,
+    userId,
+    content,
+  );
+
+  if (handledContinuation) {
+    return; // Continuation was handled
+  }
 
   // Skip empty messages
   if (!content || content.trim() === "") {
@@ -888,7 +883,7 @@ export async function executeValidCommand(
         channelId,
         threadId,
         userId,
-        `I checked ${addressesToQuery.length} wallet(s) but didn't find any ENS names. You can register one with \`/register yourname.eth\``,
+        `I checked ${addressesToQuery.join(", ")} wallet(s) but didn't find any ENS names. You can register one with \`/register yourname.eth\``,
       );
       return;
     }
@@ -983,5 +978,16 @@ async function handleExecution(
 
   if (command.action === "transfer") {
     await handleTransferCommand(handler, channelId, threadId, userId, command);
+  }
+
+  if (command.action === "renew") {
+    await handleRenewCommand(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      command as RenewCommand,
+    );
+    return;
   }
 }

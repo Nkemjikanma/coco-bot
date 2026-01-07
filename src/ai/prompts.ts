@@ -102,6 +102,15 @@ Output: {"action":"portfolio","recipient":"0xD1a4180f7F92a7b39b1eECC7D61E573E965
 Input: "what ens names does this wallet own 0xABCD..."
 Output: {"action":"portfolio","recipient":"0xABCD..."}
 
+Input: "renew myname.eth"
+Output: { action: "renew", name: "myname.eth" }
+
+Input: "renew myname.eth for 2 years"
+Output: { action: "renew", name: "myname.eth", duration: 2 }
+
+Input: "extend myname.eth by 3 years"
+Output: { action: "renew", name: "myname.eth", duration: 3 }
+
 SUBDOMAIN EXAMPLES:
 
 Input: "create blog.alice.eth pointing to 0x1234..."
@@ -155,6 +164,7 @@ EDGE CASES:
 - Subdomains are FREE (no registration fee, just gas)
 - User must OWN the parent to create subdomains
 - For portfolio, the address may be in "recipient" field
+- Subdomains/subnames can't be renewed. So anyone asking to renew a subname should be told that only the parent name can be renewed.
 
 Now parse this user message:
 

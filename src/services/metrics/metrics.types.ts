@@ -30,10 +30,13 @@ export type MetricEvent =
   | "bridge_failed"
 
   // Error events
-  | "error_occurred";
+  | "error_occurred"
+  | "renew_started"
+  | "renew_failed"
+  | "renew_compoleted";
 
 export interface TransactionMetric {
-  type: "registration" | "transfer" | "subdomain" | "bridge";
+  type: "registration" | "transfer" | "subdomain" | "bridge" | "renew";
   name?: string;
   gasUsed?: string;
   costWei?: string;

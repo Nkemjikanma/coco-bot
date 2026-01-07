@@ -1,14 +1,14 @@
-import { BotHandler } from "@towns-protocol/bot";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
-  getActiveFlow,
   clearActiveFlow,
-  updateFlowStatus,
   clearUserPendingCommand,
+  getActiveFlow,
+  updateFlowStatus,
 } from "../../../db";
 import { isTransferFlow } from "../../../db/flow";
 import { getTransferService } from "../../../services/ens/transfer/transfer";
 import { formatAddress } from "../../../utils";
-import { FormCase } from "../types";
+import type { FormCase } from "../types";
 
 export async function handleTransferConfirmation(
   handler: BotHandler,

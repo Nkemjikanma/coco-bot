@@ -8,6 +8,7 @@ import {
 } from "../../../db";
 import { isTransferFlow } from "../../../db/flow";
 import { metrics } from "../../../services/metrics/metrics";
+import { handleCommandCompletion } from "../../commandCompletion";
 
 export async function handleTransferTransaction(
   handler: BotHandler,
@@ -91,5 +92,12 @@ export async function handleTransferTransaction(
 
   // Clean up
   await clearActiveFlow(userId, threadId);
-  await clearUserPendingCommand(userId);
+  await handleCommandCompletion(
+    handler,
+    channelId,
+    threadId,
+    userId,
+    "transfer",
+    transferData.domain,
+  );
 }

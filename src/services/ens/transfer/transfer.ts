@@ -1,16 +1,14 @@
 import {
   createPublicClient,
-  PublicClient,
-  http,
   encodeFunctionData,
+  http,
   labelhash,
   namehash,
+  type PublicClient,
 } from "viem";
 import { base, mainnet } from "viem/chains";
-import { getActualOwner, isNameWrapped, verifyOwnership } from "../utils";
 import { ENS_CONTRACTS, NAME_WRAPPER_ADDRESS } from "../constants";
-import { TransferContract, TransferTransactionData } from "./transfer.types";
-import { getNameType, makeLabelNodeAndParent } from "./transfer.utils";
+import { getActualOwner, verifyOwnership } from "../utils";
 import {
   BASE_REGISTRAR_RECLAIM_ABI,
   BASE_REGISTRAR_SAFE_TRANSFER_ABI,
@@ -19,6 +17,11 @@ import {
   REGISTRY_SET_OWNER_ABI,
   REGISTRY_SET_SUBNODE_OWNER_ABI,
 } from "./transfer.constants";
+import type {
+  TransferContract,
+  TransferTransactionData,
+} from "./transfer.types";
+import { getNameType, makeLabelNodeAndParent } from "./transfer.utils";
 
 export class TransferService {
   private publicClient: PublicClient;

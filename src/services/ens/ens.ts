@@ -8,14 +8,14 @@ import { getNameHistory, getNamesForAddress } from "@ensdomains/ensjs/subgraph";
 import {
   type Address,
   createPublicClient,
+  encodeFunctionData,
   formatEther,
   http,
-  zeroAddress,
-  encodeFunctionData,
   parseUnits,
+  zeroAddress,
 } from "viem";
 import { readContract } from "viem/actions";
-import { mainnet, base, sepolia } from "viem/chains";
+import { base, mainnet, sepolia } from "viem/chains";
 import type {
   ApiResponse,
   ExpiryData,
@@ -25,6 +25,7 @@ import type {
   NameCheckResponse,
   PortfolioData,
 } from "../../api";
+import type { PendingRegistration, RegistrationCommitment } from "../../types";
 import {
   BASE_REGISTRAR_ABI,
   CONTROLLER_ABI,
@@ -34,19 +35,17 @@ import {
   SUBGRAPH_API_KEY,
   TIME,
 } from "./constants";
-
+import { getSubdomainService } from "./subdomain/subdomain";
 import {
+  generateSecret,
+  getActualOwnersBatch,
   getTokenId,
   mapEnsHistoryResponse,
   mapNamesForAddressToPortfolioData,
   namehash,
   normalizeENSName,
-  generateSecret,
-  getActualOwnersBatch,
 } from "./utils";
 
-import { PendingRegistration, RegistrationCommitment } from "../../types";
-import { getSubdomainService } from "./subdomain/subdomain";
 if (!MAINNET_RPC_URL || !SUBGRAPH_API_KEY) {
   throw new Error(
     "MAINNET_RPC_URL or SUBGRAPH environment variable is required",
