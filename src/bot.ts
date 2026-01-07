@@ -113,7 +113,7 @@ bot.onMessage(async (handler, event) => {
     event.message,
   );
 
-  if (!handledContinuation) {
+  if (handledContinuation) {
     await handleCompletionResponse(handler, { ...event });
 
     return;

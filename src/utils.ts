@@ -1,19 +1,23 @@
 import { BotHandler, getSmartAccountFromUserId } from "@towns-protocol/bot";
 import walletLinkAbi from "@towns-protocol/generated/dev/abis/WalletLink.abi";
-import { CHAIN_IDS, BalanceCheckResult } from "./services/bridge";
 import {
   createPublicClient,
-  http,
-  formatEther,
-  parseEther,
   encodeFunctionData,
-  parseEventLogs,
+  formatEther,
+  http,
   isAddress,
+  parseEther,
+  parseEventLogs,
 } from "viem";
-import { mainnet, base } from "viem/chains";
-import { CocoBotType, EOAWalletCheckResult, WalletBalanceInfo } from "./types";
 import { readContract } from "viem/actions";
+import { base, mainnet } from "viem/chains";
 import { bot } from "./bot";
+import { type BalanceCheckResult, CHAIN_IDS } from "./services/bridge";
+import {
+  CocoBotType,
+  type EOAWalletCheckResult,
+  type WalletBalanceInfo,
+} from "./types";
 
 const ethereumClient = createPublicClient({
   chain: mainnet,
@@ -86,10 +90,18 @@ export function formatDate(date: Date | string | number | bigint): string {
   return new Date(date).toDateString();
 }
 
-export function formatExpiryDate(expiryDate: string): string {
+export function formatExpiryDate(expiryDate: string | Date): string {
   try {
-    const timestamp = BigInt(expiryDate);
-    const date = new Date(Number(timestamp) * 1000);
+    let date: Date;
+
+    if (expiryDate instanceof Date) {
+      date = expiryDate;
+    } else {
+      // Handle string timestamp (Unix seconds)
+      const timestamp = BigInt(expiryDate);
+      date = new Date(Number(timestamp) * 1000);
+    }
+
     return date.toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
