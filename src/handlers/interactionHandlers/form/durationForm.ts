@@ -1,12 +1,11 @@
-import { BotHandler, DecryptedInteractionResponse } from "@towns-protocol/bot";
-import { FormCase, OnInteractionEventType } from "../types";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
   clearUserPendingCommand,
-  getPendingRegistration,
-  UserState,
+  type UserState,
 } from "../../../db/userStateStore";
-import { RegisterCommand } from "../../../types";
+import type { RegisterCommand } from "../../../types";
 import { executeValidCommand } from "../..";
+import type { FormCase, OnInteractionEventType } from "../types";
 
 export async function durationForm(
   handler: BotHandler,

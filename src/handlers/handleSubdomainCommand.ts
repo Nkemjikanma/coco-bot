@@ -15,6 +15,7 @@ import { parseSubname } from "../services/ens/subdomain/subdomain.utils";
 import { metrics } from "../services/metrics/metrics";
 import type { SubdomainCommand } from "../types";
 import { filterEOAs, formatAddress } from "../utils";
+import { handleCommandCompletion } from "./commandCompletion";
 import { sendBotMessage } from "./handle_message_utils";
 
 /**
@@ -470,7 +471,14 @@ export async function handleSubdomainStep2Transaction(
     );
 
     await clearActiveFlow(userId, originalThreadId);
-    await clearUserPendingCommand(userId);
+    await handleCommandCompletion(
+      handler,
+      channelId,
+      validThreadId,
+      userId,
+      "subdomain",
+      flowData.fullName,
+    );
     return;
   }
 
@@ -625,7 +633,14 @@ export async function handleSubdomainStep3Transaction(
 
   // Clean up
   await clearActiveFlow(userId, originalThreadId);
-  await clearUserPendingCommand(userId);
+  await handleCommandCompletion(
+    handler,
+    channelId,
+    validThreadId,
+    userId,
+    "subdomain",
+    flowData.fullName,
+  );
 }
 
 // ============ Main router for subdomain transactions ============

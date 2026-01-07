@@ -31,7 +31,8 @@ export interface PendingCommand {
     | "bridge_confirmation"
     | "subdomain_address"
     | "subdomain_confirmation"
-    | "transfer_confirmation";
+    | "transfer_confirmation"
+    | "continuation";
   attemptCount: number;
   createdAt: number;
 }

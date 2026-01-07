@@ -66,6 +66,16 @@ export const CONTROLLER_ABI = [
     outputs: [{ type: "bool" }],
   },
   {
+    name: "renew",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "duration", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
     name: "rentPrice",
     type: "function",
     stateMutability: "view",

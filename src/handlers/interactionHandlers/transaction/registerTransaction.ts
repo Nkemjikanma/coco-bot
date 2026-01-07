@@ -8,6 +8,7 @@ import {
 } from "../../../db";
 import { clearUserPendingCommand, UserState } from "../../../db/userStateStore";
 import { metrics } from "../../../services/metrics/metrics";
+import { handleCommandCompletion } from "../../commandCompletion";
 import type { OnInteractionEventType } from "../types";
 
 export async function registerTransaction(
@@ -45,9 +46,6 @@ export async function registerTransaction(
   const flow = flowResult.data;
   const regData = flow.data;
   const registeredName = regData.name;
-
-  const costWei = regData.grandTotalWei;
-  const costEth = regData.grandTotalEth;
 
   if (tx.txHash) {
     await metrics.trackTransaction({
@@ -89,7 +87,14 @@ Welcome to ENS! 🚀`,
 
     // Clean up
     await clearActiveFlow(userId, threadId);
-    await clearUserPendingCommand(userId);
+    await handleCommandCompletion(
+      handler,
+      channelId,
+      threadId,
+      userId,
+      "register",
+      registeredName,
+    );
   } else {
     await metrics.trackEvent("registration_failed", {
       userId,
