@@ -93,7 +93,7 @@ for (const command of cocoCommands) {
 
       // Run the agent
       const result = await runCocoAgent(
-        event.args.join(" "),
+        `${command} ${event.args.join(" ")}`,
         handler,
         event.userId,
         event.channelId,

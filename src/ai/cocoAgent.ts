@@ -47,6 +47,17 @@ export class CocoAgent {
     channelId: string,
     threadId: string,
   ): Promise<AgentRunResult> {
+    // Validate message is not empty
+    if (!message || !message.trim()) {
+      console.log(`[CocoAgent] Skipping empty message`);
+      return {
+        success: false,
+        status: "error",
+        error: "Empty message",
+        session: {} as AgentSession,
+      };
+    }
+
     // Get or create session
     const session = await getOrCreateSession(userId, threadId, channelId);
 
@@ -79,6 +90,11 @@ export class CocoAgent {
     try {
       // Build conversation messages
       const messages = this.buildMessages(session, message);
+
+      // Ensure we have at least one message
+      if (messages.length === 0) {
+        messages.push({ role: "user", content: message });
+      }
 
       // Run agent loop
       const result = await this.agentLoop(messages, context, session);
@@ -197,6 +213,9 @@ export class CocoAgent {
       await updateSessionCost(context.userId, context.threadId, costUsd);
 
       console.log(`[CocoAgent] Response stop_reason: ${response.stop_reason}`);
+      console.log(
+        `[CocoAgent] Response content blocks: ${response.content.length}`,
+      );
 
       // Process response
       const textBlocks: string[] = [];
@@ -204,22 +223,36 @@ export class CocoAgent {
 
       for (const block of response.content) {
         if (block.type === "text") {
+          console.log(
+            `[CocoAgent] Text block: "${block.text.substring(0, 100)}..."`,
+          );
           textBlocks.push(block.text);
         } else if (block.type === "tool_use") {
           toolUseBlocks.push(block);
         }
       }
 
+      console.log(
+        `[CocoAgent] Text blocks: ${textBlocks.length}, Tool blocks: ${toolUseBlocks.length}`,
+      );
+
       // Send any text responses to user
       if (textBlocks.length > 0) {
         const text = textBlocks.join("\n");
         if (text.trim()) {
+          console.log(
+            `[CocoAgent] Sending message to user: "${text.substring(0, 100)}..."`,
+          );
           await context.sendMessage(text);
           await addSessionMessage(context.userId, context.threadId, {
             role: "assistant",
             content: text,
           });
+        } else {
+          console.log(`[CocoAgent] Text was empty after trim, not sending`);
         }
+      } else {
+        console.log(`[CocoAgent] No text blocks to send`);
       }
 
       // If no tool use, we're done
@@ -335,17 +368,22 @@ export class CocoAgent {
     const messages: Anthropic.MessageParam[] = [];
 
     // Add session history (simplified)
+    // Filter out empty messages
     for (const msg of session.messages.slice(-10)) {
-      if (msg.role === "user") {
+      if (msg.role === "user" && msg.content && msg.content.trim()) {
         messages.push({ role: "user", content: msg.content });
-      } else if (msg.role === "assistant") {
+      } else if (
+        msg.role === "assistant" &&
+        msg.content &&
+        msg.content.trim()
+      ) {
         messages.push({ role: "assistant", content: msg.content });
       }
       // tool_result messages are handled separately
     }
 
-    // Add new user message if provided
-    if (newMessage) {
+    // Add new user message if provided and not empty
+    if (newMessage && newMessage.trim()) {
       messages.push({ role: "user", content: newMessage });
     }
 
