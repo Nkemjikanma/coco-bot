@@ -243,7 +243,12 @@ export class CocoAgent {
           console.log(
             `[CocoAgent] Sending message to user: "${text.substring(0, 100)}..."`,
           );
-          await context.sendMessage(text);
+          try {
+            await context.sendMessage(text);
+            console.log(`[CocoAgent] Message sent successfully`);
+          } catch (sendError) {
+            console.error(`[CocoAgent] ERROR sending message:`, sendError);
+          }
           await addSessionMessage(context.userId, context.threadId, {
             role: "assistant",
             content: text,
@@ -449,6 +454,7 @@ export async function resumeCocoAgent(
 /**
  * Create agent context from event data
  */
+
 export function createAgentContext(
   handler: BotHandler,
   userId: string,
@@ -464,27 +470,49 @@ export function createAgentContext(
     sessionId,
 
     sendMessage: async (message: string) => {
-      await handler.sendMessage(channelId, message, { threadId });
+      try {
+        console.log(
+          `[AgentContext] Sending message to channel ${channelId}, thread ${threadId}`,
+        );
+        console.log(
+          `[AgentContext] Message preview: "${message.substring(0, 100)}..."`,
+        );
+        await handler.sendMessage(channelId, message, { threadId });
+        console.log(`[AgentContext] Message sent successfully`);
+      } catch (error) {
+        console.error(`[AgentContext] Failed to send message:`, error);
+        throw error;
+      }
     },
 
     sendTransaction: async (tx: TransactionRequest) => {
-      await handler.sendInteractionRequest(
-        channelId,
-        {
-          type: "transaction",
-          id: tx.id,
-          title: tx.title,
-          tx: {
-            chainId: tx.chainId,
-            to: tx.to,
-            value: tx.value,
-            data: tx.data,
-            signerWallet: tx.signerWallet,
+      try {
+        console.log(`[AgentContext] Sending transaction request: ${tx.id}`);
+        await handler.sendInteractionRequest(
+          channelId,
+          {
+            type: "transaction",
+            id: tx.id,
+            title: tx.title,
+            tx: {
+              chainId: tx.chainId,
+              to: tx.to,
+              value: tx.value,
+              data: tx.data,
+              signerWallet: tx.signerWallet,
+            },
+            recipient: userId as `0x${string}`,
           },
-          recipient: userId as `0x${string}`,
-        },
-        { threadId },
-      );
+          { threadId },
+        );
+        console.log(`[AgentContext] Transaction request sent successfully`);
+      } catch (error) {
+        console.error(
+          `[AgentContext] Failed to send transaction request:`,
+          error,
+        );
+        throw error;
+      }
     },
   };
 }
