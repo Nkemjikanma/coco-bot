@@ -305,7 +305,20 @@ export const checkBalanceTool: ToolDefinition = {
         }
       }
 
-      return formatResult(balances, message);
+      const serializedBalances = {
+        ...balances,
+        wallets: balances.wallets.map((w) => ({
+          address: w.address,
+          l1Balance: w.l1Balance.toString(),
+          l1BalanceEth: w.l1BalanceEth,
+          l2Balance: w.l2Balance.toString(),
+          l2BalanceEth: w.l2BalanceEth,
+          totalBalance: w.totalBalance.toString(),
+          totalBalanceEth: w.totalBalanceEth,
+        })),
+      };
+
+      return formatResult(serializedBalances, message);
     } catch (error) {
       return formatError(
         `Failed to check balance: ${error instanceof Error ? error.message : "Unknown error"}`,

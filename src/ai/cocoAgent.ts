@@ -20,10 +20,6 @@ import type {
   TransactionRequest,
 } from "./types";
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
-
 const DEFAULT_CONFIG: AgentConfig = {
   model: "claude-sonnet-4-20250514",
   maxTurns: 25,
@@ -35,10 +31,15 @@ export class CocoAgent {
   private config: AgentConfig;
 
   constructor(config: Partial<AgentConfig> = {}) {
-    this.client = new Anthropic();
+    this.client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY!,
+    });
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
+  /**
+   * Main entry point - run the agent for a user message
+   */
   async run(
     message: string,
     handler: BotHandler,
@@ -292,7 +293,7 @@ export class CocoAgent {
           type: "tool_result",
           tool_use_id: toolUse.id,
           content: result.success
-            ? JSON.stringify(result.data)
+            ? safeJsonStringify(result.data)
             : `Error: ${result.error}`,
           is_error: !result.success,
         });
@@ -448,4 +449,10 @@ export function createAgentContext(
       );
     },
   };
+}
+
+function safeJsonStringify(data: unknown): string {
+  return JSON.stringify(data, (_, value) =>
+    typeof value === "bigint" ? value.toString() : value,
+  );
 }
