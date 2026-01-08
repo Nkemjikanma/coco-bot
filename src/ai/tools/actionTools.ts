@@ -1,7 +1,5 @@
-// src/agent/tools/actionTools.ts
-
 import { setSessionPendingAction, updateSessionStatus } from "../sessions";
-import type { AgentContext, ToolDefinition, ToolResult } from "../types";
+import type { ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result
@@ -19,6 +17,21 @@ function formatError(error: string): ToolResult {
     success: false,
     error,
   };
+}
+
+/**
+ * Generate a safe ID that matches Anthropic's tool_use_id pattern: ^[a-zA-Z0-9_-]+$
+ * This is used for tool_use_id when resuming conversations
+ */
+function generateSafeId(): string {
+  // Generate random alphanumeric string
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 24; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
 }
 
 // ============================================================
@@ -89,15 +102,19 @@ The agent will pause and wait for the user to sign or reject the transaction.`,
     const metadata = params.metadata as Record<string, unknown> | undefined;
 
     try {
+      // Generate a safe tool_use_id for Anthropic (only alphanumeric, underscore, hyphen)
+      const toolId = `tx_${actionType}_${generateSafeId()}`;
+
+      // Request ID for Towns (can contain colons)
       const requestId = `${actionType}:${context.userId}:${context.threadId}`;
 
-      // Store pending action for resuming later
+      // Store pending action with the SAFE toolId for resuming
       await setSessionPendingAction(
         context.userId,
         context.threadId,
         {
           toolName: "send_transaction",
-          toolId: requestId,
+          toolId: toolId, // Use safe toolId for Anthropic
           expectedAction: actionType,
         },
         {
@@ -108,7 +125,7 @@ The agent will pause and wait for the user to sign or reject the transaction.`,
         },
       );
 
-      // Send transaction request to user
+      // Send transaction request to user (can use requestId with colons)
       await context.sendTransaction({
         id: requestId,
         title,
@@ -122,6 +139,7 @@ The agent will pause and wait for the user to sign or reject the transaction.`,
       return formatResult(
         {
           requestId,
+          toolId,
           status: "awaiting_signature",
           actionType,
         },
@@ -259,15 +277,20 @@ export const requestConfirmationTool: ToolDefinition = {
     const cancelLabel = (params.cancelLabel as string) || "❌ Cancel";
 
     try {
+      // Generate a valid tool_use_id (only alphanumeric, underscore, hyphen)
+      // Format: confirm_<random>
+      const toolId = `confirm_${generateSafeId()}`;
+
+      // Request ID for Towns can have colons (it's separate from tool_use_id)
       const requestId = `confirm:${context.userId}:${context.threadId}:${Date.now()}`;
 
-      // Store pending confirmation
+      // Store pending confirmation with the VALID toolId
       await setSessionPendingAction(
         context.userId,
         context.threadId,
         {
           toolName: "request_confirmation",
-          toolId: requestId,
+          toolId: toolId, // Use the safe toolId for Anthropic
           expectedAction: "confirmation",
         },
         undefined,
@@ -280,7 +303,7 @@ export const requestConfirmationTool: ToolDefinition = {
         "awaiting_confirmation",
       );
 
-      // Send confirmation request
+      // Send confirmation request to Towns (can use requestId with colons)
       await context.handler.sendInteractionRequest(
         context.channelId,
         {
@@ -301,7 +324,7 @@ export const requestConfirmationTool: ToolDefinition = {
           ],
           recipient: context.userId as `0x${string}`,
         },
-        { threadId: context.threadId },
+        { threadId: context.threadId, ephemeral: true },
       );
 
       // Send the message
