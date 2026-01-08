@@ -124,7 +124,7 @@ bot.onMessage(async (handler, event) => {
   if (!event.message?.trim()) return; // empty message
   if (event.userId === bot.botId) return; //bot address
 
-  const threadId = event.threadId || event.userId;
+  const threadId = event.threadId || event.eventId;
 
   try {
     // Check if we're awaiting user action (shouldn't process new messages)
