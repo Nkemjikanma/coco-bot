@@ -1,18 +1,18 @@
+import type { BotHandler } from "@towns-protocol/bot";
 import { formatEther, parseEther } from "viem";
-import { BotHandler } from "@towns-protocol/bot";
-import { PendingRegistration, RegisterCommand } from "../../types";
-import { CHAIN_IDS } from "./bridgeConstants";
-import { getBridgeQuoteAndTx } from "./bridge";
-import { checkBalance } from "../../utils";
-import { sendBotMessage } from "../../handlers";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
-  RegistrationFlowData,
+  type RegistrationFlowData,
   updateFlowData,
   updateFlowStatus,
 } from "../../db";
+import { sendBotMessage } from "../../handlers";
 import { prepareRegistration } from "../../services/ens";
+import { PendingRegistration, type RegisterCommand } from "../../types";
+import { checkBalance } from "../../utils";
+import { getBridgeQuoteAndTx } from "./bridge";
+import { CHAIN_IDS } from "./bridgeConstants";
 
 export async function handleBridging(
   handler: BotHandler,

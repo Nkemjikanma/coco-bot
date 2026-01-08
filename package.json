@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@across-protocol/app-sdk": "^0.4.4",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.1",
     "@anthropic-ai/sdk": "^0.71.2",
     "@connectrpc/connect-node": "^2.1.1",
     "@ensdomains/ensjs": "^4.2.0",
