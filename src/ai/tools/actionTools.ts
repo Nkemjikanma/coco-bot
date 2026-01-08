@@ -1,14 +1,28 @@
+// src/agent/tools/actionTools.ts
+
+import { ENS_CONTRACTS } from "../../services/ens/constants";
 import { setSessionPendingAction, updateSessionStatus } from "../sessions";
-import type { ToolDefinition, ToolResult } from "../types";
+import type { AgentContext, ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result
  */
-function formatResult(data: unknown, displayMessage?: string): ToolResult {
+function formatResult(
+  data: unknown,
+  displayMessage?: string,
+  options?: {
+    requiresUserAction?: boolean;
+    userAction?: {
+      type: "sign_transaction" | "confirm";
+      payload: unknown;
+    };
+  },
+): ToolResult {
   return {
     success: true,
     data,
     displayMessage,
+    ...options,
   };
 }
 
@@ -324,7 +338,7 @@ export const requestConfirmationTool: ToolDefinition = {
           ],
           recipient: context.userId as `0x${string}`,
         },
-        { threadId: context.threadId, ephemeral: true },
+        { threadId: context.threadId },
       );
 
       // Send the message
@@ -332,10 +346,18 @@ export const requestConfirmationTool: ToolDefinition = {
 
       return formatResult(
         {
+          toolId,
           requestId,
           status: "awaiting_confirmation",
         },
         "Waiting for user confirmation...",
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "confirm",
+            payload: { toolId, requestId },
+          },
+        },
       );
     } catch (error) {
       return formatError(

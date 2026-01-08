@@ -4,6 +4,7 @@ import { metrics } from "../services/metrics/metrics";
 import { COCO_SYSTEM_PROMPT, COCO_TOOL_GUIDELINES } from "./prompts";
 import {
   addSessionMessage,
+  clearSessionPendingAction,
   completeSession,
   getOrCreateSession,
   getSession,
@@ -31,9 +32,7 @@ export class CocoAgent {
   private config: AgentConfig;
 
   constructor(config: Partial<AgentConfig> = {}) {
-    this.client = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY!,
-    });
+    this.client = new Anthropic();
     this.config = { ...DEFAULT_CONFIG, ...config };
   }
 
@@ -156,6 +155,10 @@ export class CocoAgent {
       session.sessionId,
     );
 
+    // Store the pending tool info before clearing
+    const pendingToolId = session.pendingToolCall?.toolId || "";
+    const pendingToolName = session.pendingToolCall?.toolName || "";
+
     // Add action result to session messages
     const resultMessage = actionResult.success
       ? `User completed the action. ${actionResult.type === "transaction" ? `Transaction hash: ${actionResult.data?.txHash}` : "Confirmed."}`
@@ -164,16 +167,16 @@ export class CocoAgent {
     await addSessionMessage(userId, threadId, {
       role: "tool_result",
       content: resultMessage,
-      toolName: session.pendingToolCall?.toolName,
-      toolId: session.pendingToolCall?.toolId,
+      toolName: pendingToolName,
+      toolId: pendingToolId,
     });
 
-    // Update session status
-    await updateSessionStatus(userId, threadId, "active");
+    // Clear the pending action so new messages aren't blocked
+    await clearSessionPendingAction(userId, threadId);
 
     // Build messages including the tool result
     const messages = this.buildMessages(session, undefined, {
-      toolId: session.pendingToolCall?.toolId || "",
+      toolId: pendingToolId,
       result: resultMessage,
     });
 
