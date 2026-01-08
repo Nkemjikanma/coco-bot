@@ -1,7 +1,4 @@
-import { BotHandler } from "@towns-protocol/bot";
-import { FormCase, OnInteractionEventType } from "../types";
-import { encodeRegisterData } from "../../../services/ens";
-import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
+import type { BotHandler } from "@towns-protocol/bot";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
@@ -9,6 +6,9 @@ import {
   isRegistrationFlow,
   updateFlowStatus,
 } from "../../../db";
+import { encodeRegisterData } from "../../../services/ens";
+import { ENS_CONTRACTS, REGISTRATION } from "../../../services/ens/constants";
+import type { FormCase, OnInteractionEventType } from "../types";
 
 export async function confirmRegister(
   handler: BotHandler,

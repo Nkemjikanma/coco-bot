@@ -1,3 +1,5 @@
+// src/agent/tools/writeTools.ts
+
 import {
   estimateRegistrationCost,
   prepareRegistration,
@@ -43,12 +45,12 @@ function formatError(error: string): ToolResult {
 
 export const prepareRegistrationTool: ToolDefinition = {
   name: "prepare_registration",
-  description: `Prepare an ENS name registration. This is a 2-step commit-reveal process:
-1. Commit transaction (reserves the name secretly)
+  description: `Prepare and send an ENS name registration commit transaction. This is a 2-step commit-reveal process:
+1. Commit transaction (reserves the name secretly) - SENT BY THIS TOOL
 2. Wait 60 seconds
-3. Register transaction (completes registration)
+3. Register transaction (completes registration) - sent after commit succeeds
 
-Call this after confirming availability and sufficient balance.`,
+Call this after confirming availability and sufficient balance. This will send the commit transaction to the user for signing.`,
   parameters: {
     type: "object",
     properties: {
@@ -92,43 +94,90 @@ Call this after confirming availability and sufficient balance.`,
         2,
       );
 
-      const message =
-        `📝 Registration prepared for **${name}**:\n\n` +
-        `• Duration: ${years} year${years > 1 ? "s" : ""}\n` +
-        `• Cost: ${registration.grandTotalEth} ETH (~$${usdCost})\n` +
-        `• Wallet: ${formatAddress(walletAddress)}\n\n` +
-        `**Process:**\n` +
-        `1. Sign commit transaction (reserves the name)\n` +
-        `2. Wait 60 seconds (required by ENS)\n` +
-        `3. Sign register transaction (completes registration)\n\n` +
-        `Ready to proceed with Step 1?`;
+      // Build the commit transaction using viem
+      const { encodeFunctionData } = await import("viem");
 
-      // The commitment hash is in registration.commitment.commitment
-      // The actual commit transaction needs to be built by the caller
-      // using the commitment data
+      // ETH Registrar Controller address (mainnet)
+      const ETH_REGISTRAR_CONTROLLER =
+        "0x253553366Da8546fC250F225fe3d25d0C782303b" as `0x${string}`;
+
+      // Encode the commit function call
+      const commitData = encodeFunctionData({
+        abi: [
+          {
+            name: "commit",
+            type: "function",
+            inputs: [{ name: "commitment", type: "bytes32" }],
+            outputs: [],
+          },
+        ],
+        functionName: "commit",
+        args: [registration.commitment.commitment],
+      });
+
+      // Generate safe tool ID for Anthropic
+      const toolId = `tx_registration_commit_${generateSafeId()}`;
+      const requestId = `registration_commit:${context.userId}:${context.threadId}`;
+
+      // Store the registration data and pending action
+      const { setSessionPendingAction } = await import("../sessions");
+
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "prepare_registration",
+          toolId: toolId,
+          expectedAction: "registration_commit",
+        },
+        {
+          type: "registration",
+          step: 1,
+          totalSteps: 2,
+          data: {
+            name,
+            years,
+            walletAddress,
+            secret: registration.commitment.secret,
+            commitmentHash: registration.commitment.commitment,
+            durationSec: registration.commitment.durationSec.toString(),
+            grandTotalWei: registration.grandTotalWei.toString(),
+            grandTotalEth: registration.grandTotalEth,
+          },
+        },
+      );
+
+      // Send message explaining the process
+      await context.sendMessage(
+        `📝 **Registration for ${name}**\n\n` +
+          `• Duration: ${years} year${years > 1 ? "s" : ""}\n` +
+          `• Cost: ${registration.grandTotalEth} ETH (~$${usdCost})\n` +
+          `• Wallet: ${formatAddress(walletAddress)}\n\n` +
+          `**Step 1 of 2:** Sign the commit transaction to reserve the name.\n` +
+          `After this, we'll wait 60 seconds, then complete the registration.`,
+      );
+
+      // Actually send the transaction request to Towns
+      await context.sendTransaction({
+        id: requestId,
+        title: `Commit: Register ${name}`,
+        chainId: "1",
+        to: ETH_REGISTRAR_CONTROLLER,
+        data: commitData,
+        value: "0x0",
+        signerWallet: walletAddress,
+      });
+
       return formatResult(
         {
           name,
           years,
           walletAddress,
-          registration: {
-            ...registration,
-            // Convert BigInt to string for JSON serialization
-            grandTotalWei: registration.grandTotalWei.toString(),
-            totalDomainCostWei: registration.totalDomainCostWei.toString(),
-            commitment: {
-              ...registration.commitment,
-              durationSec: registration.commitment.durationSec.toString(),
-              domainPriceWei: registration.commitment.domainPriceWei.toString(),
-            },
-            costs: {
-              ...registration.costs,
-              commitGasWei: registration.costs.commitGasWei.toString(),
-              registerGasWei: registration.costs.registerGasWei.toString(),
-            },
-          },
+          toolId,
+          requestId,
+          status: "awaiting_commit_signature",
         },
-        message,
+        `Transaction request sent! Waiting for user to sign the commit transaction...`,
         {
           requiresUserAction: true,
           userAction: {
@@ -138,20 +187,31 @@ Call this after confirming availability and sufficient balance.`,
               actionType: "registration_commit",
               name,
               walletAddress,
-              // Include the commitment hash for building the transaction
-              commitmentHash: registration.commitment.commitment,
-              secret: registration.commitment.secret,
             },
           },
         },
       );
     } catch (error) {
+      console.error("[prepare_registration] Error:", error);
       return formatError(
         `Failed to prepare registration: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   },
 };
+
+/**
+ * Generate a safe ID that matches Anthropic's tool_use_id pattern: ^[a-zA-Z0-9_-]+$
+ */
+function generateSafeId(): string {
+  const chars =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  for (let i = 0; i < 24; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
 
 // ============================================================
 // PREPARE RENEWAL
@@ -160,7 +220,7 @@ Call this after confirming availability and sufficient balance.`,
 export const prepareRenewalTool: ToolDefinition = {
   name: "prepare_renewal",
   description:
-    "Prepare an ENS name renewal transaction. Only the owner can renew. Call after verifying ownership.",
+    "Prepare and send an ENS name renewal transaction. Only the owner can renew. Call after verifying ownership.",
   parameters: {
     type: "object",
     properties: {
@@ -218,29 +278,66 @@ export const prepareRenewalTool: ToolDefinition = {
           day: "numeric",
         });
 
-      const message =
-        `📝 Renewal prepared for **${name}**:\n\n` +
-        `• Duration: ${years} year${years > 1 ? "s" : ""}\n` +
-        `• Cost: ${renewal.totalCostEth} ETH (~$${usdCost})\n` +
-        `• Wallet: ${formatAddress(renewal.ownerWallet)}\n\n` +
-        `📅 **Expiry Dates:**\n` +
-        `• Current: ${formatDate(renewal.currentExpiry)}\n` +
-        `• After renewal: ${formatDate(renewal.newExpiry)}\n\n` +
-        `Ready to sign the renewal transaction?`;
+      // Generate safe tool ID
+      const toolId = `tx_renewal_${generateSafeId()}`;
+      const requestId = `renewal:${context.userId}:${context.threadId}`;
+
+      // Store pending action
+      const { setSessionPendingAction } = await import("../sessions");
+
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "prepare_renewal",
+          toolId: toolId,
+          expectedAction: "renewal",
+        },
+        {
+          type: "renewal",
+          step: 1,
+          totalSteps: 1,
+          data: {
+            name,
+            years,
+            ownerWallet: renewal.ownerWallet,
+            currentExpiry: renewal.currentExpiry.toISOString(),
+            newExpiry: renewal.newExpiry.toISOString(),
+          },
+        },
+      );
+
+      // Send message
+      await context.sendMessage(
+        `📝 **Renewal for ${name}**\n\n` +
+          `• Duration: ${years} year${years > 1 ? "s" : ""}\n` +
+          `• Cost: ${renewal.totalCostEth} ETH (~$${usdCost})\n` +
+          `• Wallet: ${formatAddress(renewal.ownerWallet)}\n\n` +
+          `📅 **Expiry Dates:**\n` +
+          `• Current: ${formatDate(renewal.currentExpiry)}\n` +
+          `• After renewal: ${formatDate(renewal.newExpiry)}`,
+      );
+
+      // Actually send the transaction request
+      await context.sendTransaction({
+        id: requestId,
+        title: `Renew ${name} for ${years} year${years > 1 ? "s" : ""}`,
+        chainId: "1",
+        to: tx.to,
+        data: tx.data,
+        value: tx.valueHex,
+        signerWallet: renewal.ownerWallet,
+      });
 
       return formatResult(
         {
           name,
           years,
-          renewal,
-          tx: {
-            to: tx.to,
-            data: tx.data,
-            value: tx.valueHex,
-            signerWallet: renewal.ownerWallet,
-          },
+          toolId,
+          requestId,
+          status: "awaiting_signature",
         },
-        message,
+        `Transaction request sent! Waiting for user to sign...`,
         {
           requiresUserAction: true,
           userAction: {
@@ -248,13 +345,12 @@ export const prepareRenewalTool: ToolDefinition = {
             payload: {
               actionType: "renewal",
               name,
-              renewal,
-              tx,
             },
           },
         },
       );
     } catch (error) {
+      console.error("[prepare_renewal] Error:", error);
       return formatError(
         `Failed to prepare renewal: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
@@ -269,7 +365,7 @@ export const prepareRenewalTool: ToolDefinition = {
 export const prepareTransferTool: ToolDefinition = {
   name: "prepare_transfer",
   description:
-    "Prepare an ENS name transfer to a new owner. This action is irreversible. Call after verifying ownership.",
+    "Prepare and send an ENS name transfer transaction. This action is irreversible. Call after verifying ownership and getting user confirmation.",
   parameters: {
     type: "object",
     properties: {
@@ -310,29 +406,71 @@ export const prepareTransferTool: ToolDefinition = {
         await import("../../services/ens/transfer/transfer");
       const transferService = getTransferService();
 
-      const tx = await transferService.buildTransferTransaction({
+      const tx = transferService.buildTransferTransaction({
         name,
         newOwnerAddress: toAddress,
         currentOwner: ownership.ownerWallet!,
         isWrapped: ownership.isWrapped,
       });
 
-      const message =
-        `📝 Transfer prepared for **${name}**:\n\n` +
-        `• From: ${formatAddress(ownership.ownerWallet!)}\n` +
-        `• To: ${formatAddress(toAddress)}\n\n` +
-        `⚠️ **Warning:** This action cannot be undone. The recipient will become the new owner.\n\n` +
-        `Ready to sign the transfer transaction?`;
+      // Generate safe tool ID for Anthropic
+      const toolId = `tx_transfer_${generateSafeId()}`;
+      const requestId = `transfer:${context.userId}:${context.threadId}`;
+
+      // Store pending action
+      const { setSessionPendingAction } = await import("../sessions");
+
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "prepare_transfer",
+          toolId: toolId,
+          expectedAction: "transfer",
+        },
+        {
+          type: "transfer",
+          step: 1,
+          totalSteps: 1,
+          data: {
+            name,
+            fromAddress: ownership.ownerWallet,
+            toAddress,
+            isWrapped: ownership.isWrapped,
+          },
+        },
+      );
+
+      // Send message
+      await context.sendMessage(
+        `📝 **Transfer ${name}**\n\n` +
+          `• From: ${formatAddress(ownership.ownerWallet!)}\n` +
+          `• To: ${formatAddress(toAddress)}\n\n` +
+          `⚠️ **Warning:** This action cannot be undone!`,
+      );
+
+      // Actually send the transaction request
+      await context.sendTransaction({
+        id: requestId,
+        title: `Transfer ${name}`,
+        chainId: "1",
+        to: tx.to,
+        data: tx.data,
+        // value: tx.value,
+        value: "0x0", // transfers don't require eth value
+        signerWallet: ownership.ownerWallet!,
+      });
 
       return formatResult(
         {
           name,
           fromAddress: ownership.ownerWallet,
           toAddress,
-          isWrapped: ownership.isWrapped,
-          tx,
+          toolId,
+          requestId,
+          status: "awaiting_signature",
         },
-        message,
+        `Transaction request sent! Waiting for user to sign...`,
         {
           requiresUserAction: true,
           userAction: {
@@ -342,12 +480,12 @@ export const prepareTransferTool: ToolDefinition = {
               name,
               fromAddress: ownership.ownerWallet,
               toAddress,
-              tx,
             },
           },
         },
       );
     } catch (error) {
+      console.error("[prepare_transfer] Error:", error);
       return formatError(
         `Failed to prepare transfer: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
