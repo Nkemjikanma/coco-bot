@@ -1,7 +1,11 @@
 import { makeTownsBot } from "@towns-protocol/bot";
-import { isAwaitingUserAction, resumeCocoAgent, runCocoAgent } from "./ai";
+import {
+  clearSessionPendingAction,
+  isAwaitingUserAction,
+  resumeCocoAgent,
+  runCocoAgent,
+} from "./ai";
 import commands from "./commands";
-import { sendBotMessage } from "./handlers";
 import { metrics } from "./services/metrics/metrics";
 import type { CocoBotType } from "./types";
 
@@ -57,16 +61,14 @@ for (const command of cocoCommands) {
           .map(([cmd, count]) => `• ${cmd}: ${count}`)
           .join("\n");
 
-      const validThread = event.threadId || event.eventId;
-
-      await sendBotMessage(
-        handler,
-        event.channelId,
-        validThread,
-        event.userId,
-        message,
-      );
-
+      const validThreadId = event.threadId || event.eventId;
+      const mention = event.mentions.find((m) => m.userId === event.userId);
+      await handler.sendMessage(event.channelId, message, {
+        threadId: validThreadId,
+        mentions: [
+          { userId: event.userId, displayName: mention?.displayName || "" },
+        ],
+      });
       return;
     }
 
@@ -125,19 +127,33 @@ bot.onMessage(async (handler, event) => {
   if (event.userId === bot.botId) return; //bot address
 
   const threadId = event.threadId || event.eventId;
+  const message = event.message.trim().toLowerCase();
 
   try {
     // Check if we're awaiting user action (shouldn't process new messages)
     const isAwaiting = await isAwaitingUserAction(event.userId, threadId);
-    if (isAwaiting) {
+
+    // Allow "cancel" messages even when awaiting action
+    const isCancelRequest =
+      message.includes("cancel") ||
+      message.includes("stop") ||
+      message.includes("nevermind");
+
+    if (isAwaiting && !isCancelRequest) {
       console.log(`[Bot] User has pending action, ignoring message`);
       // Optionally remind them
       await handler.sendMessage(
         event.channelId,
-        "⏳ Please complete the pending transaction or cancel it first.",
+        "⏳ Please complete the pending transaction or cancel it first. Say 'cancel' to cancel the current action.",
         { threadId: threadId },
       );
       return;
+    }
+
+    // If cancelling, clear the pending action first
+    if (isAwaiting && isCancelRequest) {
+      console.log(`[Bot] User requested cancel, clearing pending action`);
+      await clearSessionPendingAction(event.userId, threadId);
     }
 
     // Run the agent
@@ -269,3 +285,10 @@ bot.onInteractionResponse(async (handler, event) => {
     }
   }
 });
+
+// const tx = await transferService.buildTransferTransaction({
+//         name,
+//         newOwnerAddress: toAddress,
+//         currentOwner: ownership.ownerWallet!,
+//         isWrapped: ownership.isWrapped,
+//       });
