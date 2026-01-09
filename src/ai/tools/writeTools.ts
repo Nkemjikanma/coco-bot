@@ -365,7 +365,7 @@ export const prepareRenewalTool: ToolDefinition = {
 export const prepareTransferTool: ToolDefinition = {
   name: "prepare_transfer",
   description:
-    "Prepare and send an ENS name transfer transaction. This action is irreversible. Call after verifying ownership and getting user confirmation.",
+    "Prepare and send an ENS name transfer transaction. This action is irreversible. Call after verifying ownership and getting user confirmation. Pass the ownerWallet from verify_ownership to avoid redundant lookups.",
   parameters: {
     type: "object",
     properties: {
@@ -377,40 +377,38 @@ export const prepareTransferTool: ToolDefinition = {
         type: "string",
         description: "Recipient's Ethereum address (0x...)",
       },
+      ownerWallet: {
+        type: "string",
+        description:
+          "The wallet that owns the domain (from verify_ownership result)",
+      },
+      isWrapped: {
+        type: "boolean",
+        description:
+          "Whether the domain is wrapped (from verify_ownership result)",
+      },
     },
-    required: ["name", "toAddress"],
+    required: ["name", "toAddress", "ownerWallet"],
   },
   execute: async (params, context): Promise<ToolResult> => {
     const name = params.name as string;
     const toAddress = params.toAddress as `0x${string}`;
+    const ownerWallet = params.ownerWallet as `0x${string}`;
+    const isWrapped = params.isWrapped as boolean;
 
     try {
-      const wallets = await filterEOAs(context.userId as `0x${string}`);
-
-      if (wallets.length === 0) {
-        return formatError("No linked wallets found.");
-      }
-
-      // Verify ownership
-      const ownership = await verifyOwnership(name, wallets);
-
-      if (!ownership.owned) {
-        return formatError(
-          ownership.error ||
-            `You don't own ${name}. Only the owner can transfer.`,
-        );
-      }
-
       // Import transfer service
       const { getTransferService } =
         await import("../../services/ens/transfer/transfer");
       const transferService = getTransferService();
 
+      // Build the transfer transaction using the provided owner info
+      // This avoids redundant RPC calls since we already verified ownership
       const tx = transferService.buildTransferTransaction({
         name,
         newOwnerAddress: toAddress,
-        currentOwner: ownership.ownerWallet!,
-        isWrapped: ownership.isWrapped,
+        currentOwner: ownerWallet!,
+        isWrapped: isWrapped,
       });
 
       // Generate safe tool ID for Anthropic
@@ -434,9 +432,9 @@ export const prepareTransferTool: ToolDefinition = {
           totalSteps: 1,
           data: {
             name,
-            fromAddress: ownership.ownerWallet,
+            fromAddress: ownerWallet,
             toAddress,
-            isWrapped: ownership.isWrapped,
+            isWrapped: isWrapped ?? true,
           },
         },
       );
@@ -444,27 +442,27 @@ export const prepareTransferTool: ToolDefinition = {
       // Send message
       await context.sendMessage(
         `📝 **Transfer ${name}**\n\n` +
-          `• From: ${formatAddress(ownership.ownerWallet!)}\n` +
+          `• From: ${formatAddress(ownerWallet)}\n` +
           `• To: ${formatAddress(toAddress)}\n\n` +
           `⚠️ **Warning:** This action cannot be undone!`,
       );
 
       // Actually send the transaction request
+      // Transfers don't require ETH value, so use "0x0"
       await context.sendTransaction({
         id: requestId,
         title: `Transfer ${name}`,
         chainId: "1",
         to: tx.to,
         data: tx.data,
-        // value: tx.value,
-        value: "0x0", // transfers don't require eth value
-        signerWallet: ownership.ownerWallet!,
+        value: "0x0", // Transfers don't send ETH
+        signerWallet: ownerWallet,
       });
 
       return formatResult(
         {
           name,
-          fromAddress: ownership.ownerWallet,
+          fromAddress: ownerWallet,
           toAddress,
           toolId,
           requestId,
@@ -478,7 +476,7 @@ export const prepareTransferTool: ToolDefinition = {
             payload: {
               actionType: "transfer",
               name,
-              fromAddress: ownership.ownerWallet,
+              fromAddress: ownerWallet,
               toAddress,
             },
           },
