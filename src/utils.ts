@@ -1,23 +1,11 @@
-import { BotHandler, getSmartAccountFromUserId } from "@towns-protocol/bot";
+import { getSmartAccountFromUserId } from "@towns-protocol/bot";
 import walletLinkAbi from "@towns-protocol/generated/dev/abis/WalletLink.abi";
-import {
-  createPublicClient,
-  encodeFunctionData,
-  formatEther,
-  http,
-  isAddress,
-  parseEther,
-  parseEventLogs,
-} from "viem";
+import { createPublicClient, formatEther, http, isAddress } from "viem";
 import { readContract } from "viem/actions";
 import { base, mainnet } from "viem/chains";
 import { bot } from "./bot";
 import { type BalanceCheckResult, CHAIN_IDS } from "./services/bridge";
-import {
-  CocoBotType,
-  type EOAWalletCheckResult,
-  type WalletBalanceInfo,
-} from "./types";
+import type { EOAWalletCheckResult, WalletBalanceInfo } from "./types";
 
 const ethereumClient = createPublicClient({
   chain: mainnet,
@@ -26,7 +14,7 @@ const ethereumClient = createPublicClient({
 
 const baseClient = createPublicClient({
   chain: base,
-  transport: http(`https://mainnet.base.org`),
+  transport: http(process.env.BASE_RPC_URL),
 });
 
 /**

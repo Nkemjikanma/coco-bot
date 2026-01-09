@@ -5,12 +5,12 @@ import type {
 } from "@ensdomains/ensjs/subgraph";
 import {
   concat,
-  keccak256,
-  toBytes,
-  toHex,
   createPublicClient,
   http,
-  PublicClient,
+  keccak256,
+  type PublicClient,
+  toBytes,
+  toHex,
   zeroAddress,
 } from "viem";
 import { mainnet } from "viem/chains";
@@ -21,6 +21,7 @@ import type {
   HistoryData,
   PortfolioData,
 } from "../../api";
+import { clearAllUserFlows, clearUserPendingCommand } from "../../db";
 import {
   BASE_REGISTRAR_ABI,
   ENS_CONTRACTS,
@@ -30,14 +31,7 @@ import {
   NAME_WRAPPER_ABI,
   NAME_WRAPPER_ADDRESS,
 } from "./constants";
-import {
-  clearActiveFlow,
-  clearAllUserFlows,
-  clearUserPendingCommand,
-} from "../../db";
-import { OwnerInfo } from "./types";
-import { sendBotMessage } from "../../handlers";
-import { BotHandler } from "@towns-protocol/bot";
+import type { OwnerInfo } from "./types";
 
 // Lazy-initialized client
 let _client: PublicClient | null = null;
@@ -675,19 +669,4 @@ export async function verifyOwnership(
     actualOwner: ownerInfo.owner,
     error: `None of your wallets own ${name}. The owner is ${ownerInfo.owner}`,
   };
-}
-
-export async function handleExecutionsForCheckingSubdomains(
-  handler: BotHandler,
-  channelId: string,
-  threadId: string,
-  userId: string,
-) {
-  await sendBotMessage(
-    handler,
-    channelId,
-    threadId,
-    userId,
-    `❌ Sorry, we are still Working on implementing checks for subdomains. Check back soon`,
-  );
 }
