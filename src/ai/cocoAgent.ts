@@ -156,29 +156,33 @@ export class CocoAgent {
     );
 
     // Store the pending tool info before clearing
-    const pendingToolId = session.pendingToolCall?.toolId || "";
     const pendingToolName = session.pendingToolCall?.toolName || "";
 
-    // Add action result to session messages
-    const resultMessage = actionResult.success
-      ? `User completed the action. ${actionResult.type === "transaction" ? `Transaction hash: ${actionResult.data?.txHash}` : "Confirmed."}`
-      : `User rejected/cancelled the action.`;
+    // Create a user message describing what happened
+    // This is simpler and more reliable than trying to reconstruct tool_result blocks
+    let userMessage: string;
+    if (actionResult.type === "confirmation") {
+      userMessage = actionResult.success
+        ? "I confirm. Please proceed."
+        : "I cancel. Do not proceed.";
+    } else {
+      // Transaction
+      userMessage = actionResult.success
+        ? `Transaction successful. Hash: ${actionResult.data?.txHash}`
+        : "Transaction was rejected/cancelled.";
+    }
 
+    // Add as a regular user message
     await addSessionMessage(userId, threadId, {
-      role: "tool_result",
-      content: resultMessage,
-      toolName: pendingToolName,
-      toolId: pendingToolId,
+      role: "user",
+      content: userMessage,
     });
 
-    // Clear the pending action so new messages aren't blocked
+    // IMPORTANT: Clear the pending action so new messages aren't blocked
     await clearSessionPendingAction(userId, threadId);
 
-    // Build messages including the tool result
-    const messages = this.buildMessages(session, undefined, {
-      toolId: pendingToolId,
-      result: resultMessage,
-    });
+    // Build messages with the new user message (NOT as tool_result)
+    const messages = this.buildMessages(session, userMessage);
 
     // Continue agent loop
     return this.agentLoop(messages, context, session);
@@ -371,7 +375,6 @@ export class CocoAgent {
   private buildMessages(
     session: AgentSession,
     newMessage?: string,
-    toolResult?: { toolId: string; result: string },
   ): Anthropic.MessageParam[] {
     const messages: Anthropic.MessageParam[] = [];
 
@@ -387,26 +390,11 @@ export class CocoAgent {
       ) {
         messages.push({ role: "assistant", content: msg.content });
       }
-      // tool_result messages are handled separately
     }
 
     // Add new user message if provided and not empty
     if (newMessage && newMessage.trim()) {
       messages.push({ role: "user", content: newMessage });
-    }
-
-    // Add tool result if resuming
-    if (toolResult) {
-      messages.push({
-        role: "user",
-        content: [
-          {
-            type: "tool_result",
-            tool_use_id: toolResult.toolId,
-            content: toolResult.result,
-          },
-        ],
-      });
     }
 
     return messages;
