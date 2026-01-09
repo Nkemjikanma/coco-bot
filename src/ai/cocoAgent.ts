@@ -494,7 +494,7 @@ export function createAgentContext(
             },
             recipient: userId as `0x${string}`,
           },
-          { threadId, ephemeral: true },
+          { threadId },
         );
         console.log(`[AgentContext] Transaction request sent successfully`);
       } catch (error) {
