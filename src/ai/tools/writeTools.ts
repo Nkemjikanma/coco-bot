@@ -1,14 +1,8 @@
-// src/agent/tools/writeTools.ts
-
-import {
-  estimateRegistrationCost,
-  prepareRegistration,
-} from "../../services/ens";
+import { prepareRegistration } from "../../services/ens";
 import { getRenewService } from "../../services/ens/renew/renew";
 import { getSubdomainService } from "../../services/ens/subdomain/subdomain";
-import { verifyOwnership } from "../../services/ens/utils";
-import { checkAllEOABalances, filterEOAs, formatAddress } from "../../utils";
-import type { AgentContext, ToolDefinition, ToolResult } from "../types";
+import { filterEOAs, formatAddress } from "../../utils";
+import type { ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result
@@ -642,6 +636,10 @@ export const prepareBridgeTool: ToolDefinition = {
     const amountEth = params.amountEth as string;
     const walletAddress = params.walletAddress as `0x${string}`;
 
+    console.log(`[prepare_bridge] Starting bridge preparation`);
+    console.log(`[prepare_bridge] amountEth: ${amountEth}`);
+    console.log(`[prepare_bridge] walletAddress: ${walletAddress}`);
+
     try {
       // Import bridge utilities
       const { getBridgeQuoteAndTx } =
@@ -652,13 +650,18 @@ export const prepareBridgeTool: ToolDefinition = {
       const { formatEther, parseEther } = await import("viem");
 
       const amountNeededWei = BigInt(Math.floor(parseFloat(amountEth) * 1e18));
+      console.log(`[prepare_bridge] amountNeededWei: ${amountNeededWei}`);
 
       // Check Base balance first
       const baseBalanceCheck = await checkBalance(
         walletAddress,
         CHAIN_IDS.BASE,
       );
+      console.log(
+        `[prepare_bridge] Base balance: ${baseBalanceCheck.balanceEth} ETH`,
+      );
 
+      console.log(`[prepare_bridge] Getting initial bridge quote...`);
       // Get initial quote to understand fee structure
       const initialQuote = await getBridgeQuoteAndTx(
         amountNeededWei,

@@ -1,26 +1,26 @@
+import { spokePoolAbiV3 } from "@across-protocol/app-sdk/dist/abis/SpokePool/v3.js";
 import {
   createPublicClient,
-  http,
-  formatEther,
-  parseEther,
   encodeFunctionData,
+  formatEther,
+  http,
+  parseEther,
   parseEventLogs,
 } from "viem";
-import { mainnet, base } from "viem/chains";
-import { spokePoolAbiV3 } from "@across-protocol/app-sdk/dist/abis/SpokePool/v3.js";
+import { base, mainnet } from "viem/chains";
+import {
+  ACROSS_API_URL,
+  ACROSS_SPOKE_POOL,
+  BRIDGE_CONFIG,
+  CHAIN_IDS,
+  WETH_ADDRESS,
+} from "./bridgeConstants";
 import type {
   BalanceCheckResult,
   BridgeQuote,
   BridgeStatusResponse,
   SwapApprovalResponse,
 } from "./types";
-import {
-  ACROSS_API_URL,
-  WETH_ADDRESS,
-  CHAIN_IDS,
-  BRIDGE_CONFIG,
-  ACROSS_SPOKE_POOL,
-} from "./bridgeConstants";
 
 // Create public clients for balance checking
 const mainnetClient = createPublicClient({
@@ -30,7 +30,7 @@ const mainnetClient = createPublicClient({
 
 const baseClient = createPublicClient({
   chain: base,
-  transport: http(`https://mainnet.base.org`),
+  transport: http(process.env.BASE_RPC_URL),
 });
 
 /**
@@ -85,8 +85,11 @@ export async function getBridgeQuoteAndTx(
   };
 }> {
   try {
+    console.log(`getBridgeQuoteAndTx: Starting`);
+    console.log(`getBridgeQuoteAndTx: amount=${amount}`);
+    console.log(`getBridgeQuoteAndTx: depositor=${depositor}`);
     console.log(
-      `getBridgeQuoteAndTx: Fetching quote for ${formatEther(amount)} ETH`,
+      `getBridgeQuoteAndTx: fromChainId=${fromChainId}, toChainId=${toChainId}`,
     );
     // Use WETH as input (will be wrapped from native ETH)
     const inputToken = WETH_ADDRESS.BASE;
