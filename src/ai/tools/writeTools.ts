@@ -408,7 +408,7 @@ export const prepareTransferTool: ToolDefinition = {
         name,
         newOwnerAddress: toAddress,
         currentOwner: ownerWallet!,
-        isWrapped: isWrapped,
+        isWrapped: isWrapped, // Default to wrapped if not specified
       });
 
       // Generate safe tool ID for Anthropic
@@ -792,10 +792,11 @@ export const prepareBridgeTool: ToolDefinition = {
           `Sign the transaction to bridge your ETH.`,
       );
 
+      // ACTUALLY SEND THE TRANSACTION REQUEST
       await context.sendTransaction({
         id: requestId,
         title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
-        chainId: CHAIN_IDS.BASE.toString(),
+        chainId: CHAIN_IDS.BASE.toString(), // Bridge tx is on Base
         to: swapTx.to,
         data: swapTx.data,
         value: swapTx.value,
@@ -836,12 +837,194 @@ export const prepareBridgeTool: ToolDefinition = {
     }
   },
 };
+
+// ============================================================
+// COMPLETE REGISTRATION (Step 2 - after commit and wait)
+// ============================================================
+
+export const completeRegistrationTool: ToolDefinition = {
+  name: "complete_registration",
+  description: `Complete the ENS registration after the commit transaction and 60-second wait.
+This tool reads the stored registration data from the session and sends the register transaction.
+Call this AFTER:
+1. prepare_registration (commit tx) was signed
+2. 60-second wait completed
+DO NOT call send_transaction directly - use this tool instead to ensure correct wallet is used.`,
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "ENS name being registered (e.g., 'example.eth')",
+      },
+    },
+    required: ["name"],
+  },
+  execute: async (params, context): Promise<ToolResult> => {
+    const name = params.name as string;
+
+    try {
+      // Get stored registration data from session
+      const { getSession } = await import("../sessions");
+      const session = await getSession(context.userId, context.threadId);
+
+      if (!session || session.currentAction?.type === "registration") {
+        return formatError(
+          "No pending registration found. Please start the registration process again with prepare_registration.",
+        );
+      }
+
+      const regData = session.currentAction?.data;
+
+      if (!regData) {
+        return formatError(
+          "No pending registration found. Please start the registration process again with prepare_registration.",
+        );
+      }
+
+      // Validate the stored data
+      if (regData.name !== name) {
+        return formatError(
+          `Registration mismatch. Expected ${regData.name}, got ${name}. Please start over.`,
+        );
+      }
+
+      const walletAddress = regData.walletAddress as `0x${string}`;
+      const secret = regData.secret as `0x${string}`;
+      const durationSec = BigInt(regData.durationSec as string);
+      const grandTotalWei = BigInt(regData.grandTotalWei as string);
+
+      console.log(
+        `[complete_registration] Completing registration for ${name}`,
+      );
+      console.log(`[complete_registration] Wallet: ${walletAddress}`);
+      console.log(`[complete_registration] Duration: ${durationSec}s`);
+      console.log(`[complete_registration] Value: ${grandTotalWei} wei`);
+
+      // Build the register transaction
+      const { encodeFunctionData, toHex } = await import("viem");
+
+      const ETH_REGISTRAR_CONTROLLER =
+        "0x253553366Da8546fC250F225fe3d25d0C782303b" as `0x${string}`;
+      const PUBLIC_RESOLVER =
+        "0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63" as `0x${string}`;
+
+      // Strip .eth suffix for the register call
+      const label = name.replace(/\.eth$/, "");
+
+      // Encode the register function call
+      const registerData = encodeFunctionData({
+        abi: [
+          {
+            name: "register",
+            type: "function",
+            inputs: [
+              { name: "name", type: "string" },
+              { name: "owner", type: "address" },
+              { name: "duration", type: "uint256" },
+              { name: "secret", type: "bytes32" },
+              { name: "resolver", type: "address" },
+              { name: "data", type: "bytes[]" },
+              { name: "reverseRecord", type: "bool" },
+              { name: "ownerControlledFuses", type: "uint16" },
+            ],
+            outputs: [],
+          },
+        ],
+        functionName: "register",
+        args: [
+          label,
+          walletAddress,
+          durationSec,
+          secret,
+          PUBLIC_RESOLVER,
+          [], // No resolver data
+          true, // Set reverse record
+          0, // No fuses
+        ],
+      });
+
+      // Convert value to hex
+      const valueHex = toHex(grandTotalWei);
+
+      const requestId = `registration_register:${context.userId}:${context.threadId}`;
+      const toolId = `tx_registration_register_${generateSafeId()}`;
+
+      // Store pending action
+      const { setSessionPendingAction } = await import("../sessions");
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "complete_registration",
+          toolId,
+          expectedAction: "registration_register",
+        },
+        {
+          type: "registration",
+          step: 2,
+          totalSteps: 2,
+          data: regData,
+        },
+      );
+
+      // Send message
+      await context.sendMessage(
+        `📝 **Final Registration Step for ${name}**\n\n` +
+          `• Wallet: ${formatAddress(walletAddress)}\n` +
+          `• Cost: ${regData.grandTotalEth} ETH\n\n` +
+          `Sign the transaction to complete your registration!`,
+      );
+
+      // Send the transaction with the CORRECT wallet from stored data
+      await context.sendTransaction({
+        id: requestId,
+        title: `Complete Registration: ${name}`,
+        chainId: "1",
+        to: ETH_REGISTRAR_CONTROLLER,
+        data: registerData,
+        value: valueHex,
+        signerWallet: walletAddress, // Use stored wallet, not Claude's guess!
+      });
+
+      return formatResult(
+        {
+          name,
+          walletAddress,
+          requestId,
+          toolId,
+          status: "awaiting_register_signature",
+        },
+        `Register transaction sent. Waiting for signature...`,
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "sign_transaction",
+            payload: {
+              step: "register",
+              actionType: "registration_register",
+              name,
+              walletAddress,
+            },
+          },
+        },
+      );
+    } catch (error) {
+      console.error("[complete_registration] Error:", error);
+      return formatError(
+        `Failed to complete registration: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    }
+  },
+};
+
 // ============================================================
 // EXPORT ALL WRITE TOOLS
 // ============================================================
 
 export const writeTools: ToolDefinition[] = [
   prepareRegistrationTool,
+  completeRegistrationTool,
   prepareRenewalTool,
   prepareTransferTool,
   prepareSubdomainTool,
