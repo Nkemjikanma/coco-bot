@@ -779,19 +779,32 @@ export const prepareBridgeTool: ToolDefinition = {
         );
       }
 
-      const message =
+      // Generate request ID for tracking
+      const requestId = `bridge:${context.userId}:${context.threadId}:${Date.now()}`;
+
+      // Send message to user
+      await context.sendMessage(
         `🌉 **Bridge Ready**\n\n` +
-        `**You need:** ${amountEth} ETH on Mainnet\n\n` +
-        `**Bridge Details:**\n` +
-        `• Sending: ${formatEther(amountToBridge)} ETH from Base\n` +
-        `• Bridge fee: ~${formatEther(bridgeFeeWei)} ETH\n` +
-        `• You'll receive: ~${formatEther(outputAmount)} ETH on Mainnet\n` +
-        `• Estimated time: ~${quote.estimatedFillTimeSec} seconds\n\n` +
-        `⚠️ **Note:** Domain availability may change during bridging.\n\n` +
-        `Ready to sign the bridge transaction?`;
+          `• Sending: ${formatEther(amountToBridge)} ETH from Base\n` +
+          `• Bridge fee: ~${formatEther(bridgeFeeWei)} ETH\n` +
+          `• You'll receive: ~${formatEther(outputAmount)} ETH on Mainnet\n` +
+          `• Estimated time: ~${quote.estimatedFillTimeSec} seconds\n\n` +
+          `Sign the transaction to bridge your ETH.`,
+      );
+
+      await context.sendTransaction({
+        id: requestId,
+        title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
+        chainId: CHAIN_IDS.BASE.toString(),
+        to: swapTx.to,
+        data: swapTx.data,
+        value: swapTx.value,
+        signerWallet: walletAddress,
+      });
 
       return formatResult(
         {
+          requestId,
           amountNeededEth: amountEth,
           amountToBridgeEth: formatEther(amountToBridge),
           amountToBridgeWei: amountToBridge.toString(),
@@ -799,28 +812,18 @@ export const prepareBridgeTool: ToolDefinition = {
           bridgeFeeEth: formatEther(bridgeFeeWei),
           estimatedTime: quote.estimatedFillTimeSec,
           walletAddress,
-          tx: {
-            to: swapTx.to as `0x${string}`,
-            data: swapTx.data as `0x${string}`,
-            value: swapTx.value,
-            chainId: CHAIN_IDS.BASE.toString(),
-          },
+          status: "awaiting_signature",
         },
-        message,
+        `Transaction request sent. Waiting for signature...`,
         {
           requiresUserAction: true,
           userAction: {
             type: "sign_transaction",
             payload: {
               actionType: "bridge",
+              requestId,
               amountToBridgeWei: amountToBridge.toString(),
               walletAddress,
-              tx: {
-                to: swapTx.to,
-                data: swapTx.data,
-                value: swapTx.value,
-                chainId: CHAIN_IDS.BASE.toString(),
-              },
             },
           },
         },
@@ -833,7 +836,6 @@ export const prepareBridgeTool: ToolDefinition = {
     }
   },
 };
-
 // ============================================================
 // EXPORT ALL WRITE TOOLS
 // ============================================================
