@@ -171,19 +171,16 @@ export async function filterEOAs(userId: `0x${string}`) {
  */
 export async function checkAllEOABalances(
   userId: `0x${string}`,
-  requiredAmount: bigint,
+  requiredAmount?: bigint, // Make optional with ?
 ): Promise<EOAWalletCheckResult> {
   const eoas = await filterEOAs(userId);
-
   const walletBalances: WalletBalanceInfo[] = await Promise.all(
     eoas.map(async (address) => {
       const [l1Balance, l2Balance] = await Promise.all([
         checkBalance(address, CHAIN_IDS.MAINNET),
         checkBalance(address, CHAIN_IDS.BASE),
       ]);
-
       const totalBalance = l1Balance.balance + l2Balance.balance;
-
       return {
         address,
         l1Balance: l1Balance.balance,
@@ -200,30 +197,33 @@ export async function checkAllEOABalances(
   const sortedByL1 = [...walletBalances].sort((a, b) =>
     Number(b.l1Balance - a.l1Balance),
   );
-
   // Sort by L2 balance (descending) - for bridge candidates
   const sortedByL2 = [...walletBalances].sort((a, b) =>
     Number(b.l2Balance - a.l2Balance),
   );
 
-  // Find wallet with sufficient L1 balance
-  const walletWithSufficientL1 = sortedByL1.find(
-    (w) => w.l1Balance >= requiredAmount,
-  );
+  // Only check sufficient balance if requiredAmount is provided
+  let walletWithSufficientL1 = null;
+  let walletWithSufficientL2 = null;
 
-  // Find wallet with sufficient L2 balance for bridging
-  // Add buffer for bridge fees (~5%)
-  const bridgeBuffer = (requiredAmount * 105n) / 100n;
-  const walletWithSufficientL2 = sortedByL2.find(
-    (w) => w.l2Balance >= bridgeBuffer,
-  );
+  if (requiredAmount !== undefined) {
+    // Find wallet with sufficient L1 balance
+    walletWithSufficientL1 =
+      sortedByL1.find((w) => w.l1Balance >= requiredAmount) || null;
+
+    // Find wallet with sufficient L2 balance for bridging
+    // Add buffer for bridge fees (~5%)
+    const bridgeBuffer = (requiredAmount * 105n) / 100n;
+    walletWithSufficientL2 =
+      sortedByL2.find((w) => w.l2Balance >= bridgeBuffer) || null;
+  }
 
   return {
     wallets: walletBalances,
     hasWalletWithSufficientL1: !!walletWithSufficientL1,
     hasWalletWithSufficientL2ForBridge: !!walletWithSufficientL2,
-    bestWalletForL1: walletWithSufficientL1 || null,
-    bestWalletForBridge: walletWithSufficientL2 || null,
+    bestWalletForL1: walletWithSufficientL1,
+    bestWalletForBridge: walletWithSufficientL2,
   };
 }
 

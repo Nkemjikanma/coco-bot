@@ -278,14 +278,10 @@ export const checkBalanceTool: ToolDefinition = {
         );
       }
 
-      if (!requiredAmount) {
-        return formatError("Couldn't find the amount, kindly try again.");
-      }
-
       console.log(`[check_balance] Checking balances for wallets:`, wallets);
       const balances = await checkAllEOABalances(
         context.userId as `0x${string}`,
-        requiredAmount,
+        requiredAmount, // This can be undefined - it's optional
       );
       console.log(`[check_balance] Balance check complete`);
 
