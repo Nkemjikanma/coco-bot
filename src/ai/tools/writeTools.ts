@@ -984,7 +984,7 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
         to: ETH_REGISTRAR_CONTROLLER,
         data: registerData,
         value: valueHex,
-        signerWallet: walletAddress, // Use stored wallet, not Claude's guess!
+        signerWallet: walletAddress,
       });
 
       return formatResult(
