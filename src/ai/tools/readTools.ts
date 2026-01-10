@@ -285,9 +285,11 @@ export const checkBalanceTool: ToolDefinition = {
       );
       console.log(`[check_balance] Balance check complete`);
 
+      // Build message with FULL addresses (important for Claude to use correctly)
       let message = "💰 **Wallet Balances:**\n";
       for (const wallet of balances.wallets) {
-        message += `\n**${formatAddress(wallet.address)}:**`;
+        // Show full address - DO NOT abbreviate
+        message += `\n**Wallet ${wallet.address}:**`;
         message += `\n  • Mainnet (L1): ${Number(wallet.l1BalanceEth).toFixed(6)} ETH`;
         message += `\n  • Base (L2): ${Number(wallet.l2BalanceEth).toFixed(6)} ETH`;
       }
@@ -305,19 +307,17 @@ export const checkBalanceTool: ToolDefinition = {
 
       // Check if any wallet can bridge (has meaningful L2 balance)
       // Bridge minimum is usually ~0.002 ETH to be worthwhile
-      const BRIDGE_MINIMUM = 0.001;
+      const BRIDGE_MINIMUM = 0.002;
       const walletsWithBridgeableFunds = balances.wallets.filter(
         (w) => parseFloat(w.l2BalanceEth) >= BRIDGE_MINIMUM,
       );
 
       if (walletsWithBridgeableFunds.length > 0) {
-        message += `\n\n💡 **Can bridge from Base:** `;
-        message += walletsWithBridgeableFunds
-          .map(
-            (w) =>
-              `${formatAddress(w.address)} has ${Number(w.l2BalanceEth).toFixed(4)} ETH on Base`,
-          )
-          .join(", ");
+        // Show FULL addresses for bridgeable wallets
+        message += `\n\n💡 **Can bridge from Base:**`;
+        for (const w of walletsWithBridgeableFunds) {
+          message += `\n  • ${w.address} has ${Number(w.l2BalanceEth).toFixed(4)} ETH on Base`;
+        }
       }
 
       // If requiredAmount specified, add specific guidance
@@ -328,16 +328,19 @@ export const checkBalanceTool: ToolDefinition = {
         );
 
         if (hasEnoughL1) {
-          message += `\n\n✅ Sufficient balance on Mainnet for ${requiredEth.toFixed(4)} ETH`;
+          const bestWallet = balances.wallets.find(
+            (w) => w.l1Balance >= requiredAmount,
+          );
+          message += `\n\n✅ Sufficient balance on Mainnet. Use wallet: ${bestWallet?.address}`;
         } else {
           // Check if can bridge - need requiredAmount + ~0.001 ETH for bridge fees + gas
           const bridgeTotal = requiredAmount + BigInt(Math.floor(0.001 * 1e18)); // Add 0.001 ETH buffer
-          const canBridge = balances.wallets.some(
+          const bridgeWallet = balances.wallets.find(
             (w) => w.l2Balance >= bridgeTotal,
           );
 
-          if (canBridge) {
-            message += `\n\n⚠️ L1 insufficient, but **can bridge from Base** to cover ${requiredEth.toFixed(4)} ETH + fees`;
+          if (bridgeWallet) {
+            message += `\n\n⚠️ L1 insufficient. **Bridge from wallet: ${bridgeWallet.address}** (has ${bridgeWallet.l2BalanceEth} ETH on Base)`;
           } else {
             message += `\n\n❌ Insufficient balance. Need ${requiredEth.toFixed(4)} ETH + gas on Mainnet.`;
           }
@@ -345,10 +348,11 @@ export const checkBalanceTool: ToolDefinition = {
       }
 
       // Serialize BigInt values to strings for JSON compatibility
+      // Include full addresses in canBridgeFrom for Claude to use
       const serializedBalances = {
         ...balances,
         wallets: balances.wallets.map((w) => ({
-          address: w.address,
+          address: w.address, // Full address
           l1Balance: w.l1Balance.toString(),
           l1BalanceEth: w.l1BalanceEth,
           l2Balance: w.l2Balance.toString(),
@@ -356,7 +360,16 @@ export const checkBalanceTool: ToolDefinition = {
           totalBalance: w.totalBalance.toString(),
           totalBalanceEth: w.totalBalanceEth,
         })),
+        // Explicit list of full addresses that can bridge
         canBridgeFrom: walletsWithBridgeableFunds.map((w) => w.address),
+        // Best wallet to use for bridging (full address)
+        recommendedBridgeWallet:
+          walletsWithBridgeableFunds.length > 0
+            ? walletsWithBridgeableFunds.sort(
+                (a, b) =>
+                  parseFloat(b.l2BalanceEth) - parseFloat(a.l2BalanceEth),
+              )[0].address
+            : null,
       };
 
       return formatResult(serializedBalances, message);

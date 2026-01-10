@@ -1,8 +1,14 @@
-import { prepareRegistration } from "../../services/ens";
+// src/agent/tools/writeTools.ts
+
+import {
+  estimateRegistrationCost,
+  prepareRegistration,
+} from "../../services/ens";
 import { getRenewService } from "../../services/ens/renew/renew";
 import { getSubdomainService } from "../../services/ens/subdomain/subdomain";
-import { filterEOAs, formatAddress } from "../../utils";
-import type { ToolDefinition, ToolResult } from "../types";
+import { verifyOwnership } from "../../services/ens/utils";
+import { checkAllEOABalances, filterEOAs, formatAddress } from "../../utils";
+import type { AgentContext, ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result
@@ -398,7 +404,7 @@ export const prepareTransferTool: ToolDefinition = {
 
       // Build the transfer transaction using the provided owner info
       // This avoids redundant RPC calls since we already verified ownership
-      const tx = transferService.buildTransferTransaction({
+      const tx = await transferService.buildTransferTransaction({
         name,
         newOwnerAddress: toAddress,
         currentOwner: ownerWallet!,
@@ -616,7 +622,7 @@ If recipient is the owner, only 2 transactions needed.`,
 export const prepareBridgeTool: ToolDefinition = {
   name: "prepare_bridge",
   description:
-    "Prepare a bridge transaction to move ETH from Base (L2) to Ethereum Mainnet (L1). Use when L1 balance is insufficient for ENS operations. Handles fee calculation and validation.",
+    "Prepare a bridge transaction to move ETH from Base (L2) to Ethereum Mainnet (L1). Use when L1 balance is insufficient for ENS operations. The walletAddress MUST be a full 42-character address from check_balance results.",
   parameters: {
     type: "object",
     properties: {
@@ -627,27 +633,80 @@ export const prepareBridgeTool: ToolDefinition = {
       },
       walletAddress: {
         type: "string",
-        description: "Wallet address to bridge from/to",
+        description:
+          "FULL wallet address (42 chars, e.g. 0x230908A09525e80978Fb822Ec7F1a2F3cfB29A3b) from check_balance results. Do NOT abbreviate.",
       },
     },
     required: ["amountEth", "walletAddress"],
   },
   execute: async (params, context): Promise<ToolResult> => {
     const amountEth = params.amountEth as string;
-    const walletAddress = params.walletAddress as `0x${string}`;
+    let walletAddress = params.walletAddress as `0x${string}`;
 
     console.log(`[prepare_bridge] Starting bridge preparation`);
     console.log(`[prepare_bridge] amountEth: ${amountEth}`);
     console.log(`[prepare_bridge] walletAddress: ${walletAddress}`);
 
     try {
-      // Import bridge utilities
+      // Validate wallet address format
+      if (
+        !walletAddress ||
+        walletAddress.length !== 42 ||
+        !walletAddress.startsWith("0x")
+      ) {
+        console.error(
+          `[prepare_bridge] Invalid wallet address format: ${walletAddress}`,
+        );
+        return formatError(
+          `Invalid wallet address format. Please use the full 42-character address from check_balance results (e.g., 0x230908A09525e80978Fb822Ec7F1a2F3cfB29A3b), not an abbreviated version.`,
+        );
+      }
+
+      // Import utilities
       const { getBridgeQuoteAndTx } =
         await import("../../services/bridge/bridge");
       const { CHAIN_IDS } =
         await import("../../services/bridge/bridgeConstants");
       const { checkBalance } = await import("../../utils");
       const { formatEther, parseEther } = await import("viem");
+
+      // Verify this is one of the user's wallets
+      const userWallets = await filterEOAs(context.userId as `0x${string}`);
+      console.log(`[prepare_bridge] User's wallets:`, userWallets);
+
+      const isValidWallet = userWallets.some(
+        (w) => w.toLowerCase() === walletAddress.toLowerCase(),
+      );
+
+      if (!isValidWallet) {
+        console.error(
+          `[prepare_bridge] Wallet not in user's linked wallets: ${walletAddress}`,
+        );
+
+        // Try to find the best wallet automatically
+        const { checkAllEOABalances } = await import("../../utils");
+        const balances = await checkAllEOABalances(
+          context.userId as `0x${string}`,
+        );
+        const bestWallet = balances.wallets
+          .filter(
+            (w) => parseFloat(w.l2BalanceEth) >= parseFloat(amountEth) + 0.001,
+          )
+          .sort(
+            (a, b) => parseFloat(b.l2BalanceEth) - parseFloat(a.l2BalanceEth),
+          )[0];
+
+        if (bestWallet) {
+          console.log(
+            `[prepare_bridge] Auto-selecting wallet with most L2 balance: ${bestWallet.address}`,
+          );
+          walletAddress = bestWallet.address as `0x${string}`;
+        } else {
+          return formatError(
+            `Wallet address ${walletAddress} is not one of your linked wallets. Your wallets are: ${userWallets.join(", ")}`,
+          );
+        }
+      }
 
       const amountNeededWei = BigInt(Math.floor(parseFloat(amountEth) * 1e18));
       console.log(`[prepare_bridge] amountNeededWei: ${amountNeededWei}`);
