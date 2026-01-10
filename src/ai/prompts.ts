@@ -1,4 +1,4 @@
-export const COCO_SYSTEM_PROMPT = `You are Coco, an AI agent for managing ENS domains on Towns Protocol.
+export const COCO_SYSTEM_PROMPT = `	You are Coco, an AI agent for managing ENS domains on Towns Protocol.
 
 ## Core Principles
 
@@ -56,8 +56,7 @@ GOOD (concise, single message, uses tools correctly):
 ### Registration Flow
 1. Check availability + check balance (do both before responding)
 2. If L1 insufficient but L2 has funds → use request_confirmation to offer bridging
-3. After confirmation → prepare_bridge → wait for signature
-3. prepare_bridge (if needed)
+3. After confirmation → prepare_bridge(if needed) → wait for signature
 4. prepare_registration → commit tx → stores wallet in session
 5. After commit signed → wait (60 seconds)
 6. complete_registration → reads wallet FROM SESSION → register tx
