@@ -1,14 +1,12 @@
-// src/agent/tools/readTools.ts
-
 import {
   checkAvailability,
   checkExpiry,
   getHistory,
   getUserPorfolio,
 } from "../../services/ens";
-import { getActualOwner, verifyOwnership } from "../../services/ens/utils";
+import { verifyOwnership } from "../../services/ens/utils";
 import { checkAllEOABalances, filterEOAs, formatAddress } from "../../utils";
-import type { AgentContext, ToolDefinition, ToolResult } from "../types";
+import type { ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result for Claude
@@ -265,8 +263,14 @@ export const checkBalanceTool: ToolDefinition = {
       ? BigInt(params.requiredAmount as string)
       : undefined;
 
+    console.log(
+      `[check_balance] Starting balance check for user: ${context.userId}`,
+    );
+
     try {
+      console.log(`[check_balance] Fetching linked wallets...`);
       const wallets = await filterEOAs(context.userId as `0x${string}`);
+      console.log(`[check_balance] Found ${wallets.length} wallets`);
 
       if (wallets.length === 0) {
         return formatError(
@@ -274,10 +278,16 @@ export const checkBalanceTool: ToolDefinition = {
         );
       }
 
+      if (!requiredAmount) {
+        return formatError("Couldn't find the amount, kindly try again.");
+      }
+
+      console.log(`[check_balance] Checking balances for wallets:`, wallets);
       const balances = await checkAllEOABalances(
         context.userId as `0x${string}`,
-        requiredAmount!,
+        requiredAmount,
       );
+      console.log(`[check_balance] Balance check complete`);
 
       let message = "💰 Wallet Balances:\n";
       for (const wallet of balances.wallets) {
@@ -305,6 +315,7 @@ export const checkBalanceTool: ToolDefinition = {
         }
       }
 
+      // Serialize BigInt values to strings for JSON compatibility
       const serializedBalances = {
         ...balances,
         wallets: balances.wallets.map((w) => ({
@@ -320,6 +331,7 @@ export const checkBalanceTool: ToolDefinition = {
 
       return formatResult(serializedBalances, message);
     } catch (error) {
+      console.error(`[check_balance] ERROR:`, error);
       return formatError(
         `Failed to check balance: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
