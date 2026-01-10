@@ -285,29 +285,62 @@ export const checkBalanceTool: ToolDefinition = {
       );
       console.log(`[check_balance] Balance check complete`);
 
-      let message = "💰 Wallet Balances:\n";
+      let message = "💰 **Wallet Balances:**\n";
       for (const wallet of balances.wallets) {
-        const l1Status = requiredAmount
-          ? wallet.l1Balance >= requiredAmount
-            ? "✅"
-            : "⚠️"
-          : "";
-        message += `\n${formatAddress(wallet.address)}:`;
-        message += `\n  L1 (Mainnet): ${Number(wallet.l1BalanceEth).toFixed(4)} ETH ${l1Status}`;
-        message += `\n  L2 (Base): ${Number(wallet.l2BalanceEth).toFixed(4)} ETH`;
+        message += `\n**${formatAddress(wallet.address)}:**`;
+        message += `\n  • Mainnet (L1): ${Number(wallet.l1BalanceEth).toFixed(6)} ETH`;
+        message += `\n  • Base (L2): ${Number(wallet.l2BalanceEth).toFixed(6)} ETH`;
       }
 
-      if (
-        requiredAmount &&
-        !balances.wallets.some((w) => w.l1Balance >= requiredAmount)
-      ) {
-        const canBridge = balances.wallets.some(
-          (w) => w.l2Balance >= requiredAmount,
+      // Calculate totals
+      const totalL1 = balances.wallets.reduce(
+        (sum, w) => sum + parseFloat(w.l1BalanceEth),
+        0,
+      );
+      const totalL2 = balances.wallets.reduce(
+        (sum, w) => sum + parseFloat(w.l2BalanceEth),
+        0,
+      );
+      message += `\n\n**Totals:** ${totalL1.toFixed(6)} ETH on Mainnet, ${totalL2.toFixed(6)} ETH on Base`;
+
+      // Check if any wallet can bridge (has meaningful L2 balance)
+      // Bridge minimum is usually ~0.002 ETH to be worthwhile
+      const BRIDGE_MINIMUM = 0.001;
+      const walletsWithBridgeableFunds = balances.wallets.filter(
+        (w) => parseFloat(w.l2BalanceEth) >= BRIDGE_MINIMUM,
+      );
+
+      if (walletsWithBridgeableFunds.length > 0) {
+        message += `\n\n💡 **Can bridge from Base:** `;
+        message += walletsWithBridgeableFunds
+          .map(
+            (w) =>
+              `${formatAddress(w.address)} has ${Number(w.l2BalanceEth).toFixed(4)} ETH on Base`,
+          )
+          .join(", ");
+      }
+
+      // If requiredAmount specified, add specific guidance
+      if (requiredAmount) {
+        const requiredEth = Number(requiredAmount) / 1e18;
+        const hasEnoughL1 = balances.wallets.some(
+          (w) => w.l1Balance >= requiredAmount,
         );
-        if (canBridge) {
-          message += `\n\n💡 L1 balance insufficient, but you have enough on L2 to bridge.`;
+
+        if (hasEnoughL1) {
+          message += `\n\n✅ Sufficient balance on Mainnet for ${requiredEth.toFixed(4)} ETH`;
         } else {
-          message += `\n\n❌ Insufficient balance on both L1 and L2.`;
+          // Check if can bridge - need requiredAmount + ~0.001 ETH for bridge fees + gas
+          const bridgeTotal = requiredAmount + BigInt(Math.floor(0.001 * 1e18)); // Add 0.001 ETH buffer
+          const canBridge = balances.wallets.some(
+            (w) => w.l2Balance >= bridgeTotal,
+          );
+
+          if (canBridge) {
+            message += `\n\n⚠️ L1 insufficient, but **can bridge from Base** to cover ${requiredEth.toFixed(4)} ETH + fees`;
+          } else {
+            message += `\n\n❌ Insufficient balance. Need ${requiredEth.toFixed(4)} ETH + gas on Mainnet.`;
+          }
         }
       }
 
@@ -323,6 +356,7 @@ export const checkBalanceTool: ToolDefinition = {
           totalBalance: w.totalBalance.toString(),
           totalBalanceEth: w.totalBalanceEth,
         })),
+        canBridgeFrom: walletsWithBridgeableFunds.map((w) => w.address),
       };
 
       return formatResult(serializedBalances, message);
