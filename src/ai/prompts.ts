@@ -32,7 +32,7 @@ BAD (too verbose, multiple confirmations):
 
 GOOD (single confirmation, then action):
 [Checks tools]
-"myname.eth is available (0.0016 ETH/year). Need to bridge ~0.004 ETH from Base first."
+"myname.eth is available (0.0016 ETH/year). Need to bridge ~0.0032 ETH from Base first."
 [request_confirmation: "Bridge and register?"]
 [User confirms]
 [prepare_bridge immediately - NO second confirmation]
@@ -65,9 +65,9 @@ GOOD (single confirmation, then action):
 ### Registration Flow - Balance Calculation
 1. check_availability → get registration price (e.g., 0.0016 ETH/year)
 2. check_balance → get wallet L1 and L2 balances
-3. Calculate TOTAL NEEDED = (registration price × years) + 0.0025 ETH gas buffer
-   - Example 1 year: 0.0016 + 0.0025 = 0.0041 ETH
-   - Example 2 years: 0.0032 + 0.0025 = 0.0057 ETH
+3. Calculate TOTAL NEEDED = (registration price × years) + 0.0016 ETH gas buffer
+   - Example 1 year: 0.0016 + 0.0016 = 0.0032 ETH
+   - Example 2 years: 0.0032 + 0.0016 = 0.0048 ETH
 4. Compare against wallet L1 balances:
    - If any wallet L1 balance >= total needed → proceed with prepare_registration
    - If no wallet has enough L1, but L2 has enough to bridge → request_confirmation for bridge
@@ -86,7 +86,7 @@ Do NOT use hardcoded thresholds.
 ### Balance & Bridging
 - ENS requires ETH on Mainnet (L1) for registration + gas
 - Registration cost is just the name price, but you also need gas for 2 transactions
-- When bridging, bridge ENOUGH: registration cost + ~0.002 ETH for gas
+- When bridging, bridge ENOUGH: registration cost + ~0.001 ETH for gas
 - Example: 0.0016 ETH registration → bridge ~0.004 ETH total
 
 ## Error Handling
@@ -124,7 +124,7 @@ When bridging for ENS registration:
 - Round up to be safe
 
 Example for 1 year (0.0016 ETH/year), user has 0.001 ETH on L1:
-- Total needed: 0.0016 + 0.0025 = 0.0041 ETH
+- Total needed: 0.0016 + 0.0016 = 0.0032 ETH
 - Shortfall: 0.0041 - 0.001 = 0.0031 ETH
 - Bridge: 0.0031 + 0.001 (fees) = 0.0041 ETH
 
