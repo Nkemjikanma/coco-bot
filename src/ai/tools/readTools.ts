@@ -283,7 +283,14 @@ export const checkBalanceTool: ToolDefinition = {
         context.userId as `0x${string}`,
         requiredAmount, // This can be undefined - it's optional
       );
-      console.log(`[check_balance] Balance check complete`);
+
+      // Log actual balance values
+      console.log(`[check_balance] Balance check complete. Results:`);
+      for (const w of balances.wallets) {
+        console.log(
+          `[check_balance]   ${w.address}: L1=${w.l1BalanceEth} ETH, L2=${w.l2BalanceEth} ETH`,
+        );
+      }
 
       // Build message with FULL addresses (important for Claude to use correctly)
       let message = "💰 **Wallet Balances:**\n";
@@ -305,54 +312,33 @@ export const checkBalanceTool: ToolDefinition = {
       );
       message += `\n\n**Totals:** ${totalL1.toFixed(6)} ETH on Mainnet, ${totalL2.toFixed(6)} ETH on Base`;
 
+      // Log totals
+      console.log(
+        `[check_balance] Totals: L1=${totalL1.toFixed(6)} ETH, L2=${totalL2.toFixed(6)} ETH`,
+      );
+
       // Check if any wallet can bridge (has meaningful L2 balance)
-      // Bridge minimum is usually ~0.002 ETH to be worthwhile
       const BRIDGE_MINIMUM = 0.002;
       const walletsWithBridgeableFunds = balances.wallets.filter(
         (w) => parseFloat(w.l2BalanceEth) >= BRIDGE_MINIMUM,
       );
 
       if (walletsWithBridgeableFunds.length > 0) {
-        // Show FULL addresses for bridgeable wallets
         message += `\n\n💡 **Can bridge from Base:**`;
         for (const w of walletsWithBridgeableFunds) {
           message += `\n  • ${w.address} has ${Number(w.l2BalanceEth).toFixed(4)} ETH on Base`;
         }
       }
 
-      // If requiredAmount specified, add specific guidance
-      if (requiredAmount) {
-        const requiredEth = Number(requiredAmount) / 1e18;
-        const hasEnoughL1 = balances.wallets.some(
-          (w) => w.l1Balance >= requiredAmount,
-        );
-
-        if (hasEnoughL1) {
-          const bestWallet = balances.wallets.find(
-            (w) => w.l1Balance >= requiredAmount,
-          );
-          message += `\n\n✅ Sufficient balance on Mainnet. Use wallet: ${bestWallet?.address}`;
-        } else {
-          // Check if can bridge - need requiredAmount + ~0.001 ETH for bridge fees + gas
-          const bridgeTotal = requiredAmount + BigInt(Math.floor(0.001 * 1e18)); // Add 0.001 ETH buffer
-          const bridgeWallet = balances.wallets.find(
-            (w) => w.l2Balance >= bridgeTotal,
-          );
-
-          if (bridgeWallet) {
-            message += `\n\n⚠️ L1 insufficient. **Bridge from wallet: ${bridgeWallet.address}** (has ${bridgeWallet.l2BalanceEth} ETH on Base)`;
-          } else {
-            message += `\n\n❌ Insufficient balance. Need ${requiredEth.toFixed(4)} ETH + gas on Mainnet.`;
-          }
-        }
-      }
+      // Note: Don't make registration decisions here - Claude should calculate
+      // total needed based on registration price + gas (~0.0025 ETH buffer)
+      // and compare against the wallet balances returned here.
 
       // Serialize BigInt values to strings for JSON compatibility
-      // Include full addresses in canBridgeFrom for Claude to use
       const serializedBalances = {
         ...balances,
         wallets: balances.wallets.map((w) => ({
-          address: w.address, // Full address
+          address: w.address,
           l1Balance: w.l1Balance.toString(),
           l1BalanceEth: w.l1BalanceEth,
           l2Balance: w.l2Balance.toString(),
@@ -360,9 +346,9 @@ export const checkBalanceTool: ToolDefinition = {
           totalBalance: w.totalBalance.toString(),
           totalBalanceEth: w.totalBalanceEth,
         })),
-        // Explicit list of full addresses that can bridge
+        totalL1Eth: totalL1.toFixed(6),
+        totalL2Eth: totalL2.toFixed(6),
         canBridgeFrom: walletsWithBridgeableFunds.map((w) => w.address),
-        // Best wallet to use for bridging (full address)
         recommendedBridgeWallet:
           walletsWithBridgeableFunds.length > 0
             ? walletsWithBridgeableFunds.sort(
@@ -371,6 +357,10 @@ export const checkBalanceTool: ToolDefinition = {
               )[0].address
             : null,
       };
+
+      console.log(
+        `[check_balance] Returning balances. Claude should calculate if sufficient based on registration price.`,
+      );
 
       return formatResult(serializedBalances, message);
     } catch (error) {

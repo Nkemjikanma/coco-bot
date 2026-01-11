@@ -62,13 +62,21 @@ GOOD (single confirmation, then action):
 
 ## Critical Workflows
 
-### Registration with Bridging
-1. check_availability + check_balance (silently, together)
-2. If L1 insufficient → calculate TOTAL needed: registration cost + gas (~0.003-0.004 ETH total)
-3. ONE request_confirmation: "Bridge ~X ETH and register name.eth?"
-4. After user confirms → prepare_bridge (NO second confirmation!)
-5. After bridge signed → prepare_registration
+### Registration Flow - Balance Calculation
+1. check_availability → get registration price (e.g., 0.0016 ETH/year)
+2. check_balance → get wallet L1 and L2 balances
+3. Calculate TOTAL NEEDED = (registration price × years) + 0.0025 ETH gas buffer
+   - Example 1 year: 0.0016 + 0.0025 = 0.0041 ETH
+   - Example 2 years: 0.0032 + 0.0025 = 0.0057 ETH
+4. Compare against wallet L1 balances:
+   - If any wallet L1 balance >= total needed → proceed with prepare_registration
+   - If no wallet has enough L1, but L2 has enough to bridge → request_confirmation for bridge
+   - If neither L1 nor L2 sufficient → tell user they need more ETH
+5. After bridge (if needed) → prepare_registration
 6. After commit signed → wait 60s → complete_registration
+
+IMPORTANT: Always calculate total needed dynamically based on years × price + gas buffer.
+Do NOT use hardcoded thresholds.
 
 ### Transfer Flow
 1. verify_ownership → get ownerWallet and isWrapped
@@ -111,15 +119,23 @@ export const COCO_TOOL_GUIDELINES = `
 
 ### Bridge Amount Calculation
 When bridging for ENS registration:
-- Registration cost: X ETH (from check_availability)
-- Gas for commit tx: ~0.0006 ETH
-- Gas for register tx: ~0.0006 ETH
-- Buffer: ~0.0005 ETH
-- TOTAL to bridge: X + 0.0017 ETH (round up)
+- Total needed = (registration price × years) + 0.0025 ETH gas buffer
+- Bridge amount = total needed - current L1 balance + 0.001 ETH (bridge fees)
+- Round up to be safe
+
+Example for 1 year (0.0016 ETH/year), user has 0.001 ETH on L1:
+- Total needed: 0.0016 + 0.0025 = 0.0041 ETH
+- Shortfall: 0.0041 - 0.001 = 0.0031 ETH
+- Bridge: 0.0031 + 0.001 (fees) = 0.0041 ETH
+
+Example for 2 years (0.0032 ETH), user has 0.001 ETH on L1:
+- Total needed: 0.0032 + 0.0025 = 0.0057 ETH
+- Shortfall: 0.0057 - 0.001 = 0.0047 ETH
+- Bridge: 0.0047 + 0.001 (fees) = 0.0057 ETH
 
 ### Registration Flow
 1. check_availability + check_balance (call together)
-2. Calculate total needed: registration + 0.0017 ETH for gas
+2. Calculate total needed: registration + 0.0025 ETH for gas
 3. request_confirmation (ONCE!)
 4. prepare_bridge with calculated amount
 5. prepare_registration after bridge signed
