@@ -112,16 +112,14 @@ export const COCO_TOOL_GUIDELINES = `
 ### Bridge Amount Calculation
 When bridging for ENS registration:
 - Registration cost: X ETH (from check_availability)
-- Gas for commit tx: ~0.001 ETH
-- Gas for register tx: ~0.001 ETH
+- Gas for commit tx: ~0.0006 ETH
+- Gas for register tx: ~0.0006 ETH
 - Buffer: ~0.0005 ETH
-- TOTAL to bridge: X + 0.0025 ETH (round up)
-
-Example: 0.0016 ETH registration → bridge 0.004 ETH
+- TOTAL to bridge: X + 0.0017 ETH (round up)
 
 ### Registration Flow
 1. check_availability + check_balance (call together)
-2. Calculate total needed: registration + 0.0025 ETH for gas
+2. Calculate total needed: registration + 0.0017 ETH for gas
 3. request_confirmation (ONCE!)
 4. prepare_bridge with calculated amount
 5. prepare_registration after bridge signed
