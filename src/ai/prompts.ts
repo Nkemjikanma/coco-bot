@@ -87,7 +87,7 @@ Do NOT use hardcoded thresholds.
 - ENS requires ETH on Mainnet (L1) for registration + gas
 - Registration cost is just the name price, but you also need gas for 2 transactions
 - When bridging, bridge ENOUGH: registration cost + ~0.001 ETH for gas
-- Example: 0.0016 ETH registration → bridge ~0.004 ETH total
+- Example: 0.0016 ETH registration → bridge ~0.0026 ETH total
 
 ## Error Handling
 - Don't speculate about causes
@@ -124,18 +124,18 @@ When bridging for ENS registration:
 - Round up to be safe
 
 Example for 1 year (0.0016 ETH/year), user has 0.001 ETH on L1:
-- Total needed: 0.0016 + 0.0016 = 0.0032 ETH
-- Shortfall: 0.0041 - 0.001 = 0.0031 ETH
-- Bridge: 0.0031 + 0.001 (fees) = 0.0041 ETH
+- Total needed: 0.0016 + 0.001 = 0.0026 ETH
+- Shortfall: 0.0026 - 0.001 = 0.0016 ETH
+- Bridge: 0.0026 + 0.001 (fees) = 0.0036 ETH
 
 Example for 2 years (0.0032 ETH), user has 0.001 ETH on L1:
-- Total needed: 0.0032 + 0.0025 = 0.0057 ETH
-- Shortfall: 0.0057 - 0.001 = 0.0047 ETH
-- Bridge: 0.0047 + 0.001 (fees) = 0.0057 ETH
+- Total needed: 0.0032 + 0.001 = 0.0042 ETH
+- Shortfall: 0.0042 - 0.001 = 0.0032 ETH
+- Bridge: 0.0032 + 0.001 (fees) = 0.0042 ETH
 
 ### Registration Flow
 1. check_availability + check_balance (call together)
-2. Calculate total needed: registration + 0.0025 ETH for gas
+2. Calculate total needed: registration + 0.001 ETH for gas
 3. request_confirmation (ONCE!)
 4. prepare_bridge with calculated amount
 5. prepare_registration after bridge signed
