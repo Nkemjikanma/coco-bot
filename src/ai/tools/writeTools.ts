@@ -569,21 +569,58 @@ If recipient is the owner, only 2 transactions needed.`,
         isWrapped: ownership.isWrapped,
       });
 
-      const message =
-        `📝 Subdomain setup prepared for **${fullName}**:\n\n` +
-        `• Parent: ${parentName}\n` +
-        `• Points to: ${formatAddress(resolveAddress)}\n` +
-        `• Owner after: ${formatAddress(resolveAddress)}\n` +
-        `• Steps required: ${totalSteps}\n` +
-        `• Estimated gas: $3-10\n\n` +
-        `**Steps:**\n` +
-        `1. Create subdomain\n` +
-        `2. Set address record\n` +
-        (totalSteps === 3 ? `3. Transfer ownership\n` : "") +
-        `\nReady to start with Step 1?`;
+      // Generate request ID
+      const requestId = `subdomain_step1:${context.userId}:${context.threadId}`;
+      const toolId = `tx_subdomain_step1_${generateSafeId()}`;
+
+      // Store pending action
+      const { setSessionPendingAction } = await import("../sessions");
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "prepare_subdomain",
+          toolId,
+          expectedAction: "subdomain_step1",
+        },
+        {
+          type: "subdomain",
+          step: 1,
+          totalSteps,
+          data: {
+            fullName,
+            parentName,
+            label,
+            resolveAddress,
+            ownerWallet: ownership.ownerWallet,
+            isWrapped: ownership.isWrapped,
+          },
+        },
+      );
+
+      // Send message explaining the process
+      await context.sendMessage(
+        `📝 **Creating subdomain ${fullName}**\n\n` +
+          `• Points to: ${formatAddress(resolveAddress)}\n` +
+          `• Steps required: ${totalSteps}\n\n` +
+          `**Step 1 of ${totalSteps}:** Sign to create the subdomain.`,
+      );
+
+      // ACTUALLY SEND THE TRANSACTION REQUEST
+      await context.sendTransaction({
+        id: requestId,
+        title: `Create Subdomain: ${fullName} (Step 1/${totalSteps})`,
+        chainId: "1",
+        to: step1Tx.to,
+        data: step1Tx.data,
+        value: step1Tx.value,
+        signerWallet: ownership.ownerWallet!,
+      });
 
       return formatResult(
         {
+          requestId,
+          toolId,
           fullName,
           parentName,
           label,
@@ -591,9 +628,9 @@ If recipient is the owner, only 2 transactions needed.`,
           ownerWallet: ownership.ownerWallet,
           isWrapped: ownership.isWrapped,
           totalSteps,
-          step1Tx,
+          status: "awaiting_step1_signature",
         },
-        message,
+        `Transaction sent. Waiting for signature...`,
         {
           requiresUserAction: true,
           userAction: {
@@ -603,7 +640,6 @@ If recipient is the owner, only 2 transactions needed.`,
               fullName,
               step: 1,
               totalSteps,
-              tx: step1Tx,
             },
           },
         },
@@ -611,6 +647,264 @@ If recipient is the owner, only 2 transactions needed.`,
     } catch (error) {
       return formatError(
         `Failed to prepare subdomain: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    }
+  },
+};
+
+// ============================================================
+// COMPLETE SUBDOMAIN STEP 2 (Set Address Record)
+// ============================================================
+
+export const completeSubdomainStep2Tool: ToolDefinition = {
+  name: "complete_subdomain_step2",
+  description: `Complete subdomain step 2 (set address record) after step 1 transaction is confirmed.
+This tool reads the stored subdomain data from the session and sends the step 2 transaction.
+Call this AFTER step 1 transaction is signed and confirmed.`,
+  parameters: {
+    type: "object",
+    properties: {
+      fullName: {
+        type: "string",
+        description: "Full subdomain name (e.g., 'blog.myname.eth')",
+      },
+    },
+    required: ["fullName"],
+  },
+  execute: async (params, context): Promise<ToolResult> => {
+    const fullName = params.fullName as string;
+
+    try {
+      // Get stored subdomain data from session
+      const { getSession, setSessionPendingAction } =
+        await import("../sessions");
+      const session = await getSession(context.userId, context.threadId);
+
+      if (!session?.currentAction?.data) {
+        return formatError(
+          "No pending subdomain operation found. Please start over with prepare_subdomain.",
+        );
+      }
+
+      const subData = session.currentAction.data;
+
+      if (subData.fullName !== fullName) {
+        return formatError(
+          `Subdomain mismatch. Expected ${subData.fullName}, got ${fullName}.`,
+        );
+      }
+
+      const ownerWallet = subData.ownerWallet as `0x${string}`;
+      const resolveAddress = subData.resolveAddress as `0x${string}`;
+      const isWrapped = subData.isWrapped as boolean;
+      const totalSteps = subData.totalSteps as number;
+
+      console.log(`[complete_subdomain_step2] Setting address for ${fullName}`);
+      console.log(
+        `[complete_subdomain_step2] Wallet: ${ownerWallet}, Resolve to: ${resolveAddress}`,
+      );
+
+      // Build step 2 transaction
+      const subdomainService = getSubdomainService();
+      const step2Tx = subdomainService.buildStep2_SetAddress({
+        fullSubname: fullName,
+        // caller: ownerWallet,
+        resolveAddress: resolveAddress,
+        // isWrapped,
+      });
+
+      const requestId = `subdomain_step2:${context.userId}:${context.threadId}`;
+      const toolId = `tx_subdomain_step2_${generateSafeId()}`;
+
+      // Update session state
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "complete_subdomain_step2",
+          toolId,
+          expectedAction: "subdomain_step2",
+        },
+        {
+          type: "subdomain",
+          step: 2,
+          totalSteps,
+          data: subData,
+        },
+      );
+
+      await context.sendMessage(
+        `**Step 2 of ${totalSteps}:** Sign to set the address record for ${fullName}.`,
+      );
+
+      await context.sendTransaction({
+        id: requestId,
+        title: `Set Address: ${fullName} (Step 2/${totalSteps})`,
+        chainId: "1",
+        to: step2Tx.to,
+        data: step2Tx.data,
+        value: step2Tx.value,
+        signerWallet: ownerWallet,
+      });
+
+      return formatResult(
+        {
+          requestId,
+          toolId,
+          fullName,
+          step: 2,
+          totalSteps,
+          status: "awaiting_step2_signature",
+        },
+        `Transaction sent. Waiting for signature...`,
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "sign_transaction",
+            payload: {
+              actionType: "subdomain_step2",
+              fullName,
+              step: 2,
+              totalSteps,
+            },
+          },
+        },
+      );
+    } catch (error) {
+      console.error("[complete_subdomain_step2] Error:", error);
+      return formatError(
+        `Failed to complete step 2: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    }
+  },
+};
+
+// ============================================================
+// COMPLETE SUBDOMAIN STEP 3 (Transfer Ownership - if needed)
+// ============================================================
+
+export const completeSubdomainStep3Tool: ToolDefinition = {
+  name: "complete_subdomain_step3",
+  description: `Complete subdomain step 3 (transfer ownership) after step 2 is confirmed.
+This is only needed if the recipient is different from the parent domain owner.
+Call this AFTER step 2 transaction is signed and confirmed.`,
+  parameters: {
+    type: "object",
+    properties: {
+      fullName: {
+        type: "string",
+        description: "Full subdomain name (e.g., 'blog.myname.eth')",
+      },
+    },
+    required: ["fullName"],
+  },
+  execute: async (params, context): Promise<ToolResult> => {
+    const fullName = params.fullName as string;
+
+    try {
+      const { getSession, setSessionPendingAction } =
+        await import("../sessions");
+      const session = await getSession(context.userId, context.threadId);
+
+      if (!session?.currentAction?.data) {
+        return formatError(
+          "No pending subdomain operation found. Please start over.",
+        );
+      }
+
+      const subData = session.currentAction.data;
+
+      if (subData.fullName !== fullName) {
+        return formatError(
+          `Subdomain mismatch. Expected ${subData.fullName}, got ${fullName}.`,
+        );
+      }
+
+      const totalSteps = subData.totalSteps as number;
+
+      if (totalSteps !== 3) {
+        return formatError(
+          `Step 3 not needed for this subdomain (only ${totalSteps} steps required).`,
+        );
+      }
+
+      const ownerWallet = subData.ownerWallet as `0x${string}`;
+      const resolveAddress = subData.resolveAddress as `0x${string}`;
+      const isWrapped = subData.isWrapped as boolean;
+
+      console.log(
+        `[complete_subdomain_step3] Transferring ${fullName} to ${resolveAddress}`,
+      );
+
+      // Build step 3 transaction
+      const subdomainService = getSubdomainService();
+      const step3Tx = subdomainService.buildStep3_TransferOwnership({
+        fullSubname: fullName,
+        caller: ownerWallet,
+        recipient: resolveAddress,
+        isWrapped,
+      });
+
+      const requestId = `subdomain_step3:${context.userId}:${context.threadId}`;
+      const toolId = `tx_subdomain_step3_${generateSafeId()}`;
+
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "complete_subdomain_step3",
+          toolId,
+          expectedAction: "subdomain_step3",
+        },
+        {
+          type: "subdomain",
+          step: 3,
+          totalSteps: 3,
+          data: subData,
+        },
+      );
+
+      await context.sendMessage(
+        `**Step 3 of 3:** Sign to transfer ownership of ${fullName} to ${formatAddress(resolveAddress)}.`,
+      );
+
+      await context.sendTransaction({
+        id: requestId,
+        title: `Transfer Ownership: ${fullName} (Step 3/3)`,
+        chainId: "1",
+        to: step3Tx.to,
+        data: step3Tx.data,
+        value: step3Tx.value,
+        signerWallet: ownerWallet,
+      });
+
+      return formatResult(
+        {
+          requestId,
+          toolId,
+          fullName,
+          step: 3,
+          totalSteps: 3,
+          status: "awaiting_step3_signature",
+        },
+        `Transaction sent. Waiting for signature...`,
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "sign_transaction",
+            payload: {
+              actionType: "subdomain_step3",
+              fullName,
+              step: 3,
+              totalSteps: 3,
+            },
+          },
+        },
+      );
+    } catch (error) {
+      console.error("[complete_subdomain_step3] Error:", error);
+      return formatError(
+        `Failed to complete step 3: ${error instanceof Error ? error.message : "Unknown error"}`,
       );
     }
   },
@@ -1029,5 +1323,7 @@ export const writeTools: ToolDefinition[] = [
   prepareRenewalTool,
   prepareTransferTool,
   prepareSubdomainTool,
+  completeSubdomainStep2Tool,
+  completeSubdomainStep3Tool,
   prepareBridgeTool,
 ];
