@@ -140,7 +140,7 @@ export async function getLinkedWallets(
     const walletLinkAddress =
       bot?.client.config.base.chainConfig.addresses.spaceFactory;
 
-    const linkedWallets = (await readContract(bot.viem, {
+    const linkedWallets = (await readContract(baseClient, {
       address: walletLinkAddress as `0x${string}`,
       abi: walletLinkAbi,
       functionName: "getWalletsByRootKey",
