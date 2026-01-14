@@ -1116,7 +1116,11 @@ export const prepareBridgeTool: ToolDefinition = {
           walletAddress,
           status: "awaiting_signature",
         },
-        `Transaction request sent. Waiting for signature...`,
+        `Transaction request sent. Waiting for signature... \n\n
+
+        📢📢 If the transactions UI on Towns shows 'Transaction failed', check your balance and proceed.
+        `,
+
         {
           requiresUserAction: true,
           userAction: {
