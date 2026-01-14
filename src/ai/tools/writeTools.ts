@@ -613,7 +613,9 @@ If recipient is the owner, only 2 transactions needed.`,
         chainId: "1",
         to: step1Tx.to,
         data: step1Tx.data,
-        value: step1Tx.value,
+        value: step1Tx.value
+          ? `0x${BigInt(step1Tx.value).toString(16)}`
+          : "0x0",
         signerWallet: ownership.ownerWallet!,
       });
 
@@ -743,7 +745,9 @@ Call this AFTER step 1 transaction is signed and confirmed.`,
         chainId: "1",
         to: step2Tx.to,
         data: step2Tx.data,
-        value: step2Tx.value,
+        value: step2Tx.value
+          ? `0x${BigInt(step2Tx.value).toString(16)}`
+          : "0x0",
         signerWallet: ownerWallet,
       });
 
@@ -874,7 +878,9 @@ Call this AFTER step 2 transaction is signed and confirmed.`,
         chainId: "1",
         to: step3Tx.to,
         data: step3Tx.data,
-        value: step3Tx.value,
+        value: step3Tx.value
+          ? `0x${BigInt(step3Tx.value).toString(16)}`
+          : "0x0",
         signerWallet: ownerWallet,
       });
 
