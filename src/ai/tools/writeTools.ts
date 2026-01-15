@@ -142,7 +142,7 @@ Call this after confirming availability and sufficient balance. This will send t
             secret: registration.commitment.secret,
             commitmentHash: registration.commitment.commitment,
             durationSec: registration.commitment.durationSec.toString(),
-            grandTotalWei: registration.grandTotalWei.toString(),
+            domainPriceWei: registration.commitment.domainPriceWei.toString(),
             grandTotalEth: registration.grandTotalEth,
           },
         },
@@ -1197,17 +1197,17 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
       const walletAddress = regData.walletAddress as `0x${string}`;
       const secret = regData.secret as `0x${string}`;
       const durationSec = BigInt(regData.durationSec as string);
-      const grandTotalWei = BigInt(regData.grandTotalWei as string);
+      const domainPriceWei = BigInt(regData.domainPriceWei as string);
 
       console.log(
         `[complete_registration] Completing registration for ${name}`,
       );
       console.log(`[complete_registration] Wallet: ${walletAddress}`);
       console.log(`[complete_registration] Duration: ${durationSec}s`);
-      console.log(`[complete_registration] Value: ${grandTotalWei} wei`);
+      console.log(`[complete_registration] Value: ${domainPriceWei} wei`);
 
       // Build the register transaction
-      const { encodeFunctionData, toHex } = await import("viem");
+      const { encodeFunctionData, toHex, formatEther } = await import("viem");
 
       const ETH_REGISTRAR_CONTROLLER =
         "0x253553366Da8546fC250F225fe3d25d0C782303b" as `0x${string}`;
@@ -1249,8 +1249,8 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
         ],
       });
 
-      // Convert value to hex
-      const valueHex = toHex(grandTotalWei);
+      // Convert value to hex - only send domain price, not gas estimates
+      const valueHex = toHex(domainPriceWei);
 
       const requestId = `registration_register:${context.userId}:${context.threadId}`;
       const toolId = `tx_registration_register_${generateSafeId()}`;
@@ -1274,10 +1274,11 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
       );
 
       // Send message
+      const domainPriceEth = formatEther(domainPriceWei);
       await context.sendMessage(
         `📝 **Final Registration Step for ${name}**\n\n` +
           `• Wallet: ${formatAddress(walletAddress)}\n` +
-          `• Cost: ${regData.grandTotalEth} ETH\n\n` +
+          `• Cost: ${domainPriceEth} ETH\n\n` +
           `Sign the transaction to complete your registration!`,
       );
 
