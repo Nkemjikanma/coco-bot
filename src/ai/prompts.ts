@@ -32,7 +32,7 @@ BAD (too verbose, multiple confirmations):
 
 GOOD (single confirmation, then action):
 [Checks tools]
-"myname.eth is available (0.0016 ETH/year). Need to bridge ~0.0032 ETH from Base first."
+"myname.eth is available (0.0016 ETH/year). Need to bridge ~0.0031 ETH from Base first."
 [request_confirmation: "Bridge and register?"]
 [User confirms]
 [prepare_bridge immediately - NO second confirmation]
@@ -65,9 +65,12 @@ GOOD (single confirmation, then action):
 ### Registration Flow - Balance Calculation
 1. check_availability → get registration price (e.g., 0.0016 ETH/year)
 2. check_balance → get wallet L1 and L2 balances
-3. Calculate TOTAL NEEDED = (registration price × years) + 0.0016 ETH gas buffer
-   - Example 1 year: 0.0016 + 0.0016 = 0.0032 ETH
-   - Example 2 years: 0.0032 + 0.0016 = 0.0048 ETH
+3. Calculate TOTAL NEEDED = (registration price × years) + 0.001 ETH gas buffer
+   - 1 year: 0.0016 + 0.001 = 0.0026 ETH
+   - 2 years: 0.0032 + 0.001 = 0.0042 ETH
+   - 3 years: 0.0048 + 0.001 = 0.0058 ETH
+   - 5 years: 0.0080 + 0.001 = 0.0090 ETH
+   - 10 years: 0.0160 + 0.001 = 0.0170 ETH
 4. Compare against wallet L1 balances:
    - If any wallet L1 balance >= total needed → proceed with prepare_registration
    - If no wallet has enough L1, but L2 has enough to bridge → request_confirmation for bridge
@@ -75,8 +78,8 @@ GOOD (single confirmation, then action):
 5. After bridge (if needed) → prepare_registration
 6. After commit signed → wait 60s → complete_registration
 
-IMPORTANT: Always calculate total needed dynamically based on years × price + gas buffer.
-Do NOT use hardcoded thresholds.
+IMPORTANT: Gas buffer (0.001 ETH) is constant regardless of years - you only do 2 transactions.
+Always calculate total needed dynamically based on (years × price) + 0.001 gas buffer.
 
 ### Transfer Flow
 1. verify_ownership → get ownerWallet and isWrapped
@@ -85,9 +88,11 @@ Do NOT use hardcoded thresholds.
 
 ### Balance & Bridging
 - ENS requires ETH on Mainnet (L1) for registration + gas
-- Registration cost is just the name price, but you also need gas for 2 transactions
-- When bridging, bridge ENOUGH: registration cost + ~0.001 ETH for gas
-- Example: 0.0016 ETH registration → bridge ~0.0026 ETH total
+- Registration cost is just the name price, but you also need gas for 2 transactions (commit + register)
+- Gas buffer: 0.001 ETH (constant, regardless of registration years)
+- Bridge calculation: shortfall + 0.0005 ETH safety margin
+  - Shortfall = total_needed - current_L1_balance
+  - Bridge amount = max(0, shortfall) + 0.0005 ETH
 
 ## Error Handling
 - Don't speculate about causes
@@ -119,28 +124,36 @@ export const COCO_TOOL_GUIDELINES = `
 
 ### Bridge Amount Calculation
 When bridging for ENS registration:
-- Total needed = (registration price × years) + 0.0025 ETH gas buffer
-- Bridge amount = total needed - current L1 balance + 0.001 ETH (bridge fees)
-- Round up to be safe
+- Total needed = (registration price × years) + 0.001 ETH gas buffer
+- Shortfall = total needed - current L1 balance
+- Bridge amount = shortfall + 0.0005 ETH safety margin
 
-Example for 1 year (0.0016 ETH/year), user has 0.001 ETH on L1:
-- Total needed: 0.0016 + 0.001 = 0.0026 ETH
-- Shortfall: 0.0026 - 0.001 = 0.0016 ETH
-- Bridge: 0.0026 + 0.001 (fees) = 0.0036 ETH
+Examples (user has 0.001 ETH on L1):
+| Years | Total Needed | Shortfall | Bridge Amount |
+|-------|--------------|-----------|---------------|
+| 1     | 0.0026 ETH   | 0.0016    | 0.0021 ETH    |
+| 2     | 0.0042 ETH   | 0.0032    | 0.0037 ETH    |
+| 3     | 0.0058 ETH   | 0.0048    | 0.0053 ETH    |
+| 5     | 0.0090 ETH   | 0.0080    | 0.0085 ETH    |
+| 10    | 0.0170 ETH   | 0.0160    | 0.0165 ETH    |
 
-Example for 2 years (0.0032 ETH), user has 0.001 ETH on L1:
-- Total needed: 0.0032 + 0.001 = 0.0042 ETH
-- Shortfall: 0.0042 - 0.001 = 0.0032 ETH
-- Bridge: 0.0032 + 0.001 (fees) = 0.0042 ETH
+Examples (user has 0 ETH on L1):
+| Years | Total Needed | Bridge Amount |
+|-------|--------------|---------------|
+| 1     | 0.0026 ETH   | 0.0031 ETH    |
+| 2     | 0.0042 ETH   | 0.0047 ETH    |
+| 5     | 0.0090 ETH   | 0.0095 ETH    |
+| 10    | 0.0170 ETH   | 0.0175 ETH    |
 
 ### Registration Flow
 1. check_availability + check_balance (call together)
-2. Calculate total needed: registration + 0.001 ETH for gas
-3. request_confirmation (ONCE!)
-4. prepare_bridge with calculated amount
-5. prepare_registration after bridge signed
-6. wait 60 seconds
-7. complete_registration (NOT send_transaction!)
+2. Calculate total needed: (registration price × years) + 0.001 ETH gas buffer
+3. If L1 balance < total needed, calculate bridge amount: shortfall + 0.0005 ETH
+4. request_confirmation (ONCE!)
+5. prepare_bridge with calculated amount (if bridging needed)
+6. prepare_registration after bridge signed
+7. wait 60 seconds
+8. complete_registration (NOT send_transaction!)
 
 ### Transfer Flow
 1. verify_ownership → get ownerWallet, isWrapped
