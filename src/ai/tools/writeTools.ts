@@ -1325,6 +1325,122 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
 };
 
 // ============================================================
+// PREPARE SET PRIMARY NAME
+// ============================================================
+
+export const prepareSetPrimaryTool: ToolDefinition = {
+  name: "prepare_set_primary",
+  description: `Set the primary ENS name for a wallet. This is the name that will be displayed when apps look up the wallet address.
+The user must own the ENS name they want to set as primary.
+Call verify_ownership first to confirm the user owns the name.`,
+  parameters: {
+    type: "object",
+    properties: {
+      name: {
+        type: "string",
+        description: "ENS name to set as primary, e.g. 'example.eth'",
+      },
+      ownerWallet: {
+        type: "string",
+        description:
+          "The wallet that owns the domain and will have this as primary name (from verify_ownership result)",
+      },
+    },
+    required: ["name", "ownerWallet"],
+  },
+  execute: async (params, context): Promise<ToolResult> => {
+    const name = params.name as string;
+    const ownerWallet = params.ownerWallet as `0x${string}`;
+
+    try {
+      const { encodeFunctionData } = await import("viem");
+      const {
+        ENS_CONTRACTS,
+        REVERSE_REGISTRAR_ABI,
+      } = await import("../../services/ens/constants");
+
+      // Build the setName transaction
+      const setNameData = encodeFunctionData({
+        abi: REVERSE_REGISTRAR_ABI,
+        functionName: "setName",
+        args: [name],
+      });
+
+      // Generate request ID
+      const requestId = `setprimary:${context.userId}:${context.threadId}`;
+      const toolId = `tx_setprimary_${generateSafeId()}`;
+
+      // Store pending action
+      const { setSessionPendingAction } = await import("../sessions");
+      await setSessionPendingAction(
+        context.userId,
+        context.threadId,
+        {
+          toolName: "prepare_set_primary",
+          toolId,
+          expectedAction: "setprimary",
+        },
+        {
+          type: "setprimary" as any,
+          step: 1,
+          totalSteps: 1,
+          data: {
+            name,
+            ownerWallet,
+          },
+        },
+      );
+
+      // Send message
+      await context.sendMessage(
+        `📝 **Set Primary Name**\n\n` +
+          `• Name: ${name}\n` +
+          `• Wallet: ${formatAddress(ownerWallet)}\n\n` +
+          `After signing, your wallet address will display as **${name}** in apps and wallets.`,
+      );
+
+      // Send the transaction
+      await context.sendTransaction({
+        id: requestId,
+        title: `Set ${name} as Primary`,
+        chainId: "1",
+        to: ENS_CONTRACTS.REVERSE_REGISTRAR,
+        data: setNameData,
+        value: "0x0",
+        signerWallet: ownerWallet,
+      });
+
+      return formatResult(
+        {
+          name,
+          ownerWallet,
+          requestId,
+          toolId,
+          status: "awaiting_signature",
+        },
+        `Transaction request sent! Waiting for user to sign...`,
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "sign_transaction",
+            payload: {
+              actionType: "setprimary",
+              name,
+              ownerWallet,
+            },
+          },
+        },
+      );
+    } catch (error) {
+      console.error("[prepare_set_primary] Error:", error);
+      return formatError(
+        `Failed to prepare set primary: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    }
+  },
+};
+
+// ============================================================
 // EXPORT ALL WRITE TOOLS
 // ============================================================
 
@@ -1337,4 +1453,5 @@ export const writeTools: ToolDefinition[] = [
   completeSubdomainStep2Tool,
   completeSubdomainStep3Tool,
   prepareBridgeTool,
+  prepareSetPrimaryTool,
 ];

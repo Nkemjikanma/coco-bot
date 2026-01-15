@@ -31,12 +31,13 @@ const cocoCommands = [
   "portfolio",
   "expiry",
   "history",
+  "setprimary",
   // "remind",
   // "watch",
   "stats",
 ] as const;
 
-const writeCommands = ["register", "renew", "transfer", "subdomain"];
+const writeCommands = ["register", "renew", "transfer", "subdomain", "setprimary"];
 
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {

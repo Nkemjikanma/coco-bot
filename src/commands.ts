@@ -23,6 +23,7 @@ const commands = [
   { name: "portfolio", description: "Check wallet ens portfolio" },
   { name: "expiry", description: "Check ENS expiry" },
   { name: "history", description: "Check ENS address history" },
+  { name: "setprimary", description: "Set primary ENS name for your wallet" },
   // { name: "remind", description: "Set ENS renewal reminder" },
   // { name: "watch", description: "Watch for when name becomes available" },
   // { name: "test_bridge", description: "Test out bridge" },

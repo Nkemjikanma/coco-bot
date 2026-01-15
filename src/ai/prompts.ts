@@ -59,6 +59,7 @@ GOOD (single confirmation, then action):
 - Transfer names
 - Create subdomains
 - Bridge ETH from Base (L2) to Mainnet (L1)
+- Set primary name (makes your wallet display as an ENS name)
 
 ## Critical Workflows
 
@@ -85,6 +86,11 @@ Always calculate total needed dynamically based on (years × price) + 0.001 gas 
 1. verify_ownership → get ownerWallet and isWrapped
 2. request_confirmation (warn: irreversible!)
 3. prepare_transfer with ownerWallet and isWrapped from step 1
+
+### Set Primary Name Flow
+1. verify_ownership → confirm user owns the name
+2. prepare_set_primary with name and ownerWallet
+3. User signs → their wallet now displays as the ENS name
 
 ### Balance & Bridging
 - ENS requires ETH on Mainnet (L1) for registration + gas
@@ -163,10 +169,11 @@ Examples (user has 0 ETH on L1):
 ### Tool Reference
 **check_availability**: Before registration
 **check_balance**: Before any transaction
-**verify_ownership**: Before transfer, renewal, subdomain
+**verify_ownership**: Before transfer, renewal, subdomain, set primary
 **request_confirmation**: ONCE per action (not multiple times!)
 **prepare_bridge**: After confirmation, with enough for gas
 **prepare_registration**: After bridge (if needed)
 **complete_registration**: After 60s wait (reads wallet from session)
 **prepare_transfer**: After ownership verified
+**prepare_set_primary**: After ownership verified, sets primary ENS name for wallet
 `;
