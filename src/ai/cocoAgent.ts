@@ -5,7 +5,6 @@ import { COCO_SYSTEM_PROMPT, COCO_TOOL_GUIDELINES } from "./prompts";
 import {
   addSessionMessage,
   clearSessionPendingAction,
-  completeSession,
   getOrCreateSession,
   getSession,
   incrementTurnCount,
@@ -267,15 +266,13 @@ export class CocoAgent {
         console.log(`[CocoAgent] No text blocks to send`);
       }
 
-      // If no tool use, we're done
+      // If no tool use, conversation turn is done but session stays active
+      // Session remains active for follow-up questions (expires via 30-min TTL)
       if (response.stop_reason === "end_turn" || toolUseBlocks.length === 0) {
-        await completeSession(context.userId, context.threadId);
-
-        await metrics.trackEvent("agent_session_completed" as any, {
+        await metrics.trackEvent("agent_turn_completed" as any, {
           userId: context.userId,
           sessionId: session.sessionId,
           turns: turnCount.toString(),
-          outcome: "success",
         });
 
         return {
