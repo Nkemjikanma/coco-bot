@@ -158,6 +158,13 @@ The agent will pause and wait for the user to sign or reject the transaction.`,
           actionType,
         },
         `📤 Transaction sent for signing. Waiting for user to approve...`,
+        {
+          requiresUserAction: true,
+          userAction: {
+            type: "sign_transaction",
+            payload: { toolId, requestId, actionType },
+          },
+        },
       );
     } catch (error) {
       return formatError(
