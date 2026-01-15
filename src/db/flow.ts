@@ -5,6 +5,7 @@ import type {
   FlowStatus,
   FlowType,
   RegistrationFlow,
+  RenewFlow,
   SubdomainFlow,
   TransferFlow,
 } from "./flow.types";
@@ -24,6 +25,10 @@ export function isSubdomainFlow(flow: ActiveFlow): flow is SubdomainFlow {
 
 export function isTransferFlow(flow: ActiveFlow): flow is TransferFlow {
   return flow.type === "transfer";
+}
+
+export function isRenewFlow(flow: ActiveFlow): flow is RenewFlow {
+  return flow.type === "renew";
 }
 
 // ============ Constants ============

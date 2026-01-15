@@ -1,4 +1,5 @@
 import { type Address, formatEther } from "viem";
+import type { PendingRegistration } from "../types";
 import {
   daysFromNow,
   formatAddress,
@@ -11,8 +12,6 @@ import type {
   NameCheckData,
   PortfolioData,
 } from "./types";
-
-import { PendingRegistration } from "../types";
 export function formatCheckResponse(data: NameCheckData): string {
   const { values } = data;
 

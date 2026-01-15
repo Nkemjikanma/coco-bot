@@ -1,4 +1,9 @@
-export type FlowType = "registration" | "bridge" | "subdomain" | "transfer";
+export type FlowType =
+  | "registration"
+  | "bridge"
+  | "subdomain"
+  | "transfer"
+  | "renew";
 
 export type FlowStatus =
   | "initiated" // Flow started, waiting for first action
@@ -11,13 +16,17 @@ export type FlowStatus =
   | "step3_pending" //Step 3, transafer subdomain
   | "complete" // All done
   | "failed" // Something went wrong
-  | "awaiting_confirmation";
+  | "awaiting_confirmation"
+  // Renew specific
+  | "renew_failed"
+  | "renew_pending";
 
 export type ActiveFlow =
   | RegistrationFlow
   | BridgeFlow
   | SubdomainFlow
-  | TransferFlow;
+  | TransferFlow
+  | RenewFlow;
 
 export interface RegistrationFlowData {
   // Name being registered
@@ -138,6 +147,22 @@ export interface TransferFlowData {
   contract?: "registry" | "nameWrapper" | "registrar";
 }
 
+export interface RenewFlowData {
+  name: string;
+  labelName: string; // Without .eth
+  durationYears: number;
+  durationSeconds: bigint;
+  totalCostWei: bigint;
+  totalCostEth: string;
+  recommendedValueWei: bigint;
+  recommendedValueEth: string;
+  currentExpiry: Date | string;
+  newExpiry: Date | string;
+  ownerWallet: `0x${string}`;
+  isWrapped: boolean;
+  txHash?: `0x${string}`;
+}
+
 // ============ Base Flow Interface ============
 interface BaseFlow {
   // Identity
@@ -173,4 +198,9 @@ export interface SubdomainFlow extends BaseFlow {
 export interface TransferFlow extends BaseFlow {
   type: "transfer";
   data: TransferFlowData;
+}
+
+export interface RenewFlow extends BaseFlow {
+  type: "renew";
+  data: RenewFlowData;
 }

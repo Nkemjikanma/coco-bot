@@ -1,19 +1,11 @@
-import { BotHandler, getSmartAccountFromUserId } from "@towns-protocol/bot";
+import { getSmartAccountFromUserId } from "@towns-protocol/bot";
 import walletLinkAbi from "@towns-protocol/generated/dev/abis/WalletLink.abi";
-import { CHAIN_IDS, BalanceCheckResult } from "./services/bridge";
-import {
-  createPublicClient,
-  http,
-  formatEther,
-  parseEther,
-  encodeFunctionData,
-  parseEventLogs,
-  isAddress,
-} from "viem";
-import { mainnet, base } from "viem/chains";
-import { CocoBotType, EOAWalletCheckResult, WalletBalanceInfo } from "./types";
+import { createPublicClient, formatEther, http, isAddress } from "viem";
 import { readContract } from "viem/actions";
+import { base, mainnet } from "viem/chains";
 import { bot } from "./bot";
+import { type BalanceCheckResult, CHAIN_IDS } from "./services/bridge";
+import type { EOAWalletCheckResult, WalletBalanceInfo } from "./types";
 
 const ethereumClient = createPublicClient({
   chain: mainnet,
@@ -22,7 +14,7 @@ const ethereumClient = createPublicClient({
 
 const baseClient = createPublicClient({
   chain: base,
-  transport: http(`https://mainnet.base.org`),
+  transport: http(process.env.BASE_RPC_URL),
 });
 
 /**
@@ -86,10 +78,18 @@ export function formatDate(date: Date | string | number | bigint): string {
   return new Date(date).toDateString();
 }
 
-export function formatExpiryDate(expiryDate: string): string {
+export function formatExpiryDate(expiryDate: string | Date): string {
   try {
-    const timestamp = BigInt(expiryDate);
-    const date = new Date(Number(timestamp) * 1000);
+    let date: Date;
+
+    if (expiryDate instanceof Date) {
+      date = expiryDate;
+    } else {
+      // Handle string timestamp (Unix seconds)
+      const timestamp = BigInt(expiryDate);
+      date = new Date(Number(timestamp) * 1000);
+    }
+
     return date.toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
@@ -140,7 +140,7 @@ export async function getLinkedWallets(
     const walletLinkAddress =
       bot?.client.config.base.chainConfig.addresses.spaceFactory;
 
-    const linkedWallets = (await readContract(bot.viem, {
+    const linkedWallets = (await readContract(baseClient, {
       address: walletLinkAddress as `0x${string}`,
       abi: walletLinkAbi,
       functionName: "getWalletsByRootKey",
@@ -171,19 +171,16 @@ export async function filterEOAs(userId: `0x${string}`) {
  */
 export async function checkAllEOABalances(
   userId: `0x${string}`,
-  requiredAmount: bigint,
+  requiredAmount?: bigint, // Make optional with ?
 ): Promise<EOAWalletCheckResult> {
   const eoas = await filterEOAs(userId);
-
   const walletBalances: WalletBalanceInfo[] = await Promise.all(
     eoas.map(async (address) => {
       const [l1Balance, l2Balance] = await Promise.all([
         checkBalance(address, CHAIN_IDS.MAINNET),
         checkBalance(address, CHAIN_IDS.BASE),
       ]);
-
       const totalBalance = l1Balance.balance + l2Balance.balance;
-
       return {
         address,
         l1Balance: l1Balance.balance,
@@ -200,30 +197,33 @@ export async function checkAllEOABalances(
   const sortedByL1 = [...walletBalances].sort((a, b) =>
     Number(b.l1Balance - a.l1Balance),
   );
-
   // Sort by L2 balance (descending) - for bridge candidates
   const sortedByL2 = [...walletBalances].sort((a, b) =>
     Number(b.l2Balance - a.l2Balance),
   );
 
-  // Find wallet with sufficient L1 balance
-  const walletWithSufficientL1 = sortedByL1.find(
-    (w) => w.l1Balance >= requiredAmount,
-  );
+  // Only check sufficient balance if requiredAmount is provided
+  let walletWithSufficientL1 = null;
+  let walletWithSufficientL2 = null;
 
-  // Find wallet with sufficient L2 balance for bridging
-  // Add buffer for bridge fees (~5%)
-  const bridgeBuffer = (requiredAmount * 105n) / 100n;
-  const walletWithSufficientL2 = sortedByL2.find(
-    (w) => w.l2Balance >= bridgeBuffer,
-  );
+  if (requiredAmount !== undefined) {
+    // Find wallet with sufficient L1 balance
+    walletWithSufficientL1 =
+      sortedByL1.find((w) => w.l1Balance >= requiredAmount) || null;
+
+    // Find wallet with sufficient L2 balance for bridging
+    // Add buffer for bridge fees (~5%)
+    const bridgeBuffer = (requiredAmount * 105n) / 100n;
+    walletWithSufficientL2 =
+      sortedByL2.find((w) => w.l2Balance >= bridgeBuffer) || null;
+  }
 
   return {
     wallets: walletBalances,
     hasWalletWithSufficientL1: !!walletWithSufficientL1,
     hasWalletWithSufficientL2ForBridge: !!walletWithSufficientL2,
-    bestWalletForL1: walletWithSufficientL1 || null,
-    bestWalletForBridge: walletWithSufficientL2 || null,
+    bestWalletForL1: walletWithSufficientL1,
+    bestWalletForBridge: walletWithSufficientL2,
   };
 }
 

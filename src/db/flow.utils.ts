@@ -6,6 +6,7 @@ import type {
   FlowStatus,
   RegistrationFlow,
   RegistrationFlowData,
+  RenewFlow,
   SubdomainFlow,
   SubdomainFlowData,
   TransferFlow,
@@ -89,6 +90,28 @@ export function createTransferFlow(params: {
 }): TransferFlow {
   return {
     type: "transfer",
+    userId: params.userId,
+    threadId: params.threadId,
+    channelId: params.channelId,
+    status: params.status,
+    data: params.data,
+    startedAt: Date.now(),
+    updatedAt: Date.now(),
+  };
+}
+
+/**
+ * Create a new renew flow
+ */
+export function createRenewFlow(params: {
+  userId: string;
+  threadId: string;
+  channelId: string;
+  status: FlowStatus;
+  data: RenewFlow["data"];
+}): RenewFlow {
+  return {
+    type: "renew",
     userId: params.userId,
     threadId: params.threadId,
     channelId: params.channelId,

@@ -1,18 +1,48 @@
-import { coco_parser, handleQuestionCommand } from "./parser";
-import { validate_parse } from "./validators";
-import { fill_prompt } from "./prompts";
-import {
-  ENS_KNOWLEDGE,
-  getKnowledgeAnswer,
-  GENERAL_QUESTION_PROMPT,
-} from "./knowledge";
-
 export {
-  coco_parser,
-  validate_parse,
-  getKnowledgeAnswer,
-  ENS_KNOWLEDGE,
-  GENERAL_QUESTION_PROMPT,
-  fill_prompt,
-  handleQuestionCommand,
-};
+  CocoAgent,
+  createAgentContext,
+  getCocoAgent,
+  resumeCocoAgent,
+  runCocoAgent,
+} from "./cocoAgent";
+// System prompt
+export { COCO_SYSTEM_PROMPT, COCO_TOOL_GUIDELINES } from "./prompts";
+// Session management
+export {
+  addSessionMessage,
+  clearSession,
+  clearSessionPendingAction,
+  completeSession,
+  createAgentSession,
+  getOrCreateSession,
+  getSession,
+  getSessionForTransaction,
+  incrementTurnCount,
+  isAwaitingUserAction,
+  saveSession,
+  setSessionPendingAction,
+  updateSessionCost,
+  updateSessionStatus,
+} from "./sessions";
+// Tools
+export {
+  actionTools,
+  allTools,
+  getTool,
+  readTools,
+  toAnthropicTools,
+  toolMap,
+  toolNames,
+  writeTools,
+} from "./tools";
+// Context and types
+export type {
+  AgentActionType,
+  AgentContext,
+  AgentMessage,
+  AgentSession,
+  AgentSessionStatus,
+  ToolDefinition,
+  ToolResult,
+  TransactionRequest,
+} from "./types";

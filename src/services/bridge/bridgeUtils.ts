@@ -1,18 +1,17 @@
+import type { BotHandler } from "@towns-protocol/bot";
 import { formatEther, parseEther } from "viem";
-import { BotHandler } from "@towns-protocol/bot";
-import { PendingRegistration, RegisterCommand } from "../../types";
-import { CHAIN_IDS } from "./bridgeConstants";
-import { getBridgeQuoteAndTx } from "./bridge";
-import { checkBalance } from "../../utils";
-import { sendBotMessage } from "../../handlers";
 import {
   clearActiveFlow,
   clearUserPendingCommand,
-  RegistrationFlowData,
+  type RegistrationFlowData,
   updateFlowData,
   updateFlowStatus,
 } from "../../db";
 import { prepareRegistration } from "../../services/ens";
+import type { RegisterCommand } from "../../types";
+import { checkBalance } from "../../utils";
+import { getBridgeQuoteAndTx } from "./bridge";
+import { CHAIN_IDS } from "./bridgeConstants";
 
 export async function handleBridging(
   handler: BotHandler,
@@ -25,13 +24,9 @@ export async function handleBridging(
 ) {
   const baseBalanceCheck = await checkBalance(userWallet, CHAIN_IDS.BASE);
 
-  await sendBotMessage(
-    handler,
-    channelId,
+  await handler.sendMessage(channelId, `Getting bridge quote...`, {
     threadId,
-    userId,
-    `Getting bridge quote...`,
-  );
+  });
 
   try {
     // Check BOTH that commitment exists AND owner matches selected wallet
@@ -84,12 +79,12 @@ export async function handleBridging(
           "handleBridging: Error preparing registration:",
           prepError,
         );
-        await sendBotMessage(
-          handler,
+        await handler.sendMessage(
           channelId,
-          threadId,
-          userId,
           `❌ Failed to prepare registration. Please try again.`,
+          {
+            threadId,
+          },
         );
         await clearActiveFlow(userId, threadId);
         await clearUserPendingCommand(userId);
@@ -128,12 +123,12 @@ export async function handleBridging(
     );
 
     if (quote.isAmountTooLow) {
-      await sendBotMessage(
-        handler,
+      await handler.sendMessage(
         channelId,
-        threadId,
-        userId,
         `❌ Amount too low for bridging. Minimum: ${formatEther(BigInt(quote.limits.minDeposit))} ETH \n\n`,
+        {
+          threadId,
+        },
       );
       // ✅ Only need clearActiveFlow - no separate clearBridge
       await clearActiveFlow(userId, threadId);
@@ -146,16 +141,14 @@ export async function handleBridging(
 
     // Validate output amount covers registration cost
     if (outputAmount < registration.grandTotalWei) {
-      await sendBotMessage(
-        handler,
+      await handler.sendMessage(
         channelId,
-        threadId,
-        userId,
         `❌ **Bridge fees too high**\n\n` +
           `After bridge fees of ${formatEther(bridgeFeeWei)} ETH, ` +
           `you would only receive ${formatEther(outputAmount)} ETH on Mainnet.\n\n` +
           `This is not enough to cover the registration cost of ${registration.grandTotalEth} ETH.\n\n` +
           `Please fund your Mainnet wallet directly or wait for lower fees.\n\n`,
+        { threadId },
       );
       await clearActiveFlow(userId, threadId);
       await clearUserPendingCommand(userId);
@@ -168,11 +161,8 @@ export async function handleBridging(
 
     if (baseBalanceCheck.balance < totalNeededOnBase) {
       const shortfall = totalNeededOnBase - baseBalanceCheck.balance;
-      await sendBotMessage(
-        handler,
+      await handler.sendMessage(
         channelId,
-        threadId,
-        userId,
         `❌ **Insufficient funds on Base**\n\n` +
           `**Required on Base:**\n\n` +
           `• Amount to bridge: ${formatEther(amountToBridge)} ETH\n\n` +
@@ -180,7 +170,11 @@ export async function handleBridging(
           `• **Total needed:** ${formatEther(totalNeededOnBase)} ETH\n\n` +
           `**Your Base balance:** ${baseBalanceCheck.balanceEth} ETH\n\n` +
           `**Shortfall:** ${formatEther(shortfall)} ETH \n\n`,
+        {
+          threadId,
+        },
       );
+
       // ✅ Only need clearActiveFlow - handles everything
       await clearActiveFlow(userId, threadId);
       await clearUserPendingCommand(userId);
@@ -188,11 +182,8 @@ export async function handleBridging(
     }
 
     // Show bridge details
-    await sendBotMessage(
-      handler,
+    await handler.sendMessage(
       channelId,
-      threadId,
-      userId,
       `🌉 **Bridge Required**\n\n` +
         `**Registration needs:** ${registration.grandTotalEth} ETH on Mainnet\n\n` +
         `**Bridge Details:**\n` +
@@ -202,6 +193,7 @@ export async function handleBridging(
         `• Estimated time: ~${quote.estimatedFillTimeSec} seconds\n\n` +
         `⚠️ **Note:** The domain might be taken during bridging.\n\n` +
         `Approve the bridge transaction to continue... \n\n`,
+      { threadId },
     );
 
     // ✅ Update flow status to awaiting bridge
@@ -231,12 +223,10 @@ export async function handleBridging(
     return;
   } catch (error) {
     console.error("Bridge error:", error);
-    await sendBotMessage(
-      handler,
+    await handler.sendMessage(
       channelId,
-      threadId,
-      userId,
       `❌ Failed to get bridge quote. Please try again later.`,
+      { threadId },
     );
     // ✅ Only need clearActiveFlow - no separate clearBridge
     await clearActiveFlow(userId, threadId);

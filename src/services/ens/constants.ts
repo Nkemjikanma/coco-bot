@@ -5,6 +5,7 @@ export const ENS_CONTRACTS = {
   ENS_REGISTRY: "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e" as const,
   ENS_NAMEWRAPPER: "0xD4416b13d2b3a9aBae7AcdBB3092D31d512a2C71" as const,
   PUBLIC_RESOLVER: "0x231b0Ee14048e9dCcD1d247744d114a4EB5E8E63" as const,
+  REVERSE_REGISTRAR: "0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb" as const,
   // Mainnet ENS Subgraph endpoint (legacy endpoint - free, no API key required)
   SUBGRAPH_URL:
     "https://api.thegraph.com/subgraphs/name/ensdomains/ens" as const,
@@ -64,6 +65,16 @@ export const CONTROLLER_ABI = [
     stateMutability: "view",
     inputs: [{ name: "name", type: "string" }],
     outputs: [{ type: "bool" }],
+  },
+  {
+    name: "renew",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [
+      { name: "name", type: "string" },
+      { name: "duration", type: "uint256" },
+    ],
+    outputs: [],
   },
   {
     name: "rentPrice",
@@ -287,6 +298,17 @@ export const NAME_WRAPPER_TRANSFER_ABI = [
       { name: "data", type: "bytes" },
     ],
     outputs: [],
+    stateMutability: "nonpayable",
+  },
+] as const;
+
+// Reverse Registrar - for setting primary ENS name
+export const REVERSE_REGISTRAR_ABI = [
+  {
+    name: "setName",
+    type: "function",
+    inputs: [{ name: "name", type: "string" }],
+    outputs: [{ name: "", type: "bytes32" }],
     stateMutability: "nonpayable",
   },
 ] as const;
