@@ -1244,7 +1244,7 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
           secret,
           PUBLIC_RESOLVER,
           [], // No resolver data
-          true, // Set reverse record
+          false, // reverseRecord - MUST match prepareRegistration commitment
           0, // No fuses
         ],
       });
