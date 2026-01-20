@@ -39,13 +39,6 @@ export function daysFromNow(date: Date): number {
 }
 
 /**
- * Formats ETH price to 4 decimal places
- */
-export function formatPrice(priceEth: string): string {
-  return Number(priceEth).toFixed(4);
-}
-
-/**
  * Formats a given date
  * @param date
  * @returns
@@ -287,15 +280,3 @@ export function extractRecipientAddress(content: string): `0x${string}` | null {
     ? (anyAddress[0] as `0x${string}`)
     : null;
 }
-
-export const PORTFOLIO_SELF_KEYWORDS = [
-  "my wallets",
-  "my portfolio",
-  "my ens",
-  "my names",
-  "my domains",
-  "what do i own",
-  "what do i have",
-  "show me my",
-  "find in my",
-];

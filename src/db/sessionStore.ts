@@ -62,11 +62,6 @@ export async function updateSession(
   return updated;
 }
 
-export async function deleteSession(id: string): Promise<void> {
-  const key = SESSION_PREFIX + id;
-  await client.del(key);
-}
-
 export async function appendMessageToSession(
   threadId: string,
   userId: string,
@@ -126,50 +121,4 @@ export async function sessionExists(threadId: string): Promise<boolean> {
   const key = SESSION_PREFIX + threadId;
   const exists = await client.exists(key);
   return exists === 1;
-}
-
-/**
- * Get all active sessions for a user (optional, useful for debugging)
- */
-export async function getUserSessions(userId: string): Promise<Session[]> {
-  const pattern = SESSION_PREFIX + "*";
-  const keys = await client.keys(pattern);
-
-  const sessions: Session[] = [];
-
-  for (const key of keys) {
-    const data = await client.hGetAll(key);
-    if (data.userId === userId) {
-      sessions.push({
-        threadId: data.threadId,
-        userId: data.userId,
-        lastMessageAt: Number(data.lastMessageAt),
-        messages: JSON.parse(data.messages || "[]"),
-      });
-    }
-  }
-
-  return sessions;
-}
-
-/**
- * Clear all expired sessions - Not sure when but if we need to
- */
-export async function cleanupExpiredSessions(): Promise<number> {
-  const pattern = SESSION_PREFIX + "*";
-  const keys = await client.keys(pattern);
-
-  const now = Date.now();
-  let deleted = 0;
-
-  for (const key of keys) {
-    const ttl = await client.ttl(key);
-    if (ttl === -1 || ttl === -2) {
-      // No TTL or already expired
-      await client.del(key);
-      deleted++;
-    }
-  }
-
-  return deleted;
 }

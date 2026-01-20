@@ -33,7 +33,6 @@ export interface UserPreferences {
 
 const USER_STATE_PREFIX = "user:";
 const USER_STATE_TTL = 60 * 60 * 24 * 7; // 7 days
-const PENDING_COMMAND_TTL = 60 * 15;
 
 export async function getUserState(userId: string): Promise<UserState | null> {
   const key = USER_STATE_PREFIX + userId;
@@ -152,55 +151,6 @@ export async function clearUserPendingCommand(userId: string): Promise<void> {
   }
 }
 
-export async function hasPendingCommandElsewhere(
-  userId: string,
-  currentThreadId: string,
-): Promise<{
-  hasPending: boolean;
-  pendingThreadId?: string;
-  pendingCommand?: PendingCommand;
-}> {
-  const state = await getUserState(userId);
-
-  if (!state?.pendingCommand) {
-    return { hasPending: false };
-  }
-
-  // Check if pending command is expired (older than 15 minutes)
-  const age = Date.now() - state.pendingCommand.createdAt;
-  if (age > PENDING_COMMAND_TTL * 1000) {
-    // Expired - clear it
-    await clearUserPendingCommand(userId);
-    return { hasPending: false };
-  }
-
-  // Check if it's in a different thread
-  if (state.activeThreadId && state.activeThreadId !== currentThreadId) {
-    return {
-      hasPending: true,
-      pendingThreadId: state.activeThreadId,
-      pendingCommand: state.pendingCommand,
-    };
-  }
-
-  return { hasPending: false };
-}
-
-export async function movePendingCommandToThread(
-  userId: string,
-  newThreadId: string,
-  newChannelId: string,
-): Promise<void> {
-  const state = await getUserState(userId);
-
-  if (state) {
-    state.activeThreadId = newThreadId;
-    state.activeChannelId = newChannelId;
-    state.lastActiveAt = Date.now();
-    await saveUserState(state);
-  }
-}
-
 export async function updateUserPreferences(
   userId: string,
   preferences: Partial<UserPreferences>,
@@ -223,22 +173,9 @@ export async function updateUserPreferences(
   }
 }
 
-export async function getUserDefaultDuration(
-  userId: string,
-): Promise<number | undefined> {
-  const state = await getUserState(userId);
-  return state?.preferences?.defaultDuration;
-}
-
 export async function deleteUserState(userId: string): Promise<void> {
   const key = USER_STATE_PREFIX + userId;
   await client.del(key);
-}
-
-export async function userExists(userId: string): Promise<boolean> {
-  const key = USER_STATE_PREFIX + userId;
-  const exists = await client.exists(key);
-  return exists === 1;
 }
 
 export function describePendingCommand(pending: PendingCommand): string {

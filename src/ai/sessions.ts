@@ -206,25 +206,6 @@ export async function updateSessionCost(
 }
 
 /**
- * Complete session
- */
-export async function completeSession(
-  userId: string,
-  threadId: string,
-  finalCost?: number,
-): Promise<void> {
-  const session = await getSession(userId, threadId);
-  if (!session) return;
-
-  session.status = "complete";
-  if (finalCost !== undefined) {
-    session.estimatedCost = finalCost;
-  }
-  session.lastActivityAt = Date.now();
-  await saveSession(session);
-}
-
-/**
  * Clear session (delete from Redis)
  */
 export async function clearSession(
@@ -254,20 +235,4 @@ export async function isAwaitingUserAction(
     session.status === "awaiting_signature" ||
     session.status === "awaiting_confirmation"
   );
-}
-
-/**
- * Get session for transaction callback
- * Searches by userId and requestId pattern
- */
-export async function getSessionForTransaction(
-  userId: string,
-  requestId: string,
-): Promise<AgentSession | null> {
-  // Request ID format: "action_type:userId:threadId"
-  const parts = requestId.split(":");
-  if (parts.length < 3) return null;
-
-  const threadId = parts[2];
-  return getSession(userId, threadId);
 }

@@ -1,11 +1,8 @@
-import { spokePoolAbiV3 } from "@across-protocol/app-sdk/dist/abis/SpokePool/v3.js";
 import {
   createPublicClient,
-  encodeFunctionData,
   formatEther,
   http,
   parseEther,
-  parseEventLogs,
 } from "viem";
 import { base, mainnet } from "viem/chains";
 import {
@@ -18,7 +15,6 @@ import {
 import type {
   BalanceCheckResult,
   BridgeQuote,
-  BridgeStatusResponse,
   SwapApprovalResponse,
 } from "./types";
 
@@ -155,105 +151,5 @@ export async function getBridgeQuoteAndTx(
   } catch (error) {
     console.error("Error getting bridge quote from Swap API:", error);
     throw error;
-  }
-}
-
-/**
- * Poll Across API to check bridge status
- */
-export async function pollBridgeStatus(
-  depositTxHash: string,
-  callback: (status: BridgeStatusResponse) => void,
-  maxWaitMs: number = BRIDGE_CONFIG.MAX_BRIDGE_WAIT_MS,
-): Promise<void> {
-  const startTime = Date.now();
-  const pollInterval = BRIDGE_CONFIG.POLL_INTERVAL_MS;
-
-  const poll = async (): Promise<void> => {
-    try {
-      // Use depositTxnRef instead of depositId for easier tracking
-      const response = await fetch(
-        `${ACROSS_API_URL}/deposit/status?depositTxnRef=${depositTxHash}`,
-      );
-
-      if (!response.ok) {
-        console.error(`Bridge status check failed: ${response.statusText}`);
-        if (Date.now() - startTime < maxWaitMs) {
-          setTimeout(poll, pollInterval);
-        }
-        return;
-      }
-
-      const data: BridgeStatusResponse = await response.json();
-
-      if (data.status === "filled") {
-        callback(data);
-        return;
-      }
-
-      if (data.status === "expired") {
-        callback(data);
-        return;
-      }
-
-      // Still pending, continue polling
-      if (Date.now() - startTime < maxWaitMs) {
-        setTimeout(poll, pollInterval);
-      } else {
-        callback({ status: "pending" });
-      }
-    } catch (error) {
-      console.error("Error polling bridge status:", error);
-      if (Date.now() - startTime < maxWaitMs) {
-        setTimeout(poll, pollInterval);
-      }
-    }
-  };
-
-  poll();
-}
-
-/**
- * Calculate the amount of ETH needed on Mainnet for ENS registration
- * Includes registration cost + estimated gas + buffer
- */
-export function calculateRequiredMainnetETH(
-  registrationCostWei: bigint,
-  gasBufferPercentage: number = BRIDGE_CONFIG.GAS_BUFFER_PERCENTAGE,
-): bigint {
-  const estimatedGas = parseEther("0.01");
-  const total = registrationCostWei + estimatedGas;
-  const buffer = (total * BigInt(gasBufferPercentage)) / 100n;
-  return total + buffer;
-}
-
-/**
- * Extract deposit ID from a bridge transaction receipt
- */
-export async function extractDepositId(
-  txHash: `0x${string}`,
-  chainId: number,
-): Promise<string | null> {
-  try {
-    const client = chainId === CHAIN_IDS.BASE ? baseClient : mainnetClient;
-    const receipt = await client.getTransactionReceipt({ hash: txHash });
-
-    const parsedLogs = parseEventLogs({
-      abi: spokePoolAbiV3,
-      eventName: "V3FundsDeposited",
-      logs: receipt.logs,
-    });
-
-    const depositEvent = parsedLogs?.[0];
-
-    if (!depositEvent) {
-      console.error("No V3FundsDeposited event found in transaction logs");
-      return null;
-    }
-
-    return depositEvent.args.depositId.toString();
-  } catch (error) {
-    console.error("Error extracting deposit ID:", error);
-    return null;
   }
 }

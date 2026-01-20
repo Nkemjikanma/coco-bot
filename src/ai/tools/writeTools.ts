@@ -8,7 +8,6 @@ import { getRenewService } from "../../services/ens/renew/renew";
 import { getSubdomainService } from "../../services/ens/subdomain/subdomain";
 import { verifyOwnership } from "../../services/ens/utils";
 import { checkAllEOABalances, filterEOAs, formatAddress } from "../../utils";
-import { getSessionForTransaction } from "../sessions";
 import type { AgentContext, ToolDefinition, ToolResult } from "../types";
 
 /**
