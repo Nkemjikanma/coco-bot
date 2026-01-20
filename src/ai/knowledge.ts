@@ -7,7 +7,7 @@ import type { QuestionType } from "../types";
 // For "general" questions, we'll use Claude to generate answers.
 
 export const ENS_KNOWLEDGE: Record<Exclude<QuestionType, "general">, string> = {
-  pricing: `💰 **ENS Pricing**
+	pricing: `💰 **ENS Pricing**
 
 The yearly cost depends on the name length:
 
@@ -19,7 +19,7 @@ Plus you'll pay gas fees for the transaction (varies with network activity).
 
 _Tip: Longer names are much cheaper! A 5-letter name for 10 years costs only $50 + gas._`,
 
-  duration: `📅 **ENS Registration Duration**
+	duration: `📅 **ENS Registration Duration**
 
 • **Minimum:** 1 year
 • **Maximum:** No limit! (but most interfaces cap at 10 years)
@@ -31,7 +31,7 @@ _Tip: Longer names are much cheaper! A 5-letter name for 10 years costs only $50
 
 _Tip: Registering for multiple years saves on gas fees since you only pay once!_`,
 
-  records: `📋 **ENS Records**
+	records: `📋 **ENS Records**
 
 You can store lots of info on your ENS name:
 
@@ -53,7 +53,7 @@ You can store lots of info on your ENS name:
 
 _Your ENS name becomes your web3 identity!_`,
 
-  process: `🔄 **How ENS Registration Works**
+	process: `🔄 **How ENS Registration Works**
 
 1. Easiest is to tag me in a message or using slash commands with the ENS name(s), duration and action you want to perfom
 SUPPORTED ACTIONS:
@@ -132,7 +132,7 @@ Complete the registration and the name is yours!
 
 _The whole process takes about 2-3 minutes!_`,
 
-  subdomains: `🏷️ **ENS Subdomains**
+	subdomains: `🏷️ **ENS Subdomains**
 
 Subdomains let you create names under your existing ENS name!
 

@@ -1,108 +1,108 @@
 import type {
-  Address,
-  ApiResponse,
-  ExpiryData,
-  HistoryData,
-  NameCheckData,
-  PortfolioData,
+	Address,
+	ApiResponse,
+	ExpiryData,
+	HistoryData,
+	NameCheckData,
+	PortfolioData,
 } from "./types";
 
 const COCO_CORE_URL = process.env.COCO_CORE_URL;
 
 export async function checkNames(
-  names: string[],
+	names: string[],
 ): Promise<ApiResponse<NameCheckData>> {
-  const params = new URLSearchParams();
+	const params = new URLSearchParams();
 
-  names.forEach((name) => {
-    params.append("name", name);
-  });
+	names.forEach((name) => {
+		params.append("name", name);
+	});
 
-  const url_action = `api/check/names?${params.toString()}`;
-  const nameResponse = await fetchHandler<NameCheckData>(url_action);
+	const url_action = `api/check/names?${params.toString()}`;
+	const nameResponse = await fetchHandler<NameCheckData>(url_action);
 
-  return nameResponse;
+	return nameResponse;
 }
 
 export async function getExpiry(
-  names: string[],
+	names: string[],
 ): Promise<ApiResponse<ExpiryData>> {
-  const params = new URLSearchParams();
+	const params = new URLSearchParams();
 
-  names.forEach((name) => {
-    params.append("name", name);
-  });
+	names.forEach((name) => {
+		params.append("name", name);
+	});
 
-  const url_action = `api/expiry/names?${params.toString()}`;
+	const url_action = `api/expiry/names?${params.toString()}`;
 
-  const expiryResponse = await fetchHandler<ExpiryData>(url_action);
+	const expiryResponse = await fetchHandler<ExpiryData>(url_action);
 
-  return expiryResponse;
+	return expiryResponse;
 }
 
 export async function getHistory(
-  name: string,
+	name: string,
 ): Promise<ApiResponse<HistoryData>> {
-  const url_action = `api/history/names?name=${name}`;
+	const url_action = `api/history/names?name=${name}`;
 
-  const historyResponse = await fetchHandler<HistoryData>(url_action);
+	const historyResponse = await fetchHandler<HistoryData>(url_action);
 
-  return historyResponse;
+	return historyResponse;
 }
 export async function getENSPortfolio(
-  address: Address,
+	address: Address,
 ): Promise<ApiResponse<PortfolioData>> {
-  const url_action = `api/portfolio/address?address=${address.toString()}`;
+	const url_action = `api/portfolio/address?address=${address.toString()}`;
 
-  const addressResponse = await fetchHandler<PortfolioData>(url_action);
+	const addressResponse = await fetchHandler<PortfolioData>(url_action);
 
-  return addressResponse;
+	return addressResponse;
 }
 
 async function fetchHandler<T>(actionURL: string): Promise<ApiResponse<T>> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000); // 10 seconds
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 10000); // 10 seconds
 
-  try {
-    const response = await fetch(`${COCO_CORE_URL}/${actionURL}`, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      signal: controller.signal,
-    });
+	try {
+		const response = await fetch(`${COCO_CORE_URL}/${actionURL}`, {
+			method: "GET",
+			headers: {
+				"Content-Type": "application/json",
+			},
+			signal: controller.signal,
+		});
 
-    if (!response.ok) {
-      return {
-        success: false,
-        error: "Something went wrong during the API call",
-      };
-    }
+		if (!response.ok) {
+			return {
+				success: false,
+				error: "Something went wrong during the API call",
+			};
+		}
 
-    const data = await response.json();
+		const data = await response.json();
 
-    return data;
-  } catch (error) {
-    if (error instanceof Error) {
-      if (error.name === "AbortError") {
-        console.log("Error in cocoCore.ts", error.message);
-        return {
-          success: false,
-          error: `I think the request too way too long.`,
-        };
-      }
+		return data;
+	} catch (error) {
+		if (error instanceof Error) {
+			if (error.name === "AbortError") {
+				console.log("Error in cocoCore.ts", error.message);
+				return {
+					success: false,
+					error: `I think the request too way too long.`,
+				};
+			}
 
-      return {
-        success: false,
-        error: error.message, // TODO: fix
-      };
-    }
+			return {
+				success: false,
+				error: error.message, // TODO: fix
+			};
+		}
 
-    return {
-      success: false,
-      error: "Can't place my hand on it but there has been an error",
-    };
-  } finally {
-    clearTimeout(timeout);
-  }
+		return {
+			success: false,
+			error: "Can't place my hand on it but there has been an error",
+		};
+	} finally {
+		clearTimeout(timeout);
+	}
 }

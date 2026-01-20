@@ -10,9 +10,9 @@ import { writeTools } from "./writeTools";
 // ============================================================
 
 export const allTools: ToolDefinition[] = [
-  ...readTools,
-  ...writeTools,
-  ...actionTools,
+	...readTools,
+	...writeTools,
+	...actionTools,
 ];
 
 // ============================================================
@@ -20,7 +20,7 @@ export const allTools: ToolDefinition[] = [
 // ============================================================
 
 export const toolMap: Map<string, ToolDefinition> = new Map(
-  allTools.map((tool) => [tool.name, tool]),
+	allTools.map((tool) => [tool.name, tool]),
 );
 
 // ============================================================
@@ -28,7 +28,7 @@ export const toolMap: Map<string, ToolDefinition> = new Map(
 // ============================================================
 
 export function getTool(name: string): ToolDefinition | undefined {
-  return toolMap.get(name);
+	return toolMap.get(name);
 }
 
 // ============================================================
@@ -42,25 +42,25 @@ export const toolNames = allTools.map((tool) => tool.name);
 // ============================================================
 
 export interface AnthropicTool {
-  name: string;
-  description: string;
-  input_schema: {
-    type: "object";
-    properties: Record<string, unknown>;
-    required: string[];
-  };
+	name: string;
+	description: string;
+	input_schema: {
+		type: "object";
+		properties: Record<string, unknown>;
+		required: string[];
+	};
 }
 
 export function toAnthropicTools(): AnthropicTool[] {
-  return allTools.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: {
-      type: "object",
-      properties: tool.parameters.properties,
-      required: tool.parameters.required,
-    },
-  }));
+	return allTools.map((tool) => ({
+		name: tool.name,
+		description: tool.description,
+		input_schema: {
+			type: "object",
+			properties: tool.parameters.properties,
+			required: tool.parameters.required,
+		},
+	}));
 }
 
 // ============================================================

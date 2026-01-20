@@ -1,134 +1,134 @@
 interface ErrorResponse {
-  success: false;
-  error: string;
+	success: false;
+	error: string;
 }
 
 interface SuccessResponse<T> {
-  success: true;
-  data: T;
+	success: true;
+	data: T;
 }
 
 export type ApiResponse<T> = ErrorResponse | SuccessResponse<T>;
 
 // ---------- Name Check ----------
 export interface NameCheckData {
-  values: NameCheckResponse[];
+	values: NameCheckResponse[];
 }
 
 export interface NameCheckResponse {
-  name: string;
-  isAvailable: boolean;
-  owner?: Address;
-  expiration?: Date;
-  // registrationPrice?: Cost;
-  registrationPrice?: string;
-  error?: string; // Add this
+	name: string;
+	isAvailable: boolean;
+	owner?: Address;
+	expiration?: Date;
+	// registrationPrice?: Cost;
+	registrationPrice?: string;
+	error?: string; // Add this
 }
 
 // ---------- Expiry ----------
 export interface ExpiryData {
-  values: GetExpiryResponse[];
+	values: GetExpiryResponse[];
 }
 
 export interface GetExpiryResponse {
-  name: string;
-  /** When the registration expires */
-  expiryDate?: Date;
+	name: string;
+	/** When the registration expires */
+	expiryDate?: Date;
 
-  /** 90 days after expiry (when anyone can register it again) */
-  gracePeriodEnd?: Date;
+	/** 90 days after expiry (when anyone can register it again) */
+	gracePeriodEnd?: Date;
 
-  /** Has it passed the expiry date? */
-  isExpired?: boolean;
+	/** Has it passed the expiry date? */
+	isExpired?: boolean;
 
-  /** Expired but still in 90-day grace period */
-  isInGracePeriod?: boolean;
+	/** Expired but still in 90-day grace period */
+	isInGracePeriod?: boolean;
 
-  /** Convenience for display */
-  daysUntilExpiry?: number;
-  error?: string; // error
+	/** Convenience for display */
+	daysUntilExpiry?: number;
+	error?: string; // error
 }
 
 // ---------- getHistory ----------
 export type ENSHistoryEventType =
-  | "registered"
-  | "renewed"
-  | "transferred"
-  | "wrapped"
-  | "unwrapped"
-  | "expiry_extended";
+	| "registered"
+	| "renewed"
+	| "transferred"
+	| "wrapped"
+	| "unwrapped"
+	| "expiry_extended";
 
 export interface ENSHistoryEventBase {
-  type: ENSHistoryEventType;
-  blockNumber: number;
-  transactionHash: string;
+	type: ENSHistoryEventType;
+	blockNumber: number;
+	transactionHash: string;
 }
 
 export interface ENSHistoryRegistrationEvent extends ENSHistoryEventBase {
-  type: "registered";
-  to: string;
-  expiryDate: string;
+	type: "registered";
+	to: string;
+	expiryDate: string;
 }
 
 export interface ENSHistoryRenewalEvent extends ENSHistoryEventBase {
-  type: "renewed";
-  expiryDate: string;
+	type: "renewed";
+	expiryDate: string;
 }
 
 export interface ENSHistoryTransferEvent extends ENSHistoryEventBase {
-  type: "transferred";
-  to: string;
+	type: "transferred";
+	to: string;
 }
 
 export interface ENSHistoryWrappedEvent extends ENSHistoryEventBase {
-  type: "wrapped";
-  owner: string;
-  expiryDate: string;
+	type: "wrapped";
+	owner: string;
+	expiryDate: string;
 }
 
 export interface ENSHistoryUnwrappedEvent extends ENSHistoryEventBase {
-  type: "unwrapped";
-  owner: string;
+	type: "unwrapped";
+	owner: string;
 }
 
 export interface ENSHistoryExpiryExtendedEvent extends ENSHistoryEventBase {
-  type: "expiry_extended";
-  expiryDate: string;
+	type: "expiry_extended";
+	expiryDate: string;
 }
 
 export type ENSHistoryEvent =
-  | ENSHistoryRegistrationEvent
-  | ENSHistoryRenewalEvent
-  | ENSHistoryTransferEvent
-  | ENSHistoryWrappedEvent
-  | ENSHistoryUnwrappedEvent
-  | ENSHistoryExpiryExtendedEvent;
+	| ENSHistoryRegistrationEvent
+	| ENSHistoryRenewalEvent
+	| ENSHistoryTransferEvent
+	| ENSHistoryWrappedEvent
+	| ENSHistoryUnwrappedEvent
+	| ENSHistoryExpiryExtendedEvent;
 
 export interface HistoryData {
-  events: ENSHistoryEvent[];
+	events: ENSHistoryEvent[];
 }
 
 // ---------- getENSPortfolio ----------
 
 export interface ENSPortfolioName {
-  /** e.g. "alice.eth" */
-  name: string;
+	/** e.g. "alice.eth" */
+	name: string;
 
-  expiryDate: Date;
-  isExpired: boolean;
+	expiryDate: Date;
+	isExpired: boolean;
 
-  /** Is this set as their primary/reverse record? */
-  isPrimary: boolean;
+	/** Is this set as their primary/reverse record? */
+	isPrimary: boolean;
 }
 
 export interface PortfolioData {
-  names: ENSPortfolioName[];
+	names: ENSPortfolioName[];
 
-  /** Number of names owned */
-  totalCount: number;
+	/** Number of names owned */
+	totalCount: number;
 
-  /** Primary ENS name if set */
-  primaryName?: string | null;
+	/** Primary ENS name if set */
+	primaryName?: string | null;
 }
 
 // ---------- Shared primitives ----------
@@ -149,7 +149,7 @@ export type DateLike = string | number;
  * - symbol: "ETH"
  */
 export interface Cost {
-  value: string;
-  unit?: "wei" | "gwei" | "eth";
-  symbol?: "ETH" | string;
+	value: string;
+	unit?: "wei" | "gwei" | "eth";
+	symbol?: "ETH" | string;
 }
