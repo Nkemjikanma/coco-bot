@@ -349,18 +349,23 @@ export async function getUserPorfolio(
     address,
     orderBy: "expiryDate",
     orderDirection: "asc",
-    pageSize: 6,
+    pageSize: 100,
   });
+
+  // If no names found, return null
+  if (!result || result.length === 0) {
+    return null;
+  }
+
   const primaryName = await getName(ethereumClient, {
     address,
   });
 
-  console.log(primaryName);
-
-  if (primaryName === null) {
-    return null;
-  }
-  const data = mapNamesForAddressToPortfolioData(result, primaryName.name);
+  // Primary name is optional - wallet may own names without setting a primary
+  const data = mapNamesForAddressToPortfolioData(
+    result,
+    primaryName?.name ?? null,
+  );
   return data;
 }
 
