@@ -1,8 +1,7 @@
 // src/agent/tools/actionTools.ts
 
-import { ENS_CONTRACTS } from "../../services/ens/constants";
 import { setSessionPendingAction, updateSessionStatus } from "../sessions";
-import type { AgentContext, ToolDefinition, ToolResult } from "../types";
+import type { ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result

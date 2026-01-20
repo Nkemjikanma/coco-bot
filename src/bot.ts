@@ -1,6 +1,7 @@
 import { makeTownsBot } from "@towns-protocol/bot";
 import {
   clearSessionPendingAction,
+  getSession,
   isAwaitingUserAction,
   resumeCocoAgent,
   runCocoAgent,
@@ -37,7 +38,13 @@ const cocoCommands = [
   "stats",
 ] as const;
 
-const writeCommands = ["register", "renew", "transfer", "subdomain", "setprimary"];
+const writeCommands = [
+  "register",
+  "renew",
+  "transfer",
+  "subdomain",
+  "setprimary",
+];
 
 for (const command of cocoCommands) {
   bot.onSlashCommand(command, async (handler, event) => {
@@ -122,8 +129,6 @@ for (const command of cocoCommands) {
 }
 
 bot.onMessage(async (handler, event) => {
-  console.log("userId is mine", event.userId);
-
   if (!event.message?.trim()) return; // empty message
   if (event.userId === bot.botId) return; //bot address
 
@@ -133,6 +138,7 @@ bot.onMessage(async (handler, event) => {
   try {
     // Check if we're awaiting user action (shouldn't process new messages)
     const isAwaiting = await isAwaitingUserAction(event.userId, threadId);
+    const userSession = await getSession(event.userId, threadId);
 
     // Allow "cancel" messages even when awaiting action
     const isCancelRequest =
@@ -152,7 +158,7 @@ bot.onMessage(async (handler, event) => {
     }
 
     // If cancelling, clear the pending action first
-    if (isAwaiting && isCancelRequest) {
+    if (isAwaiting && isCancelRequest && userSession?.userId === event.userId) {
       console.log(`[Bot] User requested cancel, clearing pending action`);
       await clearSessionPendingAction(event.userId, threadId);
     }
@@ -286,10 +292,3 @@ bot.onInteractionResponse(async (handler, event) => {
     }
   }
 });
-
-// const tx = await transferService.buildTransferTransaction({
-//         name,
-//         newOwnerAddress: toAddress,
-//         currentOwner: ownership.ownerWallet!,
-//         isWrapped: ownership.isWrapped,
-//       });

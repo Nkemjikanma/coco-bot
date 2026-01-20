@@ -1,14 +1,10 @@
 // src/agent/tools/writeTools.ts
 
-import {
-  estimateRegistrationCost,
-  prepareRegistration,
-} from "../../services/ens";
+import { prepareRegistration } from "../../services/ens";
 import { getRenewService } from "../../services/ens/renew/renew";
 import { getSubdomainService } from "../../services/ens/subdomain/subdomain";
-import { verifyOwnership } from "../../services/ens/utils";
-import { checkAllEOABalances, filterEOAs, formatAddress } from "../../utils";
-import type { AgentContext, ToolDefinition, ToolResult } from "../types";
+import { filterEOAs, formatAddress } from "../../utils";
+import type { ToolDefinition, ToolResult } from "../types";
 
 /**
  * Format tool result
@@ -1353,10 +1349,8 @@ Call verify_ownership first to confirm the user owns the name.`,
 
     try {
       const { encodeFunctionData } = await import("viem");
-      const {
-        ENS_CONTRACTS,
-        REVERSE_REGISTRAR_ABI,
-      } = await import("../../services/ens/constants");
+      const { ENS_CONTRACTS, REVERSE_REGISTRAR_ABI } =
+        await import("../../services/ens/constants");
 
       // Build the setName transaction
       const setNameData = encodeFunctionData({
