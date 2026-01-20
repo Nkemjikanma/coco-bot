@@ -95,7 +95,8 @@ export type AgentActionType =
 	| "renewal"
 	| "transfer"
 	| "subdomain"
-	| "bridge";
+	| "bridge"
+	| "set_primary";
 
 export interface AgentMessage {
 	role: "user" | "assistant" | "tool_result";

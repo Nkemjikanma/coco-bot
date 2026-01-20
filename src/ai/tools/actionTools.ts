@@ -272,13 +272,23 @@ export const waitTool: ToolDefinition = {
 export const requestConfirmationTool: ToolDefinition = {
 	name: "request_confirmation",
 	description:
-		"Ask the user to confirm an action before proceeding. Use for important or irreversible actions.",
+		"Ask the user to confirm an action before proceeding. Use for important or irreversible actions. IMPORTANT: Always provide actionType and actionName so the bot knows what to do after confirmation.",
 	parameters: {
 		type: "object",
 		properties: {
 			message: {
 				type: "string",
 				description: "Confirmation message to show the user",
+			},
+			actionType: {
+				type: "string",
+				description:
+					"Type of action being confirmed: 'transfer', 'registration', 'bridge', 'renewal', 'subdomain', 'set_primary'",
+			},
+			actionName: {
+				type: "string",
+				description:
+					"The ENS name involved in this action (e.g., 'example.eth')",
 			},
 			confirmLabel: {
 				type: "string",
@@ -289,10 +299,12 @@ export const requestConfirmationTool: ToolDefinition = {
 				description: "Label for cancel button (default: 'Cancel')",
 			},
 		},
-		required: ["message"],
+		required: ["message", "actionType"],
 	},
 	execute: async (params, context): Promise<ToolResult> => {
 		const message = params.message as string;
+		const actionType = (params.actionType as string) || "action";
+		const actionName = (params.actionName as string) || "";
 		const confirmLabel = (params.confirmLabel as string) || "✅ Confirm";
 		const cancelLabel = (params.cancelLabel as string) || "❌ Cancel";
 
@@ -304,7 +316,7 @@ export const requestConfirmationTool: ToolDefinition = {
 			// Request ID for Towns can have colons (it's separate from tool_use_id)
 			const requestId = `confirm:${context.userId}:${context.threadId}:${Date.now()}`;
 
-			// Store pending confirmation with the VALID toolId
+			// Store pending confirmation with the VALID toolId and action context
 			await setSessionPendingAction(
 				context.userId,
 				context.threadId,
@@ -313,7 +325,18 @@ export const requestConfirmationTool: ToolDefinition = {
 					toolId: toolId, // Use the safe toolId for Anthropic
 					expectedAction: "confirmation",
 				},
-				undefined,
+				{
+					type: actionType as
+						| "transfer"
+						| "registration"
+						| "bridge"
+						| "renewal"
+						| "subdomain"
+						| "set_primary",
+					step: 1,
+					totalSteps: 2,
+					data: { name: actionName },
+				},
 			);
 
 			// Update status

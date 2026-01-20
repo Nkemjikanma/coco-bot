@@ -157,14 +157,25 @@ export class CocoAgent {
 
 		// Store the pending tool info before clearing
 		const pendingToolName = session.pendingToolCall?.toolName || "";
+		const currentAction = session.currentAction;
 
 		// Create a user message describing what happened
-		// This is simpler and more reliable than trying to reconstruct tool_result blocks
+		// Include context about what was confirmed so Claude doesn't restart the flow
 		let userMessage: string;
 		if (actionResult.type === "confirmation") {
-			userMessage = actionResult.success
-				? "I confirm. Please proceed."
-				: "I cancel. Do not proceed.";
+			if (actionResult.success) {
+				// Build a detailed message so Claude knows to proceed, not restart
+				const actionType = currentAction?.type || "action";
+				const actionData = currentAction?.data || {};
+				const name = actionData.name || "";
+
+				userMessage =
+					`User confirmed the ${actionType}${name ? ` for ${name}` : ""}. ` +
+					`IMPORTANT: Do NOT call verify_ownership or request_confirmation again. ` +
+					`Proceed directly to the next step (e.g., prepare_transfer, prepare_registration, prepare_bridge).`;
+			} else {
+				userMessage = "I cancel. Do not proceed.";
+			}
 		} else {
 			// Transaction
 			userMessage = actionResult.success
