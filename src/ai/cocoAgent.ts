@@ -8,6 +8,7 @@ import {
   getOrCreateSession,
   getSession,
   incrementTurnCount,
+  isAwaitingUserAction,
   updateSessionCost,
   updateSessionStatus,
 } from "./sessions";
@@ -286,6 +287,14 @@ export class CocoAgent {
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
       for (const toolUse of toolUseBlocks) {
+        // Guard: If a previous tool already set awaiting status, skip remaining tools
+        if (await isAwaitingUserAction(context.userId, context.threadId)) {
+          console.log(
+            `[CocoAgent] Already awaiting user action, skipping tool: ${toolUse.name}`,
+          );
+          break;
+        }
+
         console.log(`[CocoAgent] Tool call: ${toolUse.name}`);
 
         const tool = getTool(toolUse.name);
