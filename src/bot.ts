@@ -21,6 +21,13 @@ export const bot: CocoBotType = await makeTownsBot(APP_DATA, SECRET, {
 	commands,
 });
 
+// Log bot identity info on startup
+console.log("========================================");
+console.log("🤖 BOT IDENTITY INFO");
+console.log("  Bot ID (EOA):", bot.botId);
+console.log("  App Address (Smart Account):", bot.appAddress);
+console.log("========================================");
+
 const cocoCommands = [
 	"help",
 	"check",
