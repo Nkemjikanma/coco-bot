@@ -199,24 +199,105 @@ bot.onMessage(async (handler, event) => {
       await clearSessionPendingAction(event.userId, threadId);
     }
 
-    // If bridge confirmation, clear pending action and let agent verify
+    // If user says "done"/"signed" and there's a pending transaction, let them through
     let messageToProcess = event.message;
-    if (
-      isAwaiting &&
-      isBridgeConfirmation &&
-      userSession?.currentAction?.type === "bridge"
-    ) {
+    if (isAwaiting && isBridgeConfirmation && userSession?.currentAction) {
+      const actionType = userSession.currentAction.type;
+      const actionData = userSession.currentAction.data || {};
+
       console.log(
-        `[Bot] User confirmed bridge transaction, clearing pending action`,
+        `[Bot] User confirmed ${actionType} transaction, clearing pending action`,
       );
-      // Add context so Claude knows NOT to send another bridge
-      const bridgeData = userSession.currentAction.data || {};
-      messageToProcess =
-        `${event.message}\n\n` +
-        `[SYSTEM: User is confirming a bridge transaction that was ALREADY SENT. ` +
-        `Wallet: ${bridgeData.walletAddress}. ` +
-        `Do NOT call prepare_bridge again. ` +
-        `Only call check_balance to verify Mainnet balance, then proceed with prepare_registration if sufficient.]`;
+
+      if (actionType === "bridge") {
+        // For bridge, add context about not sending another bridge
+        messageToProcess =
+          `${event.message}\n\n` +
+          `[SYSTEM: User is confirming a BRIDGE transaction that was ALREADY SENT. ` +
+          `Wallet: ${actionData.walletAddress}. ` +
+          `Do NOT call prepare_bridge again. ` +
+          `Only call check_balance to verify Mainnet balance, then proceed with prepare_registration if sufficient.]`;
+      } else if (actionType === "transfer") {
+        // For transfer, add context about verifying the transfer
+        const recipientAddress = actionData.toAddress || "the recipient";
+        messageToProcess =
+          `${event.message}\n\n` +
+          `[SYSTEM: User is confirming a TRANSFER transaction that was ALREADY SENT. ` +
+          `Name: ${actionData.name || "unknown"}. Recipient: ${recipientAddress}. ` +
+          `Do NOT call prepare_transfer again. ` +
+          `Call check_availability for the name to verify the new owner is ${recipientAddress}. ` +
+          `If ownership transferred successfully, confirm and ask if they need anything else. ` +
+          `If still showing old owner, the transaction may still be processing - tell user to wait.]`;
+      } else if (actionType === "registration") {
+        // For registration, check which step
+        const step = userSession.currentAction.step || 1;
+        if (step === 1) {
+          messageToProcess =
+            `${event.message}\n\n` +
+            `[SYSTEM: User is confirming the COMMIT transaction (step 1) was signed. ` +
+            `Name: ${actionData.name}. Wallet: ${actionData.walletAddress}. ` +
+            `Do NOT call prepare_registration again. ` +
+            `Proceed with the 60-second wait, then call complete_registration.]`;
+        } else {
+          messageToProcess =
+            `${event.message}\n\n` +
+            `[SYSTEM: User is confirming the REGISTER transaction (step 2) was signed. ` +
+            `Name: ${actionData.name}. Wallet: ${actionData.walletAddress}. ` +
+            `Do NOT call prepare_registration or complete_registration again. ` +
+            `Call check_availability to verify the name is now owned by ${actionData.walletAddress}. ` +
+            `If registered successfully, confirm and ask if they need anything else.]`;
+        }
+      } else if (actionType === "subdomain") {
+        // For subdomain, check which step (1, 2, or 3)
+        const step = userSession.currentAction.step || 1;
+        const totalSteps = userSession.currentAction.totalSteps || 3;
+        const fullName = actionData.fullName || actionData.name || "the subdomain";
+
+        if (step < totalSteps) {
+          // More steps to go
+          const nextStep = step + 1;
+          const nextTool = nextStep === 2 ? "complete_subdomain_step2" : "complete_subdomain_step3";
+          messageToProcess =
+            `${event.message}\n\n` +
+            `[SYSTEM: User is confirming SUBDOMAIN step ${step} of ${totalSteps} was signed. ` +
+            `Subdomain: ${fullName}. ` +
+            `Do NOT call prepare_subdomain or the previous step again. ` +
+            `Proceed to call ${nextTool} to continue with step ${nextStep}.]`;
+        } else {
+          // Final step completed
+          messageToProcess =
+            `${event.message}\n\n` +
+            `[SYSTEM: User is confirming the FINAL subdomain step (${step} of ${totalSteps}) was signed. ` +
+            `Subdomain: ${fullName}. ` +
+            `Do NOT call any subdomain tools again. ` +
+            `The subdomain should now be created. Confirm success and ask if they need anything else.]`;
+        }
+      } else if (actionType === "renewal") {
+        // For renewal
+        messageToProcess =
+          `${event.message}\n\n` +
+          `[SYSTEM: User is confirming a RENEWAL transaction that was ALREADY SENT. ` +
+          `Name: ${actionData.name}. ` +
+          `Do NOT call prepare_renewal again. ` +
+          `Call get_expiry to verify the name's expiry date was extended. ` +
+          `If renewed successfully, confirm and ask if they need anything else.]`;
+      } else if (actionType === "set_primary") {
+        // For set primary name
+        messageToProcess =
+          `${event.message}\n\n` +
+          `[SYSTEM: User is confirming a SET PRIMARY NAME transaction that was ALREADY SENT. ` +
+          `Name: ${actionData.name}. ` +
+          `Do NOT call prepare_set_primary again. ` +
+          `The primary name should now be set. Confirm success and ask if they need anything else.]`;
+      } else {
+        // Generic handling for other transaction types
+        messageToProcess =
+          `${event.message}\n\n` +
+          `[SYSTEM: User is confirming a ${actionType} transaction that was ALREADY SENT. ` +
+          `Do NOT send the same transaction again. ` +
+          `Verify the action completed and proceed accordingly.]`;
+      }
+
       // Clear pending action so agent can proceed
       await clearSessionPendingAction(event.userId, threadId);
     }

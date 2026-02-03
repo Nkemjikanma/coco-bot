@@ -150,7 +150,8 @@ Call this after confirming availability and sufficient balance. This will send t
           `• Cost: ${registration.grandTotalEth} ETH (~$${usdCost})\n` +
           `• Wallet: ${formatAddress(walletAddress)}\n\n` +
           `**Step 1 of 2:** Sign the commit transaction to reserve the name.\n` +
-          `After this, we'll wait 60 seconds, then complete the registration.`,
+          `After this, we'll wait 60 seconds, then complete the registration.\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       // Actually send the transaction request to Towns
@@ -311,7 +312,8 @@ export const prepareRenewalTool: ToolDefinition = {
           `• Wallet: ${formatAddress(renewal.ownerWallet)}\n\n` +
           `📅 **Expiry Dates:**\n` +
           `• Current: ${formatDate(renewal.currentExpiry)}\n` +
-          `• After renewal: ${formatDate(renewal.newExpiry)}`,
+          `• After renewal: ${formatDate(renewal.newExpiry)}\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       // Actually send the transaction request
@@ -440,7 +442,8 @@ export const prepareTransferTool: ToolDefinition = {
         `📝 **Transfer ${name}**\n\n` +
           `• From: ${formatAddress(ownerWallet)}\n` +
           `• To: ${formatAddress(toAddress)}\n\n` +
-          `⚠️ **Warning:** This action cannot be undone!`,
+          `⚠️ **Warning:** This action cannot be undone!\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - the transfer usually succeeds._`,
       );
 
       // Actually send the transaction request
@@ -598,7 +601,8 @@ If recipient is the owner, only 2 transactions needed.`,
         `📝 **Creating subdomain ${fullName}**\n\n` +
           `• Points to: ${formatAddress(resolveAddress)}\n` +
           `• Steps required: ${totalSteps}\n\n` +
-          `**Step 1 of ${totalSteps}:** Sign to create the subdomain.`,
+          `**Step 1 of ${totalSteps}:** Sign to create the subdomain.\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       // ACTUALLY SEND THE TRANSACTION REQUEST
@@ -731,7 +735,8 @@ Call this AFTER step 1 transaction is signed and confirmed.`,
       );
 
       await context.sendMessage(
-        `**Step 2 of ${totalSteps}:** Sign to set the address record for ${fullName}.`,
+        `**Step 2 of ${totalSteps}:** Sign to set the address record for ${fullName}.\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       await context.sendTransaction({
@@ -864,7 +869,8 @@ Call this AFTER step 2 transaction is signed and confirmed.`,
       );
 
       await context.sendMessage(
-        `**Step 3 of 3:** Sign to transfer ownership of ${fullName} to ${formatAddress(resolveAddress)}.`,
+        `**Step 3 of 3:** Sign to transfer ownership of ${fullName} to ${formatAddress(resolveAddress)}.\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       await context.sendTransaction({
@@ -1301,7 +1307,8 @@ DO NOT call send_transaction directly - use this tool instead to ensure correct 
         `📝 **Final Registration Step for ${name}**\n\n` +
           `• Wallet: ${formatAddress(walletAddress)}\n` +
           `• Cost: ${domainPriceEth} ETH\n\n` +
-          `Sign the transaction to complete your registration!`,
+          `Sign the transaction to complete your registration!\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       // Send the transaction with the CORRECT wallet from stored data
@@ -1416,7 +1423,8 @@ Call verify_ownership first to confirm the user owns the name.`,
         `📝 **Set Primary Name**\n\n` +
           `• Name: ${name}\n` +
           `• Wallet: ${formatAddress(ownerWallet)}\n\n` +
-          `After signing, your wallet address will display as **${name}** in apps and wallets.`,
+          `After signing, your wallet address will display as **${name}** in apps and wallets.\n\n` +
+          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
 
       // Send the transaction

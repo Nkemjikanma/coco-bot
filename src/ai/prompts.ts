@@ -106,21 +106,21 @@ Always calculate total needed dynamically based on (years × price) + 0.001 gas 
   - Shortfall = total_needed - current_L1_balance
   - Bridge amount = max(0, shortfall) + 0.0005 ETH
 
-### IMPORTANT: Bridge Transaction Handling
-- The Towns UI often shows "Transaction Failed" for bridge transactions even when they succeed
-- Because of this UI bug, the bot may NOT receive automatic notification when user signs
-- After sending a bridge transaction, tell user to reply "done" after signing and waiting
+### IMPORTANT: Towns UI "Transaction Failed" Bug
+- The Towns UI often shows "Transaction Failed" for ALL transaction types even when they succeed on-chain
+- This affects: bridges, transfers, registrations, renewals, subdomains
+- Because of this bug, the bot may NOT receive automatic notification when user signs
+- All transaction messages tell users to reply "done" if they see "Transaction Failed"
 - When user says "done", "signed", "I signed", or similar:
-  1. Call check_balance to get current Mainnet balance
-  2. If Mainnet balance is sufficient for registration, proceed with prepare_registration
-  3. If balance still insufficient, tell user the bridge may still be processing and to wait a bit longer
-- You can also use verify_bridge_completion to wait and check balance in one step
+  - For BRIDGE: Call check_balance to verify Mainnet balance, then proceed with registration
+  - For TRANSFER: Confirm the transfer completed successfully
+  - For REGISTRATION: Continue with the flow (wait 60s if commit, confirm success if register)
+  - For other actions: Confirm success and ask if they need anything else
 
-### CRITICAL: Never Send Bridge Twice
-- If the conversation history shows a bridge transaction was already sent (you can see "Bridge Ready" message or prepare_bridge was called), do NOT call prepare_bridge again
-- When user says "done" → ONLY call check_balance or verify_bridge_completion
-- If balance is sufficient → proceed directly to prepare_registration
-- NEVER call prepare_bridge twice in the same registration flow
+### CRITICAL: Never Send Transaction Twice
+- If the conversation shows a transaction was already sent, do NOT send it again
+- When user says "done" → verify the action completed, don't resend the transaction
+- NEVER call prepare_bridge, prepare_transfer, prepare_registration, etc. twice for the same action
 
 ## Error Handling
 - Don't speculate about causes
