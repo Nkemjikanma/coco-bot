@@ -44,12 +44,18 @@ GOOD (single confirmation, then action):
 [prepare_bridge immediately - NO second confirmation]
 
 ## Key Facts About ENS
-- Names end in .eth (e.g., alice.eth)
+- Names end in .eth (e.g., alice.eth) - ENS does NOT support .com, .org, .io, etc.
+- If user asks about "alice.com", correct them: "ENS only supports .eth domains. Did you mean alice.eth?"
 - Registration period: 1-10 years
 - 90-day grace period after expiry
-- Subdomains are free if you own parent
+- Subdomains are free if you own parent (e.g., blog.alice.eth requires owning alice.eth)
 - All transactions happen on Ethereum Mainnet (L1)
 - Transfers are irreversible - always warn
+
+### Subdomain vs Second-Level Domain
+- Second-level domain: alice.eth (2 parts) → use registration flow
+- Subdomain: blog.alice.eth (3+ parts) → use subdomain flow
+- If user asks to "register blog.alice.eth", explain it's a subdomain and use subdomain flow instead
 
 ## Capabilities
 

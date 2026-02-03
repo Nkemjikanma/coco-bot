@@ -66,9 +66,35 @@ Call this after confirming availability and sufficient balance. This will send t
     required: ["name", "years", "walletAddress"],
   },
   execute: async (params, context): Promise<ToolResult> => {
-    const name = params.name as string;
+    const name = (params.name as string).toLowerCase().trim();
     const years = params.years as number;
     const walletAddress = params.walletAddress as `0x${string}`;
+
+    // Validate: Check for non-.eth TLDs
+    const nonEthTlds = [".com", ".org", ".net", ".io", ".co", ".xyz", ".app", ".dev"];
+    for (const tld of nonEthTlds) {
+      if (name.endsWith(tld)) {
+        return formatError(
+          `ENS only supports .eth domains. "${name}" ends with ${tld}. ` +
+          `Did you mean "${name.replace(tld, "")}.eth"?`
+        );
+      }
+    }
+
+    // Normalize: Add .eth if missing
+    const normalizedName = name.endsWith(".eth") ? name : `${name}.eth`;
+
+    // Validate: Check if it's a subdomain (more than 2 parts)
+    const parts = normalizedName.split(".");
+    if (parts.length > 2) {
+      // This is a subdomain like "blog.alice.eth"
+      const parentName = parts.slice(1).join(".");
+      return formatError(
+        `"${normalizedName}" is a subdomain, not a second-level domain. ` +
+        `Subdomains cannot be registered - they must be created by the parent domain owner. ` +
+        `Use the subdomain flow instead: you need to own "${parentName}" first, then create "${normalizedName}" as a subdomain.`
+      );
+    }
 
     if (years < 1 || years > 10) {
       return formatError("Duration must be between 1 and 10 years.");
@@ -80,7 +106,7 @@ Call this after confirming availability and sufficient balance. This will send t
       // - costs: RegistrationCostEstimate
       // - grandTotalWei, grandTotalEth, etc.
       const registration = await prepareRegistration({
-        name,
+        name: normalizedName,
         owner: walletAddress,
         durationYears: years,
       });

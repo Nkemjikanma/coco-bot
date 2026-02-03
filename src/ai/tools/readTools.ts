@@ -48,9 +48,51 @@ export const checkAvailabilityTool: ToolDefinition = {
 	execute: async (params, context): Promise<ToolResult> => {
 		const names = params.names as string[];
 
+		// Validate names before checking availability
+		const nonEthTlds = [".com", ".org", ".net", ".io", ".co", ".xyz", ".app", ".dev"];
+		const validationErrors: string[] = [];
+		const validNames: string[] = [];
+
+		for (const rawName of names) {
+			const name = rawName.toLowerCase().trim();
+
+			// Check for non-.eth TLDs
+			let hasNonEthTld = false;
+			for (const tld of nonEthTlds) {
+				if (name.endsWith(tld)) {
+					validationErrors.push(
+						`"${name}" ends with ${tld}. ENS only supports .eth domains. Did you mean "${name.replace(tld, "")}.eth"?`
+					);
+					hasNonEthTld = true;
+					break;
+				}
+			}
+			if (hasNonEthTld) continue;
+
+			// Normalize and check for subdomain
+			const normalizedName = name.endsWith(".eth") ? name : `${name}.eth`;
+			const parts = normalizedName.split(".");
+
+			if (parts.length > 2) {
+				// This is a subdomain
+				const parentName = parts.slice(1).join(".");
+				validationErrors.push(
+					`"${normalizedName}" is a subdomain. Use check_subdomain instead, and create it via the subdomain flow if you own "${parentName}".`
+				);
+				continue;
+			}
+
+			validNames.push(normalizedName);
+		}
+
+		// If all names had validation errors, return early
+		if (validNames.length === 0 && validationErrors.length > 0) {
+			return formatError(validationErrors.join("\n\n"));
+		}
+
 		try {
 			const results = await Promise.all(
-				names.map(async (name) => {
+				validNames.map(async (name) => {
 					const result = await checkAvailability(name);
 					if (!result.success) {
 						return { name, error: result.error };
@@ -68,6 +110,11 @@ export const checkAvailabilityTool: ToolDefinition = {
 			}
 			if (taken.length > 0) {
 				message += `❌ Taken: ${taken.map((r: any) => `${r.name} (owner: ${formatAddress(r.owner)})`).join(", ")}`;
+			}
+
+			// Add validation errors if any
+			if (validationErrors.length > 0) {
+				message += `\n\n⚠️ **Issues:**\n${validationErrors.join("\n")}`;
 			}
 
 			return formatResult(results, message);
