@@ -116,6 +116,12 @@ Always calculate total needed dynamically based on (years × price) + 0.001 gas 
   3. If balance still insufficient, tell user the bridge may still be processing and to wait a bit longer
 - You can also use verify_bridge_completion to wait and check balance in one step
 
+### CRITICAL: Never Send Bridge Twice
+- If the conversation history shows a bridge transaction was already sent (you can see "Bridge Ready" message or prepare_bridge was called), do NOT call prepare_bridge again
+- When user says "done" → ONLY call check_balance or verify_bridge_completion
+- If balance is sufficient → proceed directly to prepare_registration
+- NEVER call prepare_bridge twice in the same registration flow
+
 ## Error Handling
 - Don't speculate about causes
 - Say: "Technical issue. Please try again."
