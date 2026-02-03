@@ -619,8 +619,7 @@ If recipient is the owner, only 2 transactions needed.`,
         `📝 **Creating subdomain ${fullName}**\n\n` +
           `• Points to: ${formatAddress(resolveAddress)}\n` +
           `• Steps required: ${totalSteps}\n\n` +
-          `**Step 1 of ${totalSteps}:** Sign to create the subdomain.\n\n` +
-          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
+          `**Step 1 of ${totalSteps}:** Sign to create the subdomain.`,
       );
 
       // ACTUALLY SEND THE TRANSACTION REQUEST
@@ -753,8 +752,7 @@ Call this AFTER step 1 transaction is signed and confirmed.`,
       );
 
       await context.sendMessage(
-        `**Step 2 of ${totalSteps}:** Sign to set the address record for ${fullName}.\n\n` +
-          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
+        `**Step 2 of ${totalSteps}:** Sign to set the address record for ${fullName}.`,
       );
 
       await context.sendTransaction({
@@ -887,8 +885,7 @@ Call this AFTER step 2 transaction is signed and confirmed.`,
       );
 
       await context.sendMessage(
-        `**Step 3 of 3:** Sign to transfer ownership of ${fullName} to ${formatAddress(resolveAddress)}.\n\n` +
-          `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
+        `**Step 3 of 3:** Sign to transfer ownership of ${fullName} to ${formatAddress(resolveAddress)}.`,
       );
 
       await context.sendTransaction({

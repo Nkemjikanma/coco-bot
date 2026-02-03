@@ -200,10 +200,22 @@ bot.onMessage(async (handler, event) => {
     }
 
     // If user says "done"/"signed" and there's a pending transaction, let them through
+    // EXCEPT for subdomain - subdomain has multiple steps and "done" was triggering next step even when previous failed
     let messageToProcess = event.message;
     if (isAwaiting && isBridgeConfirmation && userSession?.currentAction) {
       const actionType = userSession.currentAction.type;
       const actionData = userSession.currentAction.data || {};
+
+      // Skip "done" handling for subdomain - let them wait for actual transaction response
+      if (actionType === "subdomain") {
+        console.log(`[Bot] Subdomain action - ignoring "done" message, waiting for actual tx response`);
+        await handler.sendMessage(
+          event.channelId,
+          "⏳ Please complete the pending subdomain transaction in your wallet. The next step will begin automatically once confirmed.",
+          { threadId: threadId },
+        );
+        return;
+      }
 
       console.log(
         `[Bot] User confirmed ${actionType} transaction, clearing pending action`,
@@ -246,31 +258,6 @@ bot.onMessage(async (handler, event) => {
             `Do NOT call prepare_registration or complete_registration again. ` +
             `Call check_availability to verify the name is now owned by ${actionData.walletAddress}. ` +
             `If registered successfully, confirm and ask if they need anything else.]`;
-        }
-      } else if (actionType === "subdomain") {
-        // For subdomain, check which step (1, 2, or 3)
-        const step = userSession.currentAction.step || 1;
-        const totalSteps = userSession.currentAction.totalSteps || 3;
-        const fullName = actionData.fullName || actionData.name || "the subdomain";
-
-        if (step < totalSteps) {
-          // More steps to go
-          const nextStep = step + 1;
-          const nextTool = nextStep === 2 ? "complete_subdomain_step2" : "complete_subdomain_step3";
-          messageToProcess =
-            `${event.message}\n\n` +
-            `[SYSTEM: User is confirming SUBDOMAIN step ${step} of ${totalSteps} was signed. ` +
-            `Subdomain: ${fullName}. ` +
-            `Do NOT call prepare_subdomain or the previous step again. ` +
-            `Proceed to call ${nextTool} to continue with step ${nextStep}.]`;
-        } else {
-          // Final step completed
-          messageToProcess =
-            `${event.message}\n\n` +
-            `[SYSTEM: User is confirming the FINAL subdomain step (${step} of ${totalSteps}) was signed. ` +
-            `Subdomain: ${fullName}. ` +
-            `Do NOT call any subdomain tools again. ` +
-            `The subdomain should now be created. Confirm success and ask if they need anything else.]`;
         }
       } else if (actionType === "renewal") {
         // For renewal
@@ -336,7 +323,7 @@ bot.onStreamEvent(async (handler, event) => {
   console.log("  Channel ID:", event.channelId);
   console.log("  Space ID:", event.spaceId);
   console.log("  User ID:", event.userId);
-  console.log("  Parsed event type:", event.parsed?.event?.case);
+  console.log("  Parsed event type:", event.parsed?.event?.payload?.case);
   console.log(
     "  Full parsed event:",
     JSON.stringify(
