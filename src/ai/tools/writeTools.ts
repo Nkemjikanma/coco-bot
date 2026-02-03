@@ -441,6 +441,28 @@ export const prepareTransferTool: ToolDefinition = {
     const ownerWallet = params.ownerWallet as `0x${string}`;
     let isWrapped = params.isWrapped as boolean | undefined;
 
+    // CRITICAL: Verify the ownerWallet is one of the user's linked wallets
+    const userWallets = await filterEOAs(context.userId as `0x${string}`);
+
+    if (userWallets.length === 0) {
+      return formatError("No linked wallets found.");
+    }
+
+    const isUserWallet = userWallets.some(
+      (w) => w.toLowerCase() === ownerWallet.toLowerCase()
+    );
+
+    if (!isUserWallet) {
+      console.error(
+        `[prepare_transfer] SECURITY: ownerWallet ${ownerWallet} is NOT one of user's wallets: ${userWallets.join(", ")}`
+      );
+      return formatError(
+        `The wallet ${formatAddress(ownerWallet)} is not linked to your account. ` +
+        `Your linked wallets are: ${userWallets.map(formatAddress).join(", ")}. ` +
+        `Please use verify_ownership first to get the correct wallet.`
+      );
+    }
+
     // ALWAYS verify on-chain to ensure we use the correct contract
     // This prevents issues where the passed value might be stale or incorrect
     const { getActualOwner } = await import("../../services/ens/utils");
