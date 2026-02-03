@@ -403,9 +403,10 @@ export const verifyOwnershipTool: ToolDefinition = {
 			const result = await verifyOwnership(name, wallets);
 
 			if (result.owned) {
+				const wrappedStatus = result.isWrapped ? " (wrapped)" : " (unwrapped)";
 				return formatResult(
 					result,
-					`✅ You own ${name} (via ${formatAddress(result.ownerWallet!)})`,
+					`✅ You own ${name}${wrappedStatus} (via ${formatAddress(result.ownerWallet!)})`,
 				);
 			} else {
 				const ownerInfo = result.actualOwner

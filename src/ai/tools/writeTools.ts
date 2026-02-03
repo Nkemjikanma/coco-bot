@@ -394,16 +394,23 @@ export const prepareTransferTool: ToolDefinition = {
     const ownerWallet = params.ownerWallet as `0x${string}`;
     let isWrapped = params.isWrapped as boolean | undefined;
 
-    // Safety check: if isWrapped wasn't provided, look it up
-    if (isWrapped === undefined || isWrapped === null) {
+    // ALWAYS verify on-chain to ensure we use the correct contract
+    // This prevents issues where the passed value might be stale or incorrect
+    const { getActualOwner } = await import("../../services/ens/utils");
+    const ownerInfo = await getActualOwner(name);
+
+    console.log(`[prepare_transfer] Name: ${name}`);
+    console.log(`[prepare_transfer] Param isWrapped: ${isWrapped}`);
+    console.log(`[prepare_transfer] On-chain isWrapped: ${ownerInfo.isWrapped}`);
+    console.log(`[prepare_transfer] On-chain owner: ${ownerInfo.owner}`);
+
+    // Use the on-chain value - it's the source of truth
+    if (isWrapped !== ownerInfo.isWrapped) {
       console.log(
-        `[prepare_transfer] isWrapped not provided, checking on-chain...`,
+        `[prepare_transfer] WARNING: Param isWrapped (${isWrapped}) differs from on-chain (${ownerInfo.isWrapped}). Using on-chain value.`,
       );
-      const { getActualOwner } = await import("../../services/ens/utils");
-      const ownerInfo = await getActualOwner(name);
-      isWrapped = ownerInfo.isWrapped;
-      console.log(`[prepare_transfer] Detected isWrapped: ${isWrapped}`);
     }
+    isWrapped = ownerInfo.isWrapped;
 
     try {
       // Import transfer service

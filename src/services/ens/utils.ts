@@ -8,6 +8,7 @@ import {
 	createPublicClient,
 	http,
 	keccak256,
+	labelhash,
 	type PublicClient,
 	toBytes,
 	toHex,
@@ -90,8 +91,8 @@ export function normalizeENSName(domainName: string): {
  * Used by BaseRegistrar contract
  */
 export function getTokenId(label: string): bigint {
-	const hash = keccak256(toHex(label));
-	return BigInt(hash);
+	// Use viem's labelhash for consistency with transfer.ts
+	return BigInt(labelhash(label));
 }
 
 /**
@@ -377,6 +378,8 @@ async function getSecondLevelOwner(
 		const isWrapped =
 			registrant.toLowerCase() === NAME_WRAPPER_ADDRESS.toLowerCase();
 		console.log(`[getSecondLevelOwner] ${name} isWrapped: ${isWrapped}`);
+		console.log(`[getSecondLevelOwner] Registrant: ${registrant}`);
+		console.log(`[getSecondLevelOwner] NameWrapper: ${NAME_WRAPPER_ADDRESS}`);
 
 		if (isWrapped) {
 			// Get actual owner from NameWrapper using the namehash as tokenId
