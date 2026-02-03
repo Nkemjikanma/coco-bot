@@ -48,6 +48,16 @@ const writeCommands = [
 
 for (const command of cocoCommands) {
 	bot.onSlashCommand(command, async (handler, event) => {
+		console.log("========================================");
+		console.log("🎯 SLASH COMMAND RECEIVED");
+		console.log("  Command:", command);
+		console.log("  User ID:", event.userId);
+		console.log("  Channel ID:", event.channelId);
+		console.log("  Space ID:", event.spaceId);
+		console.log("  Event ID:", event.eventId);
+		console.log("  Args:", event.args);
+		console.log("========================================");
+
 		if (command === "stats" && event.userId === process.env.DEV_ID!) {
 			const overview = await metrics.getOverview();
 			const commandStats = await metrics.getCommandStats();
@@ -129,6 +139,16 @@ for (const command of cocoCommands) {
 }
 
 bot.onMessage(async (handler, event) => {
+	console.log("========================================");
+	console.log("💬 MESSAGE RECEIVED");
+	console.log("  User ID:", event.userId);
+	console.log("  Channel ID:", event.channelId);
+	console.log("  Space ID:", event.spaceId);
+	console.log("  Message:", event.message?.substring(0, 100));
+	console.log("  Is Mentioned:", event.isMentioned);
+	console.log("  Bot ID:", bot.botId);
+	console.log("========================================");
+
 	if (!event.message?.trim()) return; // empty message
 	if (event.userId === bot.botId) return; //bot address
 
