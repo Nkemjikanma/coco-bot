@@ -100,6 +100,27 @@ Call this after confirming availability and sufficient balance. This will send t
       return formatError("Duration must be between 1 and 10 years.");
     }
 
+    // Validate: Ensure walletAddress is one of the user's linked wallets
+    const userWallets = await filterEOAs(context.userId as `0x${string}`);
+
+    if (userWallets.length === 0) {
+      return formatError("No linked wallets found.");
+    }
+
+    const isUserWallet = userWallets.some(
+      (w) => w.toLowerCase() === walletAddress.toLowerCase()
+    );
+
+    if (!isUserWallet) {
+      console.error(
+        `[prepare_registration] SECURITY: walletAddress ${walletAddress} is NOT one of user's wallets: ${userWallets.join(", ")}`
+      );
+      return formatError(
+        `The wallet ${formatAddress(walletAddress)} is not linked to your account. ` +
+        `Your linked wallets are: ${userWallets.map(formatAddress).join(", ")}.`
+      );
+    }
+
     try {
       // prepareRegistration returns PendingRegistration which contains:
       // - commitment: RegistrationCommitment (name, secret, commitment hash, owner, durationSec, domainPriceWei)
@@ -1426,6 +1447,41 @@ Call verify_ownership first to confirm the user owns the name.`,
     const ownerWallet = params.ownerWallet as `0x${string}`;
 
     try {
+      // CRITICAL: Verify the ownerWallet is one of the user's linked wallets
+      const userWallets = await filterEOAs(context.userId as `0x${string}`);
+
+      if (userWallets.length === 0) {
+        return formatError("No linked wallets found.");
+      }
+
+      const isUserWallet = userWallets.some(
+        (w) => w.toLowerCase() === ownerWallet.toLowerCase()
+      );
+
+      if (!isUserWallet) {
+        console.error(
+          `[prepare_set_primary] SECURITY: ownerWallet ${ownerWallet} is NOT one of user's wallets: ${userWallets.join(", ")}`
+        );
+        return formatError(
+          `The wallet ${formatAddress(ownerWallet)} is not linked to your account. ` +
+          `Your linked wallets are: ${userWallets.map(formatAddress).join(", ")}. ` +
+          `Please use verify_ownership first to get the correct wallet.`
+        );
+      }
+
+      // Also verify ownership on-chain to be safe
+      const { verifyOwnership } = await import("../../services/ens/utils");
+      const ownershipCheck = await verifyOwnership(name, userWallets);
+
+      if (!ownershipCheck.owned) {
+        return formatError(
+          `You don't own ${name}. Only the owner can set it as their primary name.`
+        );
+      }
+
+      // Use the verified owner wallet from on-chain check
+      const verifiedWallet = ownershipCheck.ownerWallet!;
+
       const { encodeFunctionData } = await import("viem");
       const { ENS_CONTRACTS, REVERSE_REGISTRAR_ABI } =
         await import("../../services/ens/constants");
@@ -1457,7 +1513,7 @@ Call verify_ownership first to confirm the user owns the name.`,
           totalSteps: 1,
           data: {
             name,
-            ownerWallet,
+            ownerWallet: verifiedWallet,
           },
         },
       );
@@ -1466,7 +1522,7 @@ Call verify_ownership first to confirm the user owns the name.`,
       await context.sendMessage(
         `📝 **Set Primary Name**\n\n` +
           `• Name: ${name}\n` +
-          `• Wallet: ${formatAddress(ownerWallet)}\n\n` +
+          `• Wallet: ${formatAddress(verifiedWallet)}\n\n` +
           `After signing, your wallet address will display as **${name}** in apps and wallets.\n\n` +
           `_If the UI shows "Transaction Failed" after signing, reply "done" - it usually succeeds._`,
       );
@@ -1479,13 +1535,13 @@ Call verify_ownership first to confirm the user owns the name.`,
         to: ENS_CONTRACTS.REVERSE_REGISTRAR,
         data: setNameData,
         value: "0x0",
-        signerWallet: ownerWallet,
+        signerWallet: verifiedWallet,
       });
 
       return formatResult(
         {
           name,
-          ownerWallet,
+          ownerWallet: verifiedWallet,
           requestId,
           toolId,
           status: "awaiting_signature",
@@ -1498,7 +1554,7 @@ Call verify_ownership first to confirm the user owns the name.`,
             payload: {
               actionType: "setprimary",
               name,
-              ownerWallet,
+              ownerWallet: verifiedWallet,
             },
           },
         },
