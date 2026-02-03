@@ -363,7 +363,7 @@ export const prepareRenewalTool: ToolDefinition = {
 export const prepareTransferTool: ToolDefinition = {
   name: "prepare_transfer",
   description:
-    "Prepare and send an ENS name transfer transaction. This action is irreversible. Call after verifying ownership and getting user confirmation. Pass the ownerWallet from verify_ownership to avoid redundant lookups.",
+    "Prepare and send an ENS name transfer transaction. This action is irreversible. Call after verifying ownership and getting user confirmation. Pass ownerWallet and isWrapped from verify_ownership to avoid redundant lookups.",
   parameters: {
     type: "object",
     properties: {
@@ -383,16 +383,27 @@ export const prepareTransferTool: ToolDefinition = {
       isWrapped: {
         type: "boolean",
         description:
-          "Whether the domain is wrapped (from verify_ownership result)",
+          "Whether the domain is wrapped (from verify_ownership result). REQUIRED - must pass true or false.",
       },
     },
-    required: ["name", "toAddress", "ownerWallet"],
+    required: ["name", "toAddress", "ownerWallet", "isWrapped"],
   },
   execute: async (params, context): Promise<ToolResult> => {
     const name = params.name as string;
     const toAddress = params.toAddress as `0x${string}`;
     const ownerWallet = params.ownerWallet as `0x${string}`;
-    const isWrapped = params.isWrapped as boolean;
+    let isWrapped = params.isWrapped as boolean | undefined;
+
+    // Safety check: if isWrapped wasn't provided, look it up
+    if (isWrapped === undefined || isWrapped === null) {
+      console.log(
+        `[prepare_transfer] isWrapped not provided, checking on-chain...`,
+      );
+      const { getActualOwner } = await import("../../services/ens/utils");
+      const ownerInfo = await getActualOwner(name);
+      isWrapped = ownerInfo.isWrapped;
+      console.log(`[prepare_transfer] Detected isWrapped: ${isWrapped}`);
+    }
 
     try {
       // Import transfer service
@@ -406,7 +417,7 @@ export const prepareTransferTool: ToolDefinition = {
         name,
         newOwnerAddress: toAddress,
         currentOwner: ownerWallet!,
-        isWrapped: isWrapped, // Default to wrapped if not specified
+        isWrapped: isWrapped,
       });
 
       // Generate safe tool ID for Anthropic
@@ -432,7 +443,7 @@ export const prepareTransferTool: ToolDefinition = {
             name,
             fromAddress: ownerWallet,
             toAddress,
-            isWrapped: isWrapped ?? true,
+            isWrapped,
           },
         },
       );
@@ -1126,13 +1137,16 @@ export const prepareBridgeTool: ToolDefinition = {
       );
 
       // ACTUALLY SEND THE TRANSACTION REQUEST
+      // Convert value to hex format (Towns Protocol expects hex, not decimal string)
+      const valueHex = `0x${BigInt(swapTx.value).toString(16)}`;
+
       await context.sendTransaction({
         id: requestId,
         title: `Bridge ${formatEther(amountToBridge)} ETH to Mainnet`,
         chainId: CHAIN_IDS.BASE.toString(), // Bridge tx is on Base
         to: swapTx.to,
         data: swapTx.data,
-        value: swapTx.value,
+        value: valueHex,
         signerWallet: walletAddress,
       });
 
