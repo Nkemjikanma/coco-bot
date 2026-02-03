@@ -668,6 +668,56 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 };
 
 // ============================================================
+// CHECK SUBDOMAIN
+// ============================================================
+
+export const checkSubdomainTool: ToolDefinition = {
+	name: "check_subdomain",
+	description:
+		"Check if a subdomain already exists. Use this BEFORE requesting confirmation for subdomain creation to avoid wasting user time.",
+	parameters: {
+		type: "object",
+		properties: {
+			fullName: {
+				type: "string",
+				description:
+					"Full subdomain name, e.g. 'blog.myname.eth' or 'wallet.example.eth'",
+			},
+		},
+		required: ["fullName"],
+	},
+	execute: async (params, context): Promise<ToolResult> => {
+		const fullName = params.fullName as string;
+
+		try {
+			// Import subdomain service
+			const { getSubdomainService } = await import(
+				"../../services/ens/subdomain/subdomain"
+			);
+			const subdomainService = getSubdomainService();
+
+			const exists = await subdomainService.subnameExists(fullName);
+
+			if (exists) {
+				return formatResult(
+					{ exists: true, fullName },
+					`❌ **${fullName}** already exists. You cannot create a subdomain that already exists.`,
+				);
+			}
+
+			return formatResult(
+				{ exists: false, fullName },
+				`✅ **${fullName}** is available and can be created.`,
+			);
+		} catch (error) {
+			return formatError(
+				`Failed to check subdomain: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
+		}
+	},
+};
+
+// ============================================================
 // EXPORT ALL READ TOOLS
 // ============================================================
 
@@ -681,4 +731,5 @@ export const readTools: ToolDefinition[] = [
 	getRegistrationPriceTool,
 	getRenewalPriceTool,
 	verifyBridgeCompletionTool,
+	checkSubdomainTool,
 ];

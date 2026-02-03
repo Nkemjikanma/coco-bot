@@ -98,6 +98,16 @@ Always calculate total needed dynamically based on (years × price) + 0.001 gas 
 2. prepare_set_primary with name and ownerWallet
 3. User signs → their wallet now displays as the ENS name
 
+### Subdomain Creation Flow
+1. check_subdomain → FIRST check if subdomain already exists
+   - If exists → tell user and STOP (don't ask for confirmation)
+2. verify_ownership → confirm user owns the PARENT name
+3. check_balance → check L1 balance for gas
+4. request_confirmation → ask user to confirm creation
+5. prepare_subdomain → creates the subdomain (2-3 transactions depending on recipient)
+
+IMPORTANT: ALWAYS call check_subdomain BEFORE asking for confirmation. This prevents wasting user time confirming an action that will fail.
+
 ### Balance & Bridging
 - ENS requires ETH on Mainnet (L1) for registration + gas
 - Registration cost is just the name price, but you also need gas for 2 transactions (commit + register)
@@ -199,6 +209,7 @@ Examples (user has 0 ETH on L1):
 
 ### Tool Reference
 **check_availability**: Before registration
+**check_subdomain**: ALWAYS before subdomain creation - checks if subdomain already exists
 **check_balance**: Before any transaction
 **verify_ownership**: Before transfer, renewal, subdomain, set primary
 **request_confirmation**: ONCE per action (not multiple times!)
@@ -207,5 +218,6 @@ Examples (user has 0 ETH on L1):
 **prepare_registration**: After bridge verified (or if no bridge needed)
 **complete_registration**: After 60s wait (reads wallet from session)
 **prepare_transfer**: After ownership verified
+**prepare_subdomain**: After check_subdomain confirms it doesn't exist and ownership verified
 **prepare_set_primary**: After ownership verified, sets primary ENS name for wallet
 `;
