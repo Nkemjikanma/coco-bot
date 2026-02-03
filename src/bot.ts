@@ -209,6 +209,31 @@ bot.onMessage(async (handler, event) => {
 	}
 });
 
+// Catch-all event handler to debug what events are being received
+bot.onStreamEvent(async (handler, event) => {
+	console.log("========================================");
+	console.log("📡 RAW STREAM EVENT RECEIVED");
+	console.log("  Event ID:", event.eventId);
+	console.log("  Channel ID:", event.channelId);
+	console.log("  Space ID:", event.spaceId);
+	console.log("  User ID:", event.userId);
+	console.log("  Parsed event type:", event.parsed?.event?.case);
+	console.log("  Full parsed event:", JSON.stringify(event.parsed?.event, (_, v) =>
+		typeof v === 'bigint' ? v.toString() : v instanceof Uint8Array ? `[Uint8Array ${v.length}]` : v
+	, 2)?.substring(0, 500));
+	console.log("========================================");
+});
+
+// Log channel joins to see if bot sees itself joining
+bot.onChannelJoin(async (handler, event) => {
+	console.log("========================================");
+	console.log("👋 CHANNEL JOIN EVENT");
+	console.log("  User ID:", event.userId);
+	console.log("  Channel ID:", event.channelId);
+	console.log("  Space ID:", event.spaceId);
+	console.log("========================================");
+});
+
 bot.onInteractionResponse(async (handler, event) => {
 	const { response, eventId } = event;
 	const userId = event.userId;
