@@ -2,7 +2,7 @@ import { bot } from "./bot";
 import { initRedis } from "./db";
 
 async function startBot() {
-	console.log("We are here");
+	console.log("🚀 COCO BOT STARTING - v2 with debug logging");
 	try {
 		await initRedis();
 		console.log("✅ Redis connected");
