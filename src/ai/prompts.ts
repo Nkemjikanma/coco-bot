@@ -106,6 +106,16 @@ Always calculate total needed dynamically based on (years × price) + 0.001 gas 
   - Shortfall = total_needed - current_L1_balance
   - Bridge amount = max(0, shortfall) + 0.0005 ETH
 
+### IMPORTANT: Bridge Transaction Handling
+- The Towns UI often shows "Transaction Failed" for bridge transactions even when they succeed
+- Because of this UI bug, the bot may NOT receive automatic notification when user signs
+- After sending a bridge transaction, tell user to reply "done" after signing and waiting
+- When user says "done", "signed", "I signed", or similar:
+  1. Call check_balance to get current Mainnet balance
+  2. If Mainnet balance is sufficient for registration, proceed with prepare_registration
+  3. If balance still insufficient, tell user the bridge may still be processing and to wait a bit longer
+- You can also use verify_bridge_completion to wait and check balance in one step
+
 ## Error Handling
 - Don't speculate about causes
 - Say: "Technical issue. Please try again."
@@ -169,9 +179,12 @@ Examples (user has 0 ETH on L1):
 3. If L1 balance < total needed, calculate bridge amount: shortfall + 0.0005 ETH
 4. request_confirmation (ONCE!)
 5. prepare_bridge with calculated amount (if bridging needed)
-6. prepare_registration after bridge signed
-7. wait 60 seconds
-8. complete_registration (NOT send_transaction!)
+6. User signs bridge → may NOT trigger automatic response (Towns UI bug)
+7. When user says "done"/"signed" → call check_balance to verify Mainnet balance
+8. If Mainnet balance sufficient → prepare_registration
+9. If Mainnet balance still low → tell user bridge may still be processing, wait and try again
+10. wait 60 seconds after commit
+11. complete_registration (NOT send_transaction!)
 
 ### Transfer Flow
 1. verify_ownership → get ownerWallet, isWrapped
@@ -184,7 +197,8 @@ Examples (user has 0 ETH on L1):
 **verify_ownership**: Before transfer, renewal, subdomain, set primary
 **request_confirmation**: ONCE per action (not multiple times!)
 **prepare_bridge**: After confirmation, with enough for gas
-**prepare_registration**: After bridge (if needed)
+**verify_bridge_completion**: ALWAYS after bridge tx signed - confirms funds arrived on Mainnet
+**prepare_registration**: After bridge verified (or if no bridge needed)
 **complete_registration**: After 60s wait (reads wallet from session)
 **prepare_transfer**: After ownership verified
 **prepare_set_primary**: After ownership verified, sets primary ENS name for wallet

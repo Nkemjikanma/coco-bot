@@ -532,6 +532,141 @@ export const getRenewalPriceTool: ToolDefinition = {
 };
 
 // ============================================================
+// VERIFY BRIDGE COMPLETION
+// ============================================================
+
+export const verifyBridgeCompletionTool: ToolDefinition = {
+	name: "verify_bridge_completion",
+	description: `Verify that a bridge transaction from Base to Mainnet has completed by checking the user's Mainnet balance.
+Use this AFTER a bridge transaction has been signed to confirm funds arrived.
+The tool will wait briefly and then check if the expected amount is now on Mainnet.
+IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Transaction Failed" - bridges often succeed despite UI errors.`,
+	parameters: {
+		type: "object",
+		properties: {
+			walletAddress: {
+				type: "string",
+				description: "The wallet address that should receive the bridged funds",
+			},
+			expectedAmountEth: {
+				type: "string",
+				description: "Expected amount in ETH that should have arrived (approximate)",
+			},
+			previousBalanceEth: {
+				type: "string",
+				description: "The Mainnet balance before bridging (if known), to compare against",
+			},
+			waitSeconds: {
+				type: "number",
+				description: "Seconds to wait before checking (default: 30, max: 120)",
+			},
+		},
+		required: ["walletAddress"],
+	},
+	execute: async (params, context): Promise<ToolResult> => {
+		const walletAddress = params.walletAddress as `0x${string}`;
+		const expectedAmountEth = params.expectedAmountEth as string | undefined;
+		const previousBalanceEth = params.previousBalanceEth as string | undefined;
+		const waitSeconds = Math.min((params.waitSeconds as number) || 30, 120);
+
+		try {
+			console.log(`[verify_bridge] Starting bridge verification for ${walletAddress}`);
+			console.log(`[verify_bridge] Expected amount: ${expectedAmountEth || "unknown"} ETH`);
+			console.log(`[verify_bridge] Previous balance: ${previousBalanceEth || "unknown"} ETH`);
+			console.log(`[verify_bridge] Waiting ${waitSeconds} seconds...`);
+
+			// Import viem for balance check
+			const { createPublicClient, http, formatEther } = await import("viem");
+			const { mainnet } = await import("viem/chains");
+
+			const mainnetClient = createPublicClient({
+				chain: mainnet,
+				transport: http(process.env.MAINNET_RPC_URL || "https://eth.llamarpc.com"),
+			});
+
+			// Get initial balance
+			const initialBalance = await mainnetClient.getBalance({ address: walletAddress });
+			const initialBalanceEth = formatEther(initialBalance);
+			console.log(`[verify_bridge] Current Mainnet balance: ${initialBalanceEth} ETH`);
+
+			// If we have a previous balance, check if it already increased
+			if (previousBalanceEth) {
+				const previousWei = BigInt(Math.floor(parseFloat(previousBalanceEth) * 1e18));
+				if (initialBalance > previousWei) {
+					const increase = formatEther(initialBalance - previousWei);
+					console.log(`[verify_bridge] Balance already increased by ${increase} ETH`);
+					return formatResult(
+						{
+							verified: true,
+							walletAddress,
+							currentBalanceEth: initialBalanceEth,
+							previousBalanceEth,
+							increaseEth: increase,
+							waitedSeconds: 0,
+						},
+						`✅ **Bridge Verified!**\n\nYour Mainnet balance increased by ${increase} ETH.\nCurrent balance: ${initialBalanceEth} ETH`,
+					);
+				}
+			}
+
+			// Wait for bridge to complete
+			await context.sendMessage(
+				`⏳ Waiting ${waitSeconds} seconds for bridge to complete...\n\n` +
+				`Current Mainnet balance: ${initialBalanceEth} ETH`,
+			);
+
+			await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
+
+			// Check balance again
+			const finalBalance = await mainnetClient.getBalance({ address: walletAddress });
+			const finalBalanceEth = formatEther(finalBalance);
+			console.log(`[verify_bridge] Final Mainnet balance: ${finalBalanceEth} ETH`);
+
+			// Compare balances
+			const balanceIncreased = finalBalance > initialBalance;
+			const increaseAmount = balanceIncreased
+				? formatEther(finalBalance - initialBalance)
+				: "0";
+
+			if (balanceIncreased) {
+				return formatResult(
+					{
+						verified: true,
+						walletAddress,
+						initialBalanceEth,
+						finalBalanceEth,
+						increaseEth: increaseAmount,
+						waitedSeconds: waitSeconds,
+					},
+					`✅ **Bridge Verified!**\n\nYour Mainnet balance increased by ${increaseAmount} ETH.\nCurrent balance: ${finalBalanceEth} ETH\n\nYou can now proceed with registration.`,
+				);
+			} else {
+				// Balance didn't increase yet - bridge might still be processing
+				return formatResult(
+					{
+						verified: false,
+						walletAddress,
+						initialBalanceEth,
+						finalBalanceEth,
+						increaseEth: "0",
+						waitedSeconds: waitSeconds,
+						note: "Bridge may still be processing. Across bridges typically take 1-5 minutes.",
+					},
+					`⏳ **Bridge Still Processing**\n\nMainnet balance: ${finalBalanceEth} ETH (unchanged)\n\n` +
+					`The bridge may still be in progress. Across bridges typically complete within 1-5 minutes.\n\n` +
+					`You can:\n• Wait a bit longer and check balance again\n• Check https://across.to for bridge status\n• Proceed anyway if you're confident the bridge succeeded`,
+				);
+			}
+		} catch (error) {
+			console.error(`[verify_bridge] Error:`, error);
+			return formatError(
+				`Failed to verify bridge: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
+		}
+	},
+};
+
+// ============================================================
 // EXPORT ALL READ TOOLS
 // ============================================================
 
@@ -544,4 +679,5 @@ export const readTools: ToolDefinition[] = [
 	verifyOwnershipTool,
 	getRegistrationPriceTool,
 	getRenewalPriceTool,
+	verifyBridgeCompletionTool,
 ];

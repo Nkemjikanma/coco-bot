@@ -173,12 +173,21 @@ bot.onMessage(async (handler, event) => {
 			message.includes("stop") ||
 			message.includes("nevermind");
 
-		if (isAwaiting && !isCancelRequest) {
+		// Allow "done" / "signed" messages for bridge transactions that don't trigger onInteractionResponse
+		const isBridgeConfirmation =
+			message.includes("done") ||
+			message.includes("signed") ||
+			message.includes("i signed") ||
+			message.includes("confirmed") ||
+			message.includes("check") ||
+			message.includes("continue");
+
+		if (isAwaiting && !isCancelRequest && !isBridgeConfirmation) {
 			console.log(`[Bot] User has pending action, ignoring message`);
 			// Optionally remind them
 			await handler.sendMessage(
 				event.channelId,
-				"⏳ Please complete the pending transaction or cancel it first. Say 'cancel' to cancel the current action.",
+				"⏳ Please complete the pending transaction or cancel it first. Say 'cancel' to cancel the current action, or 'done' if you've already signed.",
 				{ threadId: threadId },
 			);
 			return;
@@ -187,6 +196,13 @@ bot.onMessage(async (handler, event) => {
 		// If cancelling, clear the pending action first
 		if (isAwaiting && isCancelRequest && userSession?.userId === event.userId) {
 			console.log(`[Bot] User requested cancel, clearing pending action`);
+			await clearSessionPendingAction(event.userId, threadId);
+		}
+
+		// If bridge confirmation, clear pending action and let agent verify
+		if (isAwaiting && isBridgeConfirmation && userSession?.currentAction?.type === "bridge") {
+			console.log(`[Bot] User confirmed bridge transaction, clearing pending action`);
+			// Don't clear the session data - agent needs it for context
 			await clearSessionPendingAction(event.userId, threadId);
 		}
 

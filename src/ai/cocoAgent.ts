@@ -178,9 +178,26 @@ export class CocoAgent {
 			}
 		} else {
 			// Transaction
-			userMessage = actionResult.success
-				? `Transaction successful. Hash: ${actionResult.data?.txHash}`
-				: "Transaction was rejected/cancelled.";
+			if (actionResult.success) {
+				const actionType = currentAction?.type || "transaction";
+				const actionData = currentAction?.data || {};
+
+				if (actionType === "bridge") {
+					// For bridge transactions, include data needed for verification
+					userMessage =
+						`Bridge transaction signed successfully. Hash: ${actionResult.data?.txHash}\n\n` +
+						`IMPORTANT: Now call verify_bridge_completion to confirm funds arrived on Mainnet.\n` +
+						`Use these parameters:\n` +
+						`- walletAddress: ${actionData.walletAddress}\n` +
+						`- previousBalanceEth: ${actionData.previousMainnetBalanceEth}\n` +
+						`- expectedAmountEth: ${actionData.outputAmountEth}\n` +
+						`- waitSeconds: ${Math.min(Math.max(30, Math.ceil((actionData.estimatedFillTimeSec as number) || 30)), 90)}`;
+				} else {
+					userMessage = `Transaction successful. Hash: ${actionResult.data?.txHash}`;
+				}
+			} else {
+				userMessage = "Transaction was rejected/cancelled.";
+			}
 		}
 
 		// Add as a regular user message
