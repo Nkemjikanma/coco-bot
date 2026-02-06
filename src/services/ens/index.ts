@@ -1,12 +1,12 @@
 import {
 	checkAvailability,
 	checkExpiry,
-	getHistory,
-	getUserPorfolio,
-	prepareRegistration,
 	encodeCommitData,
 	encodeRegisterData,
 	estimateRegistrationCost,
+	getHistory,
+	getUserPorfolio,
+	prepareRegistration,
 } from "./ens";
 import {
 	mapEnsHistoryResponse,

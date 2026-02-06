@@ -554,7 +554,7 @@ export async function prepareRegistration({
 	const reverseRecord = false;
 	const ownerControlledFuses = 0;
 
-	const commitments: RegistrationCommitment[] = [];
+	const _commitments: RegistrationCommitment[] = [];
 	let totalDomainCostWei = 0n;
 	let totalCommitGasWei = 0n;
 

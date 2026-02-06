@@ -263,7 +263,7 @@ export const PUBLIC_RESOLVER_ABI = [
 ] as const;
 
 // Multicall for batching setSubnodeRecord + setAddr in one transaction
-const MULTICALL_ABI = [
+const _MULTICALL_ABI = [
 	{
 		name: "multicall",
 		type: "function",

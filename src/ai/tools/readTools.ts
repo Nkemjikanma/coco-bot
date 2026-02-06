@@ -49,7 +49,16 @@ export const checkAvailabilityTool: ToolDefinition = {
 		const names = params.names as string[];
 
 		// Validate names before checking availability
-		const nonEthTlds = [".com", ".org", ".net", ".io", ".co", ".xyz", ".app", ".dev"];
+		const nonEthTlds = [
+			".com",
+			".org",
+			".net",
+			".io",
+			".co",
+			".xyz",
+			".app",
+			".dev",
+		];
 		const validationErrors: string[] = [];
 		const validNames: string[] = [];
 
@@ -61,7 +70,7 @@ export const checkAvailabilityTool: ToolDefinition = {
 			for (const tld of nonEthTlds) {
 				if (name.endsWith(tld)) {
 					validationErrors.push(
-						`"${name}" ends with ${tld}. ENS only supports .eth domains. Did you mean "${name.replace(tld, "")}.eth"?`
+						`"${name}" ends with ${tld}. ENS only supports .eth domains. Did you mean "${name.replace(tld, "")}.eth"?`,
 					);
 					hasNonEthTld = true;
 					break;
@@ -77,7 +86,7 @@ export const checkAvailabilityTool: ToolDefinition = {
 				// This is a subdomain
 				const parentName = parts.slice(1).join(".");
 				validationErrors.push(
-					`"${normalizedName}" is a subdomain. Use check_subdomain instead, and create it via the subdomain flow if you own "${parentName}".`
+					`"${normalizedName}" is a subdomain. Use check_subdomain instead, and create it via the subdomain flow if you own "${parentName}".`,
 				);
 				continue;
 			}
@@ -598,11 +607,13 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 			},
 			expectedAmountEth: {
 				type: "string",
-				description: "Expected amount in ETH that should have arrived (approximate)",
+				description:
+					"Expected amount in ETH that should have arrived (approximate)",
 			},
 			previousBalanceEth: {
 				type: "string",
-				description: "The Mainnet balance before bridging (if known), to compare against",
+				description:
+					"The Mainnet balance before bridging (if known), to compare against",
 			},
 			waitSeconds: {
 				type: "number",
@@ -618,9 +629,15 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 		const waitSeconds = Math.min((params.waitSeconds as number) || 30, 120);
 
 		try {
-			console.log(`[verify_bridge] Starting bridge verification for ${walletAddress}`);
-			console.log(`[verify_bridge] Expected amount: ${expectedAmountEth || "unknown"} ETH`);
-			console.log(`[verify_bridge] Previous balance: ${previousBalanceEth || "unknown"} ETH`);
+			console.log(
+				`[verify_bridge] Starting bridge verification for ${walletAddress}`,
+			);
+			console.log(
+				`[verify_bridge] Expected amount: ${expectedAmountEth || "unknown"} ETH`,
+			);
+			console.log(
+				`[verify_bridge] Previous balance: ${previousBalanceEth || "unknown"} ETH`,
+			);
 			console.log(`[verify_bridge] Waiting ${waitSeconds} seconds...`);
 
 			// Import viem for balance check
@@ -629,20 +646,30 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 
 			const mainnetClient = createPublicClient({
 				chain: mainnet,
-				transport: http(process.env.MAINNET_RPC_URL || "https://eth.llamarpc.com"),
+				transport: http(
+					process.env.MAINNET_RPC_URL || "https://eth.llamarpc.com",
+				),
 			});
 
 			// Get initial balance
-			const initialBalance = await mainnetClient.getBalance({ address: walletAddress });
+			const initialBalance = await mainnetClient.getBalance({
+				address: walletAddress,
+			});
 			const initialBalanceEth = formatEther(initialBalance);
-			console.log(`[verify_bridge] Current Mainnet balance: ${initialBalanceEth} ETH`);
+			console.log(
+				`[verify_bridge] Current Mainnet balance: ${initialBalanceEth} ETH`,
+			);
 
 			// If we have a previous balance, check if it already increased
 			if (previousBalanceEth) {
-				const previousWei = BigInt(Math.floor(parseFloat(previousBalanceEth) * 1e18));
+				const previousWei = BigInt(
+					Math.floor(parseFloat(previousBalanceEth) * 1e18),
+				);
 				if (initialBalance > previousWei) {
 					const increase = formatEther(initialBalance - previousWei);
-					console.log(`[verify_bridge] Balance already increased by ${increase} ETH`);
+					console.log(
+						`[verify_bridge] Balance already increased by ${increase} ETH`,
+					);
 					return formatResult(
 						{
 							verified: true,
@@ -660,15 +687,19 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 			// Wait for bridge to complete
 			await context.sendMessage(
 				`⏳ Waiting ${waitSeconds} seconds for bridge to complete...\n\n` +
-				`Current Mainnet balance: ${initialBalanceEth} ETH`,
+					`Current Mainnet balance: ${initialBalanceEth} ETH`,
 			);
 
 			await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000));
 
 			// Check balance again
-			const finalBalance = await mainnetClient.getBalance({ address: walletAddress });
+			const finalBalance = await mainnetClient.getBalance({
+				address: walletAddress,
+			});
 			const finalBalanceEth = formatEther(finalBalance);
-			console.log(`[verify_bridge] Final Mainnet balance: ${finalBalanceEth} ETH`);
+			console.log(
+				`[verify_bridge] Final Mainnet balance: ${finalBalanceEth} ETH`,
+			);
 
 			// Compare balances
 			const balanceIncreased = finalBalance > initialBalance;
@@ -701,8 +732,8 @@ IMPORTANT: Always use this after a bridge transaction, even if the UI showed "Tr
 						note: "Bridge may still be processing. Across bridges typically take 1-5 minutes.",
 					},
 					`⏳ **Bridge Still Processing**\n\nMainnet balance: ${finalBalanceEth} ETH (unchanged)\n\n` +
-					`The bridge may still be in progress. Across bridges typically complete within 1-5 minutes.\n\n` +
-					`You can:\n• Wait a bit longer and check balance again\n• Check https://across.to for bridge status\n• Proceed anyway if you're confident the bridge succeeded`,
+						`The bridge may still be in progress. Across bridges typically complete within 1-5 minutes.\n\n` +
+						`You can:\n• Wait a bit longer and check balance again\n• Check https://across.to for bridge status\n• Proceed anyway if you're confident the bridge succeeded`,
 				);
 			}
 		} catch (error) {

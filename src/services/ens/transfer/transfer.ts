@@ -24,7 +24,6 @@ import type {
 import { getNameType, makeLabelNodeAndParent } from "./transfer.utils";
 
 export class TransferService {
-	private publicClient: PublicClient;
 	private chainId: number;
 
 	constructor(rpcURL: string, chainId: number = 1) {
