@@ -77,7 +77,7 @@ export function normalizeENSName(domainName: string): {
 		}
 
 		return { normalized, valid: true };
-	} catch (error) {
+	} catch (_error) {
 		return {
 			normalized: "",
 			valid: false,

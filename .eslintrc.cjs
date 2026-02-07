@@ -13,6 +13,12 @@ module.exports = {
 	parserOptions: {
 		project: path.resolve(__dirname, "tsconfig.json"),
 	},
+	linter: {
+		enabled: true,
+		rules: {
+			recommended: true,
+		},
+	},
 	plugins: ["@typescript-eslint", "import-x", "eslint-plugin-tsdoc"],
 	ignorePatterns: ["dist/**", ".turbo/**", "node_modules/**", "vitest.*"],
 	rules: {

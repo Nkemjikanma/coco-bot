@@ -156,7 +156,7 @@ export class CocoAgent {
 		);
 
 		// Store the pending tool info before clearing
-		const pendingToolName = session.pendingToolCall?.toolName || "";
+		const _pendingToolName = session.pendingToolCall?.toolName || "";
 		const currentAction = session.currentAction;
 
 		// Create a user message describing what happened

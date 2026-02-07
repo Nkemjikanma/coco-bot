@@ -280,7 +280,7 @@ export function formatPortfolioResponse(
 	address: string,
 	data: PortfolioData,
 ): string {
-	const { names, totalCount, primaryName } = data;
+	const { names, primaryName } = data;
 
 	if (names.length === 0) {
 		return `

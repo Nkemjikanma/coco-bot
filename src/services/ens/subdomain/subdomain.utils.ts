@@ -4,9 +4,9 @@
  */
 
 import { namehash } from "@ensdomains/ensjs/utils";
-import { ParsedSubname } from "./subdomain.types";
 import { labelhash } from "viem";
 import { CompleteSubdomainInfo, SubdomainInfo } from "../../../types";
+import { ParsedSubname } from "./subdomain.types";
 
 export function parseSubname(fullName: string): ParsedSubname | null {
 	const parts = fullName.split(".");

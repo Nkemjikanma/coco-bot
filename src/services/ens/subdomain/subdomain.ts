@@ -2,11 +2,12 @@ import {
 	createPublicClient,
 	encodeFunctionData,
 	http,
-	namehash,
 	labelhash,
+	namehash,
 	PublicClient,
 } from "viem";
 import { mainnet } from "viem/chains";
+import { formatAddress } from "../../../utils";
 import {
 	ENS_CONTRACTS,
 	ENS_REGISTRY_ABI,
@@ -16,6 +17,7 @@ import {
 	NAME_WRAPPER_TRANSFER_ABI,
 	PUBLIC_RESOLVER_ABI,
 } from "../constants";
+import { getActualOwner, verifyOwnership } from "../utils";
 import { FUSES } from "./subdomain.constants";
 import { SubnameTransactionData } from "./subdomain.types";
 import {
@@ -23,8 +25,6 @@ import {
 	parseSubname,
 	validateSubdomainParts,
 } from "./subdomain.utils";
-import { formatAddress } from "../../../utils";
-import { getActualOwner, verifyOwnership } from "../utils";
 
 export class SubdomainService {
 	private publicClient: PublicClient;

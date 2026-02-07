@@ -21,7 +21,6 @@ import type {
 
 export class RenewService {
 	private publicClient: PublicClient;
-	private chainId: number;
 
 	constructor(rpcURL?: string, chainId: number = 1) {
 		this.chainId = chainId;
